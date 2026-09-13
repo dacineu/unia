@@ -3,11 +3,13 @@ use std::sync::{Arc, Mutex};
 use crate::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
 use crate::nucleus::ActuatorNucleus;
 use crate::wmis::{WmisDiscoveryProvider, WmisResource, ResourceType, SharingScope, QualityMetrics};
+use crate::os::{UniaKernel, UniaSyscall};
 use std::collections::HashMap;
 
 #[wasm_bindgen]
 pub struct UniaCore {
     orchestrator: crate::orchestrator::MetaOrchestrator,
+    kernel: UniaKernel,
 }
 
 #[wasm_bindgen]
@@ -21,7 +23,6 @@ impl UniaCore {
         let mut bridge_setup = PrimitiveBridge::new();
 
         // Pre-load a UPA Virtual Processor resource
-        // This demonstrates "Computational Liquidity" in the browser
         let mut state_space = HashMap::new();
         state_space.insert("cpu_load".to_string(), StateType {
             r#type: "float".to_string(),
@@ -46,13 +47,40 @@ impl UniaCore {
             action_primitives: actions,
         });
 
+        let bridge = Arc::new(bridge_setup);
         let orchestrator = crate::orchestrator::MetaOrchestrator::new(
-            discovery, 
-            Arc::new(bridge_setup), 
+            discovery,
+            Arc::clone(&bridge),
             Arc::clone(&nucleus)
         );
 
-        Self { orchestrator }
+        let kernel = UniaKernel::new(bridge, nucleus);
+
+        Self { orchestrator, kernel }
+    }
+
+    pub fn execute_os_command(&mut self, user: &str, command: &str) -> String {
+        // Simple OS Shell logic: "write /dev/unia/upa-virtual-01 100"
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        if parts.is_empty() { return "No command provided".to_string(); }
+
+        match parts[0] {
+            "write" if parts.len() >= 3 => {
+                let path = parts[1];
+                let val = parts[2];
+                // Resolve path through VFS simulation
+                let res_id = if path.contains("upa-virtual-01") { "upa-virtual-01" } else { "unknown" };
+                let syscall = UniaSyscall::WriteDevice(res_id.to_string(), val.to_string());
+                self.kernel.handle_syscall(syscall, user)
+            },
+            "compute" if parts.len() >= 2 => {
+                let op = parts[1];
+                let syscall = UniaSyscall::ExecuteCompute(op.to_string(), vec!["A".into(), "B".into()]);
+                self.kernel.handle_syscall(syscall, user)
+            },
+            "status" => self.get_status(),
+            _ => format!("Unknown OS command: {}. Try 'write /dev/unia/upa-virtual-01 100' or 'compute sum'", parts[0]),
+        }
     }
 
     pub fn execute_intent(&mut self, user: &str, intent: &str) -> String {
@@ -79,6 +107,6 @@ impl UniaCore {
     }
 
     pub fn get_status(&self) -> String {
-        "Unia Core: Wasm Runtime | UPA Virtualization: ACTIVE".to_string()
+        "Unia OS: Wasm Kernel ACTIVE | UPA Fabric: ONLINE".to_string()
     }
 }

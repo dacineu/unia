@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>unia | Virtual Processor Terminal</title>
+    <title>unia | Universal OS Terminal</title>
     <style>
         body { font-family: 'Courier New', monospace; background: #0a0a0a; color: #00ff41; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
         .container { width: 80%; max-width: 800px; border: 1px solid #00ff41; padding: 20px; box-shadow: 0 0 15px #00ff41; }
         h1 { text-align: center; text-transform: uppercase; letter-spacing: 2px; margin-top: 0; }
-        .terminal { background: #000; border: 1px solid #333; padding: 15px; height: 350px; overflow-y: auto; margin-bottom: 20px; font-size: 14px; line-height: 1.4; }
+        .terminal { background: #000; border: 1px solid #333; padding: 15px; height: 400px; overflow-y: auto; margin-bottom: 20px; font-size: 14px; line-height: 1.4; }
         .input-group { display: flex; gap: 10px; }
         input { flex-grow: 1; background: #000; border: 1px solid #00ff41; color: #00ff41; padding: 10px; font-family: inherit; outline: none; }
         button { background: #00ff41; color: #000; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; text-transform: uppercase; }
@@ -17,16 +17,18 @@
         .log-success { color: #00ff41; }
         .log-error { color: #ff4141; }
         .log-system { color: #aaa; font-style: italic; }
+        .prompt { color: #00ff41; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>unia Virtual Processor</h1>
+        <h1>unia Universal OS</h1>
         <div class="terminal" id="terminal">
-            <div class="log-entry log-system">Booting unia Wasm Runtime...</div>
+            <div class="log-entry log-system">Booting unia-OS Kernel...</div>
+            <div class="log-entry log-system">Mounting /dev/unia/upa-virtual-01...</div>
         </div>
         <div class="input-group">
-            <input type="text" id="intent-input" placeholder="Try 'compute sum' or 'add vectors'...">
+            <input type="text" id="intent-input" placeholder="Enter command or intent (e.g., 'compute sum' or 'write /dev/unia/upa-virtual-01 100')...">
             <button id="send-btn">Execute</button>
         </div>
     </div>
@@ -52,24 +54,34 @@
                 const core = new UniaCore();
                 
                 log(core.get_status(), 'system');
-                log("UPA Fabric Ready. Resource 'upa-virtual-01' loaded.", "success");
-                log("Try intents: 'compute sum', 'suma vectors', 'add values'", "system");
+                log("Welcome to unia-OS. Virtual Processor Online.", "success");
+                log("Try: 'compute sum', 'write /dev/unia/upa-virtual-01 100', or 'status'", "system");
 
                 btn.onclick = async () => {
-                    const intent = input.value;
-                    if (!intent) return;
+                    const val = input.value;
+                    if (!val) return;
 
-                    log(`Intent: ${intent}`, 'system');
+                    log(`${val}`, 'system');
+                    
+                    // Determine if this is an OS command (starts with known keyword) or a natural intent
+                    const isCommand = val.startsWith('write') || val.startsWith('compute') || val.startsWith('status');
+                    
                     try {
-                        const result = core.execute_intent("browser_operator", intent);
+                        let result;
+                        if (isCommand) {
+                            result = core.execute_os_command("browser_user", val);
+                        } else {
+                            result = core.execute_intent("browser_user", val);
+                        }
+                        
                         log(`Result: ${result}`, result.includes('Error') ? 'error' : 'success');
                     } catch (e) {
-                        log(`Fatal Error: ${e}`, "error");
+                        log(`Fatal Error: ${e}`, 'error');
                     }
                     input.value = '';
                 };
             } catch (e) {
-                log(`Initialization Failed: ${e}`, "error");
+                log(`Kernel Panic: ${e}`, "error");
             }
         }
 
