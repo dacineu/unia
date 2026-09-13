@@ -1,4 +1,7 @@
+pub mod upa_dispatcher;
+
 use crate::bridge::primitive::{PrimitivePacket, UniversalPrimitive};
+use crate::bridge::upa::{UpaPacket, UpaOp};
 use crate::wmis::{WmisEconomicLayer, WmisResource, WmisOperation};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -8,6 +11,8 @@ use std::sync::{Arc, Mutex};
 pub struct ActuatorNucleus {
     /// Maps Resource IDs to their specific hardware driver implementation
     drivers: HashMap<String, Box<dyn ActuatorDriver + Send + Sync>>,
+    /// The UPA Dispatcher for managing virtualized computation
+    pub upa_dispatcher: Arc<Mutex<crate::nucleus::upa_dispatcher::UpaDispatcher>>,
     /// Tracks the current simulated state of all resources for verification
     state_store: Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
     /// Integrated Economic Layer for pay-per-primitive actuation
@@ -24,6 +29,7 @@ impl ActuatorNucleus {
     pub fn new(economy: Arc<Mutex<WmisEconomicLayer>>) -> Self {
         Self {
             drivers: HashMap::new(),
+            upa_dispatcher: Arc::new(Mutex::new(crate::nucleus::upa_dispatcher::UpaDispatcher::new())),
             state_store: Arc::new(Mutex::new(HashMap::new())),
             economy,
         }
@@ -31,6 +37,61 @@ impl ActuatorNucleus {
 
     pub fn register_driver(&mut self, driver: Box<dyn ActuatorDriver + Send + Sync>) {
         self.drivers.insert(driver.get_resource_id(), driver);
+    }
+
+    /// Dispatch a UPA-Assembly packet via the UPA Dispatcher for virtualized compute
+    pub fn dispatch_upa(&self, slot: &str, packet: UpaPacket, user: &str, resource_meta: &WmisResource) -> Result<Vec<String>, String> {
+        // 1. ECONOMIC GATE
+        {
+            let mut econ = self.economy.lock().unwrap();
+            econ.charge_actuation(user, resource_meta, &WmisOperation::Execute)?;
+        }
+
+        // 2. UPA ROUTING
+        let targets = self.upa_dispatcher.lock().unwrap().route(slot, &packet);
+        
+        // 3. MULTI-TARGET EXECUTION
+        let mut results = Vec::new();
+        let mut state = self.state_store.lock().unwrap();
+
+        for target_id in targets {
+            let driver = self.drivers.get(&target_id)
+                .ok_or_else(|| format!("No driver registered for UPA target {}", target_id))?;
+            
+            state.entry(target_id.clone()).or_insert_with(HashMap::new);
+            
+            // Convert UpaPacket to PrimitivePacket for the driver
+            let prim_packet = self.convert_upa_to_primitive(&packet, &target_id);
+            let res = driver.execute(&prim_packet, &mut state)?;
+            results.push(res);
+        }
+
+        Ok(results)
+    }
+
+    fn convert_upa_to_primitive(&self, upa: &UpaPacket, target_id: &str) -> PrimitivePacket {
+        let primitive = match &upa.op {
+            UpaOp::Suma { .. } | UpaOp::Product { .. } => UniversalPrimitive::SetValue,
+            UpaOp::Transform { .. } => UniversalPrimitive::Transform,
+            UpaOp::Superposition { .. } | UpaOp::Entangle { .. } => UniversalPrimitive::Pulse,
+        };
+
+        PrimitivePacket {
+            header: crate::bridge::primitive::PacketHeader {
+                timestamp: 1694430000,
+                request_id: upa.request_id.clone(),
+                priority: crate::bridge::primitive::Priority::High,
+            },
+            payload: crate::bridge::primitive::PacketPayload {
+                primitive,
+                resource_id: target_id.to_string(),
+                arguments: HashMap::new(), // In a real system, extract from UpaOp
+            },
+            context: crate::bridge::primitive::PacketContext {
+                expected_state: None,
+                timeout_ms: 100,
+            },
+        }
     }
 
     /// The core execution loop: Packet -> Economy -> Driver -> Hardware

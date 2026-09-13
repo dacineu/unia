@@ -100,5 +100,6 @@ impl IntelligenceBridge {
 }
 pub mod primitive;
 pub mod semantic;
+pub mod upa;
 #[cfg(test)]
 mod primitive_tests;
