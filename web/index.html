@@ -3,29 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>unia Universal Processor - Web Interface</title>
+    <title>unia | Virtual Processor Terminal</title>
     <style>
         body { font-family: 'Courier New', monospace; background: #0a0a0a; color: #00ff41; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
         .container { width: 80%; max-width: 800px; border: 1px solid #00ff41; padding: 20px; box-shadow: 0 0 15px #00ff41; }
-        h1 { text-align: center; text-transform: uppercase; letter-spacing: 2px; }
-        .terminal { background: #000; border: 1px solid #333; padding: 15px; height: 300px; overflow-y: auto; margin-bottom: 20px; font-size: 14px; line-height: 1.4; }
+        h1 { text-align: center; text-transform: uppercase; letter-spacing: 2px; margin-top: 0; }
+        .terminal { background: #000; border: 1px solid #333; padding: 15px; height: 350px; overflow-y: auto; margin-bottom: 20px; font-size: 14px; line-height: 1.4; }
         .input-group { display: flex; gap: 10px; }
-        input { flex-grow: 1; background: #000; border: 1px solid #00ff41; color: #00ff41; padding: 10px; font-family: inherit; }
+        input { flex-grow: 1; background: #000; border: 1px solid #00ff41; color: #00ff41; padding: 10px; font-family: inherit; outline: none; }
         button { background: #00ff41; color: #000; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; text-transform: uppercase; }
         button:hover { background: #00cc33; }
         .log-entry { margin-bottom: 5px; }
         .log-success { color: #00ff41; }
         .log-error { color: #ff4141; }
+        .log-system { color: #aaa; font-style: italic; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>unia Universal Nucleus</h1>
+        <h1>unia Virtual Processor</h1>
         <div class="terminal" id="terminal">
-            <div class="log-entry">Initializing unia Wasm Core...</div>
+            <div class="log-entry log-system">Booting unia Wasm Runtime...</div>
         </div>
         <div class="input-group">
-            <input type="text" id="intent-input" placeholder="Enter intent (e.g., 'Emergency shutdown the valve')...">
+            <input type="text" id="intent-input" placeholder="Try 'compute sum' or 'add vectors'...">
             <button id="send-btn">Execute</button>
         </div>
     </div>
@@ -34,35 +35,42 @@
         import init, { UniaCore } from './pkg/unia_core.js';
 
         async function run() {
-            await init();
-            const core = new UniaCore();
             const terminal = document.getElementById('terminal');
             const input = document.getElementById('intent-input');
             const btn = document.getElementById('send-btn');
 
             function log(msg, type = 'info') {
                 const div = document.createElement('div');
-                div.className = 'log-entry ' + (type === 'success' ? 'log-success' : type === 'error' ? 'log-error' : '');
+                div.className = 'log-entry ' + (type === 'success' ? 'log-success' : type === 'error' ? 'log-error' : type === 'system' ? 'log-system' : '');
                 div.innerText = `> ${msg}`;
                 terminal.appendChild(div);
                 terminal.scrollTop = terminal.scrollHeight;
             }
 
-            log("Core Initialized. UPA Fabric Ready.", "success");
-
-            btn.onclick = async () => {
-                const intent = input.value;
-                if (!intent) return;
+            try {
+                await init();
+                const core = new UniaCore();
                 
-                log(`Intent: ${intent}`);
-                try {
-                    const result = core.execute_intent("operator_01", intent);
-                    log(`Result: ${result}`, "success");
-                } catch (e) {
-                    log(`Error: ${e}`, "error");
-                }
-                input.value = '';
-            };
+                log(core.get_status(), 'system');
+                log("UPA Fabric Ready. Resource 'upa-virtual-01' loaded.", "success");
+                log("Try intents: 'compute sum', 'suma vectors', 'add values'", "system");
+
+                btn.onclick = async () => {
+                    const intent = input.value;
+                    if (!intent) return;
+
+                    log(`Intent: ${intent}`, 'system');
+                    try {
+                        const result = core.execute_intent("browser_operator", intent);
+                        log(`Result: ${result}`, result.includes('Error') ? 'error' : 'success');
+                    } catch (e) {
+                        log(`Fatal Error: ${e}`, "error");
+                    }
+                    input.value = '';
+                };
+            } catch (e) {
+                log(`Initialization Failed: ${e}`, "error");
+            }
         }
 
         run();

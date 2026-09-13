@@ -30,21 +30,21 @@ pub enum UniversalPrimitive {
 }
 
 /// The standard packet sent from the Bridge to the Actuator Nucleus
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PrimitivePacket {
     pub header: PacketHeader,
     pub payload: PacketPayload,
     pub context: PacketContext,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PacketHeader {
     pub timestamp: u64,
     pub request_id: String,
     pub priority: Priority,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Priority {
     Low,
     Medium,
@@ -52,14 +52,14 @@ pub enum Priority {
     Critical,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PacketPayload {
     pub primitive: UniversalPrimitive,
     pub resource_id: String,
     pub arguments: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PacketContext {
     pub expected_state: Option<String>,
     pub timeout_ms: u32,

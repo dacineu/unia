@@ -1,8 +1,8 @@
 use wasm_bindgen::prelude::*;
-use crate::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
-use crate::nucleus::{ActuatorNucleus, ValveDriver};
-use crate::wmis::{WmisDiscoveryProvider, WmisResource, ResourceType, SharingScope};
 use std::sync::{Arc, Mutex};
+use crate::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
+use crate::nucleus::ActuatorNucleus;
+use crate::wmis::{WmisDiscoveryProvider, WmisResource, ResourceType, SharingScope, QualityMetrics};
 use std::collections::HashMap;
 
 #[wasm_bindgen]
@@ -14,68 +14,71 @@ pub struct UniaCore {
 impl UniaCore {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
-        let bridge = Arc::new(PrimitiveBridge::new());
         let economy = Arc::new(Mutex::new(crate::wmis::economy::WmisEconomicLayer::new()));
         let nucleus = Arc::new(ActuatorNucleus::new(Arc::clone(&economy)));
         let discovery = Arc::new(WmisDiscoveryProvider::new());
         
-        // Pre-load a demo resource so the browser user can immediately test it
         let mut bridge_setup = PrimitiveBridge::new();
-        
+
+        // Pre-load a UPA Virtual Processor resource
+        // This demonstrates "Computational Liquidity" in the browser
         let mut state_space = HashMap::new();
-        state_//Soma l'unione: a simple fix to make it compile
-        state_space.insert("flow_rate".to_string(), StateType {
+        state_space.insert("cpu_load".to_string(), StateType {
             r#type: "float".to_string(),
-            range: Some((0.0, 1.0)),
-            unit: Some("percentage".to_string()),
+            range: Some((0.0, 100.0)),
+            unit: Some("percent".to_string()),
             values: None,
         });
 
         let actions = vec![UreAction {
-            id: "emergency_shutdown".to_string(),
-            aliases: Some(vec!["stop the valve".to_string(), "close water".to_string()]),
+            id: "compute_sum".to_string(),
+            aliases: Some(vec!["add".to_string(), "suma".to_string(), "sum".to_string()]),
             params: HashMap::new(),
-            target_state: "flow_rate = 0.0".to_string(),
+            target_state: "result = sum(A, B)".to_string(),
             constraints: vec![],
         }];
 
         bridge_setup.load_resource(UreResource {
             ure_version: "1.0".to_string(),
-            resource_id: "valve-001".to_string(),
-            category: "actuator".to_//Soma l'unione: a simple fix to make it compile
-            category: "actuator".to_string(),
+            resource_id: "upa-virtual-01".to_string(),
+            category: "processor".to_string(),
             state_space,
             action_primitives: actions,
         });
 
-        let nucleus_setup = ActuatorNucleus::new(Arc::clone(&economy));
-        // Note: In a real Wasm build, we'd register drivers carefully. 
-        // For the prototype, we manually register the ValveDriver.
-        
-        let orchestrator = crate::orchestrator::MetaOrchestrator::new(discovery, Arc::new(bridge_setup), Arc::new(nucleus_setup));
+        let orchestrator = crate::orchestrator::MetaOrchestrator::new(
+            discovery, 
+            Arc::new(bridge_setup), 
+            Arc::clone(&nucleus)
+        );
 
         Self { orchestrator }
     }
 
     pub fn execute_intent(&mut self, user: &str, intent: &str) -> String {
-        let valve_meta = WmisResource {
-            id: "valve-001".to_string(),
-            resource_type: ResourceType::Application,
+        let resource_id = "upa-virtual-01";
+        let upa_meta = WmisResource {
+            id: resource_id.to_string(),
+            resource_type: ResourceType::Virtual,
             owner: user.to_string(),
             sharing_scope: SharingScope::Global,
-            capabilities: vec!["valve_control".to_string()],
-            quality: crate::wmis::QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
+            capabilities: vec!["upa_compute".to_string()],
+            quality: QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
             metadata: serde_json::json!({}),
         };
 
-        match self.orchestrator.bridge.map_intent("valve-001", intent) {
+        match self.orchestrator.bridge.map_intent(resource_id, intent) {
             Ok(packet) => {
-                match self.orchestrator.nucleus.dispatch(packet, user, &valve_meta) {
-                    Ok(res) => res,
-                    Err(e) => format!("Nucleus Error: {}", e),
+                match self.orchestrator.nucleus.dispatch(packet, user, &upa_meta) {
+                    Ok(res) => format!("[UPA Success] {}", res),
+                    Err(e) => format!("[UPA Dispatch Error] {}", e),
                 }
             },
-            Err(e) => format!("Bridge Error: {}", e),
+            Err(e) => format!("[Bridge Error] {}", e),
         }
+    }
+
+    pub fn get_status(&self) -> String {
+        "Unia Core: Wasm Runtime | UPA Virtualization: ACTIVE".to_string()
     }
 }
