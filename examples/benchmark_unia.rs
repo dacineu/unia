@@ -1,14 +1,19 @@
-use askillify::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
-use askillify::nucleus::{ActuatorNucleus, ValveDriver};
 use std::time::{Instant, Duration};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use askillify::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
+use askillify::nucleus::{ActuatorNucleus, ValveDriver};
+use askillify::wmis::{WmisEconomicLayer, WmisResource, WmisOperation, SharingScope, ResourceType};
 
 fn main() {
     println!("\n🚀 Starting unia vs Coupled-LLM Empirical Benchmark\n");
 
     // --- SETUP ---
     let mut bridge = PrimitiveBridge::new();
-    let mut nucleus = ActuatorNucleus::new();
+    
+    // Setup Economic Layer
+    let economy = Arc::new(Mutex::new(WmisEconomicLayer::new()));
+    let mut nucleus = ActuatorNucleus::new(Arc::clone(&economy));
 
     // Define a Smart Valve Resource
     let mut state_space = HashMap::new();
@@ -36,16 +41,32 @@ fn main() {
         action_primitives: actions,
     };
 
-    bridge.load_resource(valve_ure);
+    bridge.load_resource(valve_ure.clone());
     nucleus.register_driver(Box::new(ValveDriver { id: "valve-001".to_string() }));
+
+    // Setup WMIS metadata for the valve
+    let valve_meta = WmisResource {
+        id: "valve-001".to_string(),
+        resource_type: ResourceType::Application,
+        owner: "benchmark_user".to_string(),
+        sharing_scope: SharingScope::Global,
+        capabilities: vec!["valve_control".to_string()],
+        quality: askillify::wmis::QualityMetrics {
+            qor: 0.9,
+            qos: 0.99,
+            qop: 0.9,
+        },
+        metadata: serde_json::json!({}),
+    };
 
     // --- TEST CASE: "Emergency Shutdown" ---
     let intent = "Emergency shutdown the valve";
+    let user = "benchmark_user";
 
     // 1. Benchmark unia (Decoupled)
     let start_unia = Instant::now();
     let packet = bridge.map_intent("valve-001", intent).expect("Bridge mapping failed");
-    let _res_unia = nucleus.dispatch(packet).expect("Nucleus dispatch failed");
+    let _res_unia = nucleus.dispatch(packet, user, &valve_meta).expect("Nucleus dispatch failed");
     let duration_unia = start_unia.elapsed();
 
     // 2. Benchmark Coupled-LLM (Simulated)

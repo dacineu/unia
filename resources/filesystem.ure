@@ -1,0 +1,26 @@
+ure_version: "1.0"
+resource_id: "fs-root-001"
+category: "system"
+state_space:
+  last_write:
+    type: "string"
+    unit: "path"
+action_primitives:
+  - id: "write_file"
+    aliases: ["save file", "create document", "dump logs"]
+    params:
+      path: "REQUIRED"
+      content: "REQUIRED"
+    target_state: "last_write = current_path"
+    constraints: ["disk_space > 0"]
+  - id: "read_file"
+    aliases: ["open file", "get content", "fetch data"]
+    params:
+      path: "REQUIRED"
+    target_state: "output = file_content"
+    constraints: []
+  - id: "clear_cache"
+    aliases: ["reset storage", "purge temp", "cleanup"]
+    params: {}
+    target_state: "storage_used = 0"
+    constraints: []

@@ -82,7 +82,7 @@ impl ActuatorDriver for ValveDriver {
 
     fn execute(&self, packet: &PrimitivePacket, state: &mut HashMap<String, HashMap<String, String>>) -> Result<String, String> {
         let resource_state = state.get_mut(&self.id).unwrap();
-        
+
         match packet.payload.primitive {
             UniversalPrimitive::Reset => {
                 resource_state.insert("flow_rate".to_string(), "0.0".to_string());
@@ -116,6 +116,42 @@ impl ActuatorDriver for TempSensorDriver {
                 Ok(format!("Sensor {} reading: 22.4C (I2C Read)", self.id))
             },
             _ => Err(format!("Primitive {:?} not supported by TempSensorDriver", packet.payload.primitive)),
+        }
+    }
+}
+
+/// A driver for a FileSystem resource (demonstrating hardware independence)
+pub struct FileSystemDriver {
+    pub id: String,
+}
+
+impl ActuatorDriver for FileSystemDriver {
+    fn get_resource_id(&self) -> String {
+        self.id.clone()
+    }
+
+    fn execute(&self, packet: &PrimitivePacket, state: &mut HashMap<String, HashMap<String, String>>) -> Result<String, String> {
+        let resource_state = state.get_mut(&self.id).unwrap();
+
+        match packet.payload.primitive {
+            UniversalPrimitive::SetValue => {
+                let content = packet.payload.arguments.get("content")
+                    .ok_or("Missing 'content' argument for FS write")?;
+                let path = packet.payload.arguments.get("path")
+                    .ok_or("Missing 'path' argument for FS write")?;
+                
+                resource_state.insert("last_write".to_string(), path.clone());
+                Ok(format!("FS Resource {}: wrote to {} (Simulated Syscall)", self.id, path))
+            },
+            UniversalPrimitive::GetValue => {
+                let path = packet.payload.arguments.get("path")
+                    .ok_or("Missing 'path' argument for FS read")?;
+                Ok(format!("FS Resource {}: read from {} -> 'simulated_data'", self.id, path))
+            },
+            UniversalPrimitive::Reset => {
+                Ok(format!("FS Resource {}: cleared cache/temp files", self.id))
+            },
+            _ => Err(format!("Primitive {:?} not supported by FileSystemDriver", packet.payload.primitive)),
         }
     }
 }

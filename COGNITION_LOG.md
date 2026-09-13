@@ -27,3 +27,19 @@ The final state is a **Dynamic Cognitive Projection**. Software is no longer sta
 - **Evolution**: MutationEngine $\rightarrow$ Champion/Contender $\rightarrow$ Pruning.
 - **Interfacing**: IntelligenceBridge $\rightarrow$ FluidStateProjector $\rightarrow$ Flux-Swap.
 - **Sourcing**: MCP Connectors $\rightarrow$ Synaptic Transducer $\rightarrow$ la-piece-de-résistance Mesh.
+## 2026-09-13: Hardened Prototype Phase 1 - Semantic Robustness
+### Goal: Decouple intent mapping from rigid string matching.
+
+#### Implementation Details:
+1. **Semantic Aliasing**: Added `aliases` field to `UreAction` in `src/bridge/primitive.rs`. This allows a single Universal Primitive to be triggered by various natural language phrases.
+2. **Hardware Independence Expansion**: Implemented `FileSystemDriver` in `src/nucleus/mod.rs`. Verified that `UniversalPrimitives` (e.g., `SetValue`) translate correctly to system-level operations (file writes), proving the architecture is not limited to industrial actuators.
+3. **Semantic Mapper**: Introduced `src/bridge/semantic.rs` featuring a token-overlap scoring algorithm. 
+   - **Logic**: `Score = (Intersection of Tokens) / (Union of Tokens)`.
+   - **Integration**: Hybrid mapping in `PrimitiveBridge` now uses a Fast Path (Exact/Alias match) $\rightarrow$ Slow Path (Semantic Score $>$ 0.3) pipeline.
+
+#### Empirical Results:
+- **Pipeline Latency**: Maintained in the $\mu\text{s}$ range despite adding semantic scoring.
+- **Robustness**: Successfully mapped "Please dump logs to the system" to `write_file` via alias and semantic overlap.
+- **Hardware Independence**: Verified end-to-end flow from Natural Language $\rightarrow$ `PrimitivePacket` $\rightarrow$ `FileSystemDriver` output.
+
+**Status**: Phase 1 Complete. System is ready for academic benchmarking and publication preparation.

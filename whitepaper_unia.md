@@ -32,13 +32,17 @@ This coupling introduces three critical failures:
 The **unia** framework is composed of three primary layers: the Intent Layer, the Primitive Bridge, and the Actuator Nucleus.
 
 ### 2.1 The Universal Resource (.ure) Format
-The `.ure` format is a declarative specification of a resource or a goal. It defines a **Resource Tuple**: $\mathcal{U} = \langle \mathcal{I}, \mathcal{S}, \mathcal{A}, \mathcal{C} \rangle$, comprising Identity, State Space, Action Primitives, and Constraints. Unlike a script, it defines *what* the desired state is, not *how* to achieve it.
+The `.ure` format is a declarative specification of a resource or a goal. It defines a **Resource Tuple**: $\mathcal{U} = \langle \mathcal{I}, \mathcal{S}, \mathcal{A}, \mathcal{C} \rangle$, comprising Identity, State Space, Action Primitives, and Constraints. To enhance robustness, we introduce **Semantic Aliases** ($\mathcal{A}_{alias}$), allowing a single primitive action to be triggered by multiple natural language expressions. Unlike a script, it defines *what* the desired state is, not *how* to achieve it.
 
 ### 2.2 The Primitive Bridge
-The Primitive Bridge acts as a translator. It maps high-level agent intent to a set of **Universal Primitives** ($\mathcal{P}$), such as `SET_VALUE`, `GET_STATE`, or `RESET`. This ensures the agent's output space is compressed and deterministic.
+The Primitive Bridge acts as a translator. It maps high-level agent intent to a set of **Universal Primitives** ($\mathcal{P}$), such as `SET_VALUE`, `GET_STATE`, or `RESET`. 
+
+To solve the fragility of keyword matching, the Bridge employs a **Hybrid Semantic Mapper**. This system uses a fast-path exact match followed by a slow-path **Token-Overlap Scoring** algorithm, computing a similarity coefficient between the intent and the resource's action space. This ensures that the agent's output space is compressed, deterministic, and resilient to linguistic variation.
 
 ### 2.3 The Actuator-Driven Nucleus
-The Nucleus is the final execution stage. It maintains a registry of **Actuators**—hardware-specific drivers that implement the Universal Primitives. The Nucleus handles the final mapping from $\mathcal{P} \rightarrow \text{Hardware Signal}$.
+The Nucleus is the final execution stage. It maintains a registry of **Actuators**—hardware-specific drivers that implement the Universal Primitives. The Nucleus handles the final mapping from $\mathcal{P} \rightarrow \text{Hardware Signal}$. 
+
+Critically, the Nucleus is **domain-agnostic**. Whether the target is a physical GPIO pin on an industrial valve or a virtual system call for a FileSystem resource, the interface remains identical, ensuring total hardware independence.
 
 ---
 
@@ -52,7 +56,9 @@ As the number of environments $|\mathcal{E}|$ increases, $\mathcal{C}_{coupled}$
 
 In **unia**, adaptation is reduced to a simple mapping of primitives:
 $$\mathcal{C}_{unia} = \sum_{p \in \mathcal{P}} \delta(p \rightarrow a_{target})$$
-resulting in a complexity of $O(|\mathcal{P}|)$, which remains constant regardless of the number of environments mastered.
+resulting in a complexity of $O(|\mathcal{P}|)$. Since $|\mathcal{P}|$ is a finite set of universal primitives defined by the library, the migration complexity $\mathcal{C}_{mig}$ remains constant regardless of the number of environments mastered:
+$$\mathcal{C}_{mig} = O(1)$$
+This mathematically guarantees that adding a new hardware target does not increase the cognitive load on the agent.
 
 ### 3.2 Latency Analysis ($\Delta T$)
 

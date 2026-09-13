@@ -86,6 +86,7 @@ pub struct StateType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UreAction {
     pub id: String,
+    pub aliases: Option<Vec<String>>,
     pub params: HashMap<String, String>,
     pub target_state: String,
     pub constraints: Vec<String>,
@@ -131,13 +132,44 @@ impl PrimitiveBridge {
         let resource = self.resources.get(resource_id)
             .ok_or_else(|| format!("Resource {} not found", resource_id))?;
 
-        let action = resource.action_primitives.iter()
-            .find(|a| {
-                let normalized_id = a.id.to_lowercase().replace('_', " ");
-                intent.to_lowercase().contains(&normalized_id)
-            })
-            .ok_or_else(|| format!("No matching action for intent '{}' in resource {}", intent, resource_id))?;
+        let intent_lower = intent.to_lowercase();
+        
+        // 1. Exact/Containment Match (Fast Path)
+        let mut best_action = None;
+        let mut max_score = 0.0;
 
+        for action in &resource.action_primitives {
+            let normalized_id = action.id.to_lowercase().replace('_', " ");
+            if intent_lower.contains(&normalized_id) {
+                return self.create_packet(resource_id, action);
+            }
+            
+            if let Some(aliases) = &action.aliases {
+                for alias in aliases {
+                    if intent_lower.contains(&alias.to_lowercase()) {
+                        return self.create_packet(resource_id, action);
+                    }
+                }
+            }
+
+            // 2. Semantic Scoring (Slow Path)
+            let score = crate::bridge::semantic::SemanticMapper::compute_score(&intent_lower, &action.id);
+            if score > max_score {
+                max_score = score;
+                best_action = Some(action);
+            }
+        }
+
+        // Threshold for semantic match (0.3 = moderate overlap)
+        if max_score > 0.3 {
+            println!("[Bridge] Semantic match found (score: {:.2})", max_score);
+            return self.create_packet(resource_id, best_action.unwrap());
+        }
+
+        Err(format!("No matching action for intent '{}' in resource {}", intent, resource_id))
+    }
+
+    fn create_packet(&self, resource_id: &str, action: &UreAction) -> Result<PrimitivePacket, String> {
         let primitive = self.resolve_primitive(&action.id, &action.target_state);
 
         for constraint in &action.constraints {
@@ -167,7 +199,7 @@ impl PrimitiveBridge {
             UniversalPrimitive::Reset
         } else if action_id.contains("adjust") || action_id.contains("set") {
             UniversalPrimitive::SetValue
-        } else if action_id.contains("check") || action same as "get" {
+        } else if action_id.contains("check") || action_id.contains("get") {
             UniversalPrimitive::GetValue
         } else {
             UniversalPrimitive::SetValue
