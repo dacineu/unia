@@ -98,3 +98,6 @@ impl IntelligenceBridge {
         }
     }
 }
+pub mod primitive;
+#[cfg(test)]
+mod primitive_tests;

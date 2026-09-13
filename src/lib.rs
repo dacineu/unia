@@ -17,3 +17,4 @@ pub mod pipeline;
 pub mod release_manager;
 pub mod fluid;
 pub mod wmis;
+pub mod nucleus;
