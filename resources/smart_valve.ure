@@ -1,0 +1,26 @@
+# Example Resource: Smart Valve
+# Save as /resources/smart_valve.ure
+ure_version: "1.0"
+resource_id: "valve-001"
+category: "actuator"
+
+state_space:
+  flow_rate:
+    type: "float"
+    range: [0.0, 1.0]
+    unit: "percentage"
+  status:
+    type: "enum"
+    values: ["open", "closed", "fault"]
+
+action_primitives:
+  - id: "emergency_shutdown"
+    params: {}
+    target_state: "flow_rate = 0.0"
+    constraints:
+      - "status != 'fault'"
+  - id: "adjust_flow"
+    params:
+      target: "float"
+    target_state: "flow_rate"
+    constraints: []

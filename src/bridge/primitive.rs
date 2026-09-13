@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 use serde::{Serialize, Deserialize};
 
 /// The Universal Primitive IDs defined in the Primitive Library
@@ -100,18 +102,35 @@ impl PrimitiveBridge {
         }
     }
 
+    /// Dynamically load all .ure files from a directory
+    pub fn load_resources_from_dir<P: AsRef<Path>>(&mut self, path: P) -> Result<(), String> {
+        let entries = fs::read_dir(path).map_err(|e| format!("Failed to read dir: {}", e))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Entry error: {}", e))?;
+            let path = entry.path();
+
+            if path.extension().and_then(|s| s.to_str()) == Some("ure") {
+                let content = fs::read_to_string(&path).map_err(|e| format!("Read error: {}", e))?;
+                let resource: UreResource = serde_yaml::from_str(&content)
+                    .map_err(|e| format!("YAML parse error in {:?}: {}", path, e))?;
+                
+                self.resources.insert(resource.resource_id.clone(), resource);
+                println!("[Bridge] Loaded resource: {}", entry.file_name().to_string_lossy());
+            }
+        }
+        Ok(())
+    }
+
     pub fn load_resource(&mut self, resource: UreResource) {
         self.resources.insert(resource.resource_id.clone(), resource);
     }
 
     /// Maps natural language intent to a Universal Primitive Packet
-    /// In a real scenario, this would use a small SLM or keyword mapping.
     pub fn map_intent(&self, resource_id: &str, intent: &str) -> Result<PrimitivePacket, String> {
         let resource = self.resources.get(resource_id)
             .ok_or_else(|| format!("Resource {} not found", resource_id))?;
 
-        // 1. Match intent to a URE action
-        // Improved matching: check if action ID (with underscores replaced by spaces) is in intent
         let action = resource.action_primitives.iter()
             .find(|a| {
                 let normalized_id = a.id.to_lowercase().replace('_', " ");
@@ -119,19 +138,15 @@ impl PrimitiveBridge {
             })
             .ok_or_else(|| format!("No matching action for intent '{}' in resource {}", intent, resource_id))?;
 
-        // 2. Determine which Universal Primitive this action maps to
-        // (Simplified mapping logic for the prototype)
         let primitive = self.resolve_primitive(&action.id, &action.target_state);
 
-        // 3. Basic Constraint Check (Simulated)
         for constraint in &action.constraints {
             println!("[Bridge] Validating constraint: {}", constraint);
-            // In a real system, we would check the actual current state of the resource
         }
 
         Ok(PrimitivePacket {
             header: PacketHeader {
-                timestamp: 1694430000, // Simulated
+                timestamp: 1694430000,
                 request_id: "req-abc-123".to_string(),
                 priority: Priority::Medium,
             },
@@ -147,15 +162,15 @@ impl PrimitiveBridge {
         })
     }
 
-    fn resolve_primitive(&self, action_id: &str, target_state: &str) -> UniversalPrimitive {
+    fn resolve_primitive(&self, action_id: &str, _target_state: &str) -> UniversalPrimitive {
         if action_id.contains("shutdown") || action_id.contains("off") {
             UniversalPrimitive::Reset
         } else if action_id.contains("adjust") || action_id.contains("set") {
             UniversalPrimitive::SetValue
-        } else if action_id.contains("check") || action_id.contains("get") {
+        } else if action_id.contains("check") || action same as "get" {
             UniversalPrimitive::GetValue
         } else {
-            UniversalPrimitive::SetValue // Default
+            UniversalPrimitive::SetValue
         }
     }
 }

@@ -3,7 +3,8 @@ use uuid::Uuid;
 use std::collections::HashMap;
 use crate::profiler::{Profiler, AgentProfile};
 use crate::meta_actuators::MetaActuatorType;
-use serde_json::Value;
+use crate::bridge::primitive::{PrimitiveBridge, PrimitivePacket};
+use crate::nucleus::ActuatorNucleus;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -29,23 +30,26 @@ pub struct MetaOrchestrator {
     slots: HashMap<Uuid, AgentSlot>,
     profiler: Profiler,
     discovery: Arc<WmisDiscoveryProvider>,
+    // Integration with the la-piece-de-résistance pipeline
+    pub bridge: Arc<PrimitiveBridge>,
+    pub nucleus: Arc<ActuatorNucleus>,
 }
 
 impl MetaOrchestrator {
-    pub fn new(discovery: Arc<WmisDiscoveryProvider>) -> Self {
+    pub fn new(discovery: Arc<WmisDiscoveryProvider>, bridge: Arc<PrimitiveBridge>, nucleus: Arc<ActuatorNucleus>) -> Self {
         Self {
             slots: HashMap::new(),
             profiler: Profiler::new(),
             discovery,
+            bridge,
+            nucleus,
         }
     }
 
     /// Predicts required resources for a given objective and pre-warms agent slots.
     pub fn predict_and_warm(&mut self, objective: &str) -> Vec<Uuid> {
         println!("🔮 Pre-emptively profiling objective: '{}'", objective);
-        
-        // 1. Simple heuristic-based resource prediction
-        // In a full system, this would use a small SLM or pattern match
+
         let predicted_capabilities = if objective.contains("rust") || objective.contains("code") {
             vec!["Rust Expert".to_string(), "Code Optimizer".to_string()]
         } else if objective.contains("data") || objective.contains("sql") {
@@ -57,7 +61,6 @@ impl MetaOrchestrator {
         let mut warmed_slots = Vec::new();
 
         for capability in predicted_capabilities {
-            // 2. Search WMIS mesh for the best matching Champion actuator
             let query = DiscoveryQuery {
                 seeker: "MetaOrchestrator".to_string(),
                 allowed_scopes: vec![SharingScope::Global, SharingScope::Team],
@@ -66,8 +69,7 @@ impl MetaOrchestrator {
             };
 
             let found = self.discovery.discover_resources(query);
-            
-            // 3. Spawn agent based on found resource or fallback to general profile
+
             let (role, spec, actuator_type) = if let Some(res) = found.first() {
                 println!("✅ Found WMIS Champion for {}: {}", capability, res.id);
                 ("Champion".to_string(), res.id.clone(), MetaActuatorType::Synthesizer)
@@ -76,14 +78,13 @@ impl MetaOrchestrator {
                 ("Synthetic".to_string(), capability.clone(), MetaActuatorType::Synthesizer)
             };
 
-            // Note: We use a fixed MetaActuatorType for the slot, but the linked resource handles the actual logic
             let id = self.spawn_agent(&role, &spec, actuator_type);
-            
+
             if let Some(slot) = self.slots.get_mut(&id) {
                 slot.status = AgentStatus::Predicting;
                 slot.linked_wmis_resource = found.first().cloned();
             }
-            
+
             warmed_slots.push(id);
         }
 
@@ -94,7 +95,6 @@ impl MetaOrchestrator {
     pub fn spawn_agent(&mut self, role: &str, specialization: &str, actuator_type: MetaActuatorType) -> Uuid {
         let id = Uuid::new_v4();
 
-        // 1. Generate the la-piece-de-résistance identity
         let profile = AgentProfile {
             id,
             role: role.to_string(),
@@ -105,7 +105,6 @@ impl MetaOrchestrator {
             interaction_protocol: "Strict JSON-RPC / .ure manifest".to_string(),
         };
 
-        // 2. Pre-emptively inject identity files into a virtual worktree
         let worktree_path = format!("/tmp/askillify/worktrees/{}", id);
         if let Err(e) = self.profiler.generate_identity_files(&worktree_path, &profile) {
             eprintln!("Failed to inject identity: {}", e);
@@ -126,6 +125,25 @@ impl MetaOrchestrator {
         id
     }
 
+    /// Executes a la-piece-de-résistance pipeline: Intent -> Bridge -> Nucleus.
+    pub fn execute_intent(&mut self, agent_id: &Uuid, intent: &str, user: &str) -> Result<String, String> {
+        let slot = self.slots.get(agent_id)
+            .ok_or_else(|| "Agent slot not found".to_string())?;
+
+        let resource = slot.linked_wmis_resource.as_ref()
+            .ok_or_else(|| "Agent has no linked WMIS resource for execution".to_string())?;
+
+        println!("⚙️  Executing intent '{}' via Agent {}", intent, agent_id);
+
+        // 1. Bridge Mapping (Intent -> Universal Primitive)
+        let packet = self.bridge.map_intent(&resource.id, intent)?;
+
+        // 2. Nucleus Dispatch (Primitive -> Hardware Action + Economic Charge)
+        let result = self.nucleus.dispatch(packet, user, resource)?;
+
+        Ok(result)
+    }
+
     /// Fans one prompt across multiple specialized agents.
     pub fn fan_out(&mut self, prompt: &str) -> HashMap<Uuid, String> {
         println!("📡 Fanning out prompt: '{}' to fleet...", prompt);
@@ -134,7 +152,6 @@ impl MetaOrchestrator {
         for (id, slot) in self.slots.iter_mut() {
             slot.status = AgentStatus::Processing;
 
-            // Simulate agent processing based on its identity and linked WMIS resource
             let resource_context = match &slot.linked_wmis_resource {
                 Some(res) => format!(" using WMIS Champion {}", res.id),
                 None => " using synthetic profile".to_string(),

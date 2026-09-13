@@ -1,4 +1,5 @@
 use crate::bridge::primitive::{PrimitivePacket, UniversalPrimitive};
+use crate::wmis::{WmisEconomicLayer, WmisResource, WmisOperation};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -9,6 +10,8 @@ pub struct ActuatorNucleus {
     drivers: HashMap<String, Box<dyn ActuatorDriver + Send + Sync>>,
     /// Tracks the current simulated state of all resources for verification
     state_store: Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
+    /// Integrated Economic Layer for pay-per-primitive actuation
+    pub economy: Arc<Mutex<WmisEconomicLayer>>,
 }
 
 /// Interface for a hardware-specific driver
@@ -18,10 +21,11 @@ pub trait ActuatorDriver {
 }
 
 impl ActuatorNucleus {
-    pub fn new() -> Self {
+    pub fn new(economy: Arc<Mutex<WmisEconomicLayer>>) -> Self {
         Self {
             drivers: HashMap::new(),
             state_store: Arc::new(Mutex::new(HashMap::new())),
+            economy,
         }
     }
 
@@ -29,10 +33,17 @@ impl ActuatorNucleus {
         self.drivers.insert(driver.get_resource_id(), driver);
     }
 
-    /// The core execution loop: Packet -> Driver -> Hardware
-    pub fn dispatch(&self, packet: PrimitivePacket) -> Result<String, String> {
+    /// The core execution loop: Packet -> Economy -> Driver -> Hardware
+    pub fn dispatch(&self, packet: PrimitivePacket, user: &str, resource_meta: &WmisResource) -> Result<String, String> {
         let resource_id = &packet.payload.resource_id;
         
+        // 1. ECONOMIC GATE: Charge for the actuation
+        {
+            let mut econ = self.economy.lock().unwrap();
+            econ.charge_actuation(user, resource_meta, &WmisOperation::Execute)?;
+        }
+
+        // 2. DRIVER LOOKUP
         let driver = self.drivers.get(resource_id)
             .ok_or_else(|| format!("No driver registered for resource {}", resource_id))?;
 
@@ -41,6 +52,7 @@ impl ActuatorNucleus {
         // Ensure the resource has a state entry
         state.entry(resource_id.clone()).or_insert_with(HashMap::new);
 
+        // 3. EXECUTION
         let result = driver.execute(&packet, &mut state);
         
         match result {
