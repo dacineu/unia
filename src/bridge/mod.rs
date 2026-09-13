@@ -101,5 +101,6 @@ impl IntelligenceBridge {
 pub mod primitive;
 pub mod semantic;
 pub mod upa;
+pub mod slm_mapper;
 #[cfg(test)]
 mod primitive_tests;

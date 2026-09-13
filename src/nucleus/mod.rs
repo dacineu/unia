@@ -1,5 +1,6 @@
 pub mod upa_dispatcher;
 pub mod wasm_driver;
+pub mod network_driver;
 
 use crate::bridge::primitive::{PrimitivePacket, UniversalPrimitive};
 use crate::bridge::upa::{UpaPacket, UpaOp};

@@ -18,6 +18,7 @@ pub mod release_manager;
 pub mod fluid;
 pub mod wmis;
 pub mod nucleus;
+pub mod node;
 
 // Wasm Entry Point
 #[cfg(target_arch = "wasm32")]
