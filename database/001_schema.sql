@@ -21,8 +21,51 @@
 
 BEGIN;
 
-CREATE EXTENSION IF NOT EXISTS pg_trgm;   -- trigram similarity for fuzzy intent match
-CREATE EXTENSION IF NOT EXISTS btree_gin;  -- required for GIN on scalar + array together
+-- ---------------------------------------------------------------------------
+-- Optional capability detection.
+--
+-- Fuzzy trigram matching needs pg_trgm, which is a contrib extension and is
+-- absent from some builds, including a stock PostgreSQL installed without
+-- contrib. Hard-failing on it would make the whole index unusable on those
+-- hosts, so availability is detected and recorded instead, and 002_indexes.sql
+-- reads this table rather than assuming.
+--
+-- Nothing else here needs contrib. The IDF-overlap retrieval path in
+-- 003_retrieval.sql, which is what actually replaces the linear scan, uses only
+-- core functions. A host without pg_trgm keeps full ranking and loses only
+-- fuzzy substring fallback, which the Bridge's own containment check covers for
+-- exact phrasings.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE unia_feature (
+    name       TEXT PRIMARY KEY,
+    available  BOOLEAN NOT NULL,
+    note       TEXT
+);
+
+DO $$
+BEGIN
+    BEGIN
+        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        INSERT INTO unia_feature VALUES
+            ('pg_trgm', TRUE, 'fuzzy trigram similarity available')
+        ON CONFLICT (name) DO UPDATE SET available = TRUE;
+    -- A capability probe wants to know only whether the extension can be
+    -- created, so any failure means "not available". Catching OTHERS is
+    -- deliberate: the interesting cases are insufficient_privilege and a
+    -- missing control file, and the latter does not raise undefined_file, so
+    -- enumerating SQLSTATEs here would silently mis-handle a host that simply
+    -- lacks contrib.
+    EXCEPTION WHEN OTHERS THEN
+        INSERT INTO unia_feature VALUES
+            ('pg_trgm', FALSE,
+             'contrib extension unavailable; fuzzy fallback disabled, IDF ranking unaffected')
+        ON CONFLICT (name) DO UPDATE
+            SET available = FALSE, note = EXCLUDED.note;
+        RAISE NOTICE 'pg_trgm unavailable: fuzzy matching disabled, IDF ranking unaffected';
+    END;
+END
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Enumerated dimensions
@@ -167,11 +210,16 @@ CREATE TABLE action (
 CREATE TABLE alias (
     id         BIGSERIAL PRIMARY KEY,
     du_uuid    UUID NOT NULL REFERENCES pattern(du_uuid) ON DELETE CASCADE,
-    action_id  TEXT REFERENCES action(action_id) ON DELETE CASCADE,
+    -- Composite reference: an action id is only unique within its pattern, so
+    -- action(action_id) alone is not a legal target. Aliases are also allowed
+    -- to be pattern-level, in which case action_id is NULL.
+    action_id  TEXT,
     phrase     TEXT NOT NULL,
     -- Whether this phrase came from the pattern itself or was learned from
     -- observed phrasings. Learned aliases are the induction output.
-    learned    BOOLEAN NOT NULL DEFAULT FALSE
+    learned    BOOLEAN NOT NULL DEFAULT FALSE,
+    FOREIGN KEY (du_uuid, action_id)
+        REFERENCES action(du_uuid, action_id) ON DELETE CASCADE
 );
 
 -- One harvested execution. This is the training signal: without traces there

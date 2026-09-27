@@ -11,6 +11,17 @@
 
 BEGIN;
 
+-- Idempotent: this file is re-applied whenever the ranking changes, so drop the
+-- objects it owns first. Dropping a view that a function body references is not
+-- a problem, because the function is dropped first and Postgres resolves
+-- dependencies at execution time rather than at creation.
+DROP FUNCTION IF EXISTS pattern_resolve(TEXT, TEXT);
+DROP FUNCTION IF EXISTS pattern_search(TEXT, INTEGER, execution_target, BOOLEAN, REAL);
+DROP VIEW IF EXISTS capability_token_savings;
+DROP VIEW IF EXISTS term_idf;
+DROP VIEW IF EXISTS term_document_frequency;
+DROP VIEW IF EXISTS pattern_phrase;
+
 -- Flattened retrieval surface: one row per phrase, joined to its pattern.
 CREATE VIEW pattern_phrase AS
 SELECT
@@ -97,7 +108,7 @@ overlap AS (
         (
             0.75 * (
                 COALESCE(sum(i.idf) FILTER (WHERE it.term IS NOT NULL), 0)
-                / NULLIF(sum(i.idf), 0)
+                / NULLIF(sum(COALESCE(i.idf, 0)), 0)
             )
             + 0.25 * (
                 count(*) FILTER (WHERE it.term IS NOT NULL)::real
@@ -106,17 +117,26 @@ overlap AS (
         )::real AS score
     FROM pattern_phrase pp
     CROSS JOIN params
-    LEFT JOIN term_idf i ON i.term = pp.phrase_lower   -- placeholder, replaced below
-    LEFT JOIN LATERAL (
+    -- One row per token of the stored phrase. The IDF join must be on the
+    -- phrase *token*, not on the whole phrase: joining term_idf to
+    -- phrase_lower matches a multi-word phrase against single terms and
+    -- therefore never matches, which silently zeroes the numerator and drops
+    -- every candidate.
+    CROSS JOIN LATERAL (
         SELECT t.term FROM unnest(
             regexp_split_to_array(pp.phrase_lower, '[^[:alnum:]_]+')
         ) AS t(term) WHERE t <> '' AND length(t.term) > 1
-    ) pt ON true
+    ) pt
+    -- A token absent from the corpus statistics still contributes to the
+    -- denominator, so COALESCE gives it a neutral weight rather than dropping
+    -- the row and inflating precision.
+    LEFT JOIN term_idf i ON i.term = pt.term
+    -- Non-null exactly when this phrase token also occurs in the intent.
     LEFT JOIN LATERAL (
         SELECT t.term FROM unnest(
             regexp_split_to_array(params.intent, '[^[:alnum:]_]+')
-        ) AS t(term) WHERE t <> '' AND length(t.term) > 1
-    ) it ON it.term = pt.term
+        ) AS t(term) WHERE t.term = pt.term AND length(t.term) > 1
+    ) it ON true
     GROUP BY pp.du_uuid, pp.phrase
 ),
 scored AS (
@@ -182,8 +202,17 @@ best AS (
     )
 ),
 champ AS (
+    -- A champion is only served when it is the *best* match for this intent.
+    -- Joining champion to every row above the score floor is wrong: the
+    -- valve champion then answers "rewrite the docstring parser in rust",
+    -- because it happens to clear 0.15. That is the failure mode where a
+    -- promoted pattern becomes fast, silent and wrong, so the top-1 requirement
+    -- is deliberate and the champion threshold is higher than the general one.
     SELECT b.du_uuid, b.title, b.saves_tokens
-    FROM best b JOIN champion c ON c.du_uuid = b.du_uuid
+    FROM best b
+    JOIN champion c ON c.du_uuid = b.du_uuid
+    WHERE b.score >= 0.5
+      AND b.score = (SELECT max(score) FROM best)
     ORDER BY b.score DESC LIMIT 1
 )
 SELECT

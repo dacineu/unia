@@ -11,6 +11,24 @@
 
 BEGIN;
 
+-- Trigram indexes are conditional on pg_trgm, which 001_schema.sql probes.
+-- Everything else in this file uses core features and is always created, so a
+-- host without contrib still gets the GIN full-text path and the whole
+-- dimension index set.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM unia_feature WHERE name = 'pg_trgm' AND available) THEN
+        CREATE INDEX pattern_title_trgm ON pattern USING GIN (title gin_trgm_ops);
+        CREATE INDEX pattern_guidance_trgm ON pattern USING GIN (guidance gin_trgm_ops);
+        CREATE INDEX alias_phrase_trgm ON alias USING GIN (phrase gin_trgm_ops);
+        CREATE INDEX trace_intent_trgm ON trace USING GIN (intent gin_trgm_ops);
+        RAISE NOTICE 'trigram indexes created';
+    ELSE
+        RAISE NOTICE 'pg_trgm absent: skipping 4 trigram indexes';
+    END IF;
+END
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Full-text search over the retrieval surface.
 --
@@ -43,11 +61,7 @@ CREATE INDEX pattern_tsv_idx ON pattern USING GIN (search_tsv);
 -- exactly — "add a rust dependency to Cargo.toml and update the lockfile"
 -- contains no substring of the pattern title — which is why the Bridge's
 -- containment check (docs/SPEC.md divergence D4) falls through to scoring far
--- more often than it should.
-CREATE INDEX pattern_title_trgm ON pattern USING GIN (title gin_trgm_ops);
-CREATE INDEX pattern_guidance_trgm ON pattern USING GIN (guidance gin_trgm_ops);
-
-CREATE INDEX alias_phrase_trgm ON alias USING GIN (phrase gin_trgm_ops);
+-- more often than it should. Conditional on pg_trgm; see the DO block above.
 CREATE INDEX alias_phrase_lower ON alias (lower(phrase));
 CREATE INDEX alias_du_uuid ON alias (du_uuid);
 
@@ -84,9 +98,11 @@ CREATE INDEX state_var_du_uuid ON state_var (du_uuid);
 
 CREATE INDEX trace_ts ON trace (ts DESC);
 CREATE INDEX trace_outcome_ts ON trace (outcome, ts DESC);
-CREATE INDEX trace_intent_trgm ON trace USING GIN (intent gin_trgm_ops);
 CREATE INDEX trace_du_uuid ON trace (du_uuid);
-CREATE INDEX trace_token_totals ON trace (outcome, tokens_in + tokens_out);
+-- An expression index: Postgres does not accept a bare expression in an index
+-- column list, so the total must be wrapped. This is the index the promotion
+-- decision is argued from, so it is covering rather than plain.
+CREATE INDEX trace_token_totals ON trace (outcome, ((tokens_in + tokens_out)));
 
 CREATE INDEX observation_du_uuid_ts ON observation (du_uuid, ts DESC);
 
