@@ -1,8 +1,8 @@
-use askillify::registry::ActuatorRegistry;
-use askillify::orchestrator::{Orchestrator, BehavioralVector};
-use askillify::router::RouterSlm;
-use askillify::slm::MockSlm;
-use askillify::weights::{WeightManager, LoraAdapter};
+use unia::registry::ActuatorRegistry;
+use unia::orchestrator::{Orchestrator, BehavioralVector};
+use unia::router::RouterSlm;
+use unia::slm::MockSlm;
+use unia::weights::{WeightManager, LoraAdapter};
 use uuid::Uuid;
 use serde_json::json;
 use std::fs;

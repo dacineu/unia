@@ -1,4 +1,4 @@
-# askillify - Performance & Easiness Optimization Metrics
+# unia - Performance & Easiness Optimization Metrics
 
 The metrics tracked and optimized for skill execution effectiveness.
 

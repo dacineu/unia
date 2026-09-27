@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use askillify::fluid::{FluidStateProjector, MicroNucleus, SlotType};
-    use askillify::registry::ActuatorRegistry;
-    use askillify::router::RouterSlm;
+    use unia::fluid::{FluidStateProjector, MicroNucleus, SlotType};
+    use unia::registry::ActuatorRegistry;
+    use unia::router::RouterSlm;
     use uuid::Uuid;
     use std::collections::HashMap;
     use std::sync::Arc;

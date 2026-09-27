@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod integration_tests {
-    use askillify::registry::ActuatorRegistry;
-    use askillify::orchestrator::{Orchestrator, BehavioralVector};
-    use askillify::slm::MockSlm;
+    use unia::registry::ActuatorRegistry;
+    use unia::orchestrator::{Orchestrator, BehavioralVector};
+    use unia::slm::MockSlm;
     use serde_json::json;
     use uuid::Uuid;
     use std::fs;

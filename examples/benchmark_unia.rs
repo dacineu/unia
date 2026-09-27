@@ -1,9 +1,9 @@
 use std::time::{Instant, Duration};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use askillify::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
-use askillify::nucleus::{ActuatorNucleus, ValveDriver};
-use askillify::wmis::{WmisEconomicLayer, WmisResource, WmisOperation, SharingScope, ResourceType};
+use unia::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
+use unia::nucleus::{ActuatorNucleus, ValveDriver};
+use unia::wmis::{WmisEconomicLayer, WmisResource, WmisOperation, SharingScope, ResourceType};
 
 fn main() {
     println!("\n🚀 Starting unia vs Coupled-LLM Empirical Benchmark\n");
@@ -52,7 +52,7 @@ fn main() {
         owner: "benchmark_user".to_string(),
         sharing_scope: SharingScope::Global,
         capabilities: vec!["valve_control".to_string()],
-        quality: askillify::wmis::QualityMetrics {
+        quality: unia::wmis::QualityMetrics {
             qor: 0.9,
             qos: 0.99,
             qop: 0.9,

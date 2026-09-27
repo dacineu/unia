@@ -1,21 +1,38 @@
 [package]
-name = "askillify"
+name = "unia"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.75"
+description = "An orchestration system that decouples agent intent from implementation using the .ure universal resource format and a Primitive Bridge."
+license = "MIT"
+license-file = "LICENSE"
+readme = "README.md"
+repository = "https://github.com/dacineu/unia"
+homepage = "https://github.com/dacineu/unia"
+documentation = "https://docs.rs/unia"
+authors = ["unia contributors <dacineu@proton.me>"]
+keywords = ["agent", "orchestration", "agents", "actuator", "wasm", "hardware-abstraction"]
+categories = ["development-tools", "asynchronous", "wasm"]
 
 [dependencies]
 uuid = { version = "1.7", features = ["v4", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9.34"
 sha2 = "0.10"
 aes-gcm = "0.10"
 thiserror = "1.0"
 tempfile = "3.10"
 tokio = { version = "1.53.1", features = ["full"] }
-serde_yaml = "0.9.34"
-# Wasm support
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = ["console", "Window", "Response", "Request", "RequestInit", "RequestMode"] }
-# Formal Verification
+
+[dev-dependencies]
 proptest = "1.11.0"
+
+[lib]
+name = "unia"
+path = "src/lib.rs"

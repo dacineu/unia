@@ -1,5 +1,5 @@
 use serde_json::json;
-use askillify::identifiers::DuUuid;
+use unia::identifiers::DuUuid;
 use std::fs;
 
 fn main() {

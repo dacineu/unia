@@ -1,5 +1,5 @@
 # unia: Cognitive Evolution Log
-## Project: askillify
+## Project: unia
 ## Session: unia Implementation and Fluidity
 
 ### 1. Architectural Core: The Nucleus

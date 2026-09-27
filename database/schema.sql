@@ -1,4 +1,4 @@
-# askillify Database Schema
+# unia Database Schema
 
 Defines the PostgreSQL database structure for skill aggregation and dispatching.
 

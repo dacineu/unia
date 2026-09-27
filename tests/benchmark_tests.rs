@@ -1,6 +1,6 @@
-use askillify::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
-use askillify::nucleus::{ActuatorNucleus, ValveDriver};
-use askillify::wmis::{QualityMetrics, ResourceType, SharingScope, WmisEconomicLayer, WmisResource};
+use unia::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
+use unia::nucleus::{ActuatorNucleus, ValveDriver};
+use unia::wmis::{QualityMetrics, ResourceType, SharingScope, WmisEconomicLayer, WmisResource};
 use std::time::{Instant, Duration};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

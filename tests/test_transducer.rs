@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use askillify::transducer::{SynapticTransducer, TransductionLayer};
+    use unia::transducer::{SynapticTransducer, TransductionLayer};
     use std::fs;
 
     #[test]

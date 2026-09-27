@@ -1,8 +1,8 @@
 use proptest::prelude::*;
 use std::collections::HashMap;
-use askillify::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType, UniversalPrimitive, PrimitivePacket};
-use askillify::nucleus::{ActuatorNucleus, ValveDriver};
-use askillify::wmis::{WmisEconomicLayer, WmisResource, ResourceType, SharingScope};
+use unia::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType, UniversalPrimitive, PrimitivePacket};
+use unia::nucleus::{ActuatorNucleus, ValveDriver};
+use unia::wmis::{WmisEconomicLayer, WmisResource, ResourceType, SharingScope};
 use std::sync::{Arc, Mutex};
 
 /// Formal verification of the unia Pipeline.
@@ -35,17 +35,17 @@ fn verify_constraint_safety() {
     
     // Simulate a unia packet
     let packet = PrimitivePacket {
-        header: askillify::bridge::primitive::PacketHeader {
+        header: unia::bridge::primitive::PacketHeader {
             timestamp: 1694430000,
             request_id: "test".to_string(),
-            priority: askillify::bridge::primitive::Priority::High,
+            priority: unia::bridge::primitive::Priority::High,
         },
-        payload: askillify::bridge::primitive::PacketPayload {
+        payload: unia::bridge::primitive::PacketPayload {
             primitive: UniversalPrimitive::Reset,
             resource_id: "valve-001".to_string(),
             arguments: HashMap::new(),
         },
-        context: askillify::bridge::primitive::PacketContext {
+        context: unia::bridge::primitive::PacketContext {
             expected_state: Some("flow_rate = 0.0".to_string()),
             timeout_ms: 100,
         },
@@ -57,7 +57,7 @@ fn verify_constraint_safety() {
         owner: "tester".to_string(),
         sharing_scope: SharingScope::Global,
         capabilities: vec![],
-        quality: askillify::wmis::QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
+        quality: unia::wmis::QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
         metadata: serde_json::json!({}),
     };
 

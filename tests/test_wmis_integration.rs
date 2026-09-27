@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod tests {
     /*
-    use askillify::wmis::{WmisAdapter, WmisDiscoveryProvider, DiscoveryQuery, SharingScope, WmisEconomicLayer, WmisPermissionEngine, WmisOperation};
+    use unia::wmis::{WmisAdapter, WmisDiscoveryProvider, DiscoveryQuery, SharingScope, WmisEconomicLayer, WmisPermissionEngine, WmisOperation};
     use serde_json::json;
     use uuid::Uuid;
 
     #[test]
     fn test_wmis_global_lifecycle() {
         // 1. Setup
-        let mut registry = askillify::registry::ActuatorRegistry::new("simulated");
+        let mut registry = unia::registry::ActuatorRegistry::new("simulated");
         let discovery = WmisDiscoveryProvider::new();
         let mut economy = WmisEconomicLayer::new();
         let mut permissions = WmisPermissionEngine::new();
@@ -37,7 +37,7 @@ mod tests {
 
         // 4. Permission & Economy
         let res_id = Uuid::new_v4();
-        permissions.grant_permission(askillify::wmis::economy::ObjectivePermission {
+        permissions.grant_permission(unia::wmis::economy::ObjectivePermission {
             principal: "client_user".to_string(),
             resource_id: res_id,
             operations: vec![WmisOperation::Execute],

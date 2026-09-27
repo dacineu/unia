@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use askillify::bridge::IntelligenceBridge;
-    use askillify::registry::ActuatorRegistry;
-    use askillify::router::RouterSlm;
-    use askillify::transducer::{SynapticTransducer, TransductionLayer};
+    use unia::bridge::IntelligenceBridge;
+    use unia::registry::ActuatorRegistry;
+    use unia::router::RouterSlm;
+    use unia::transducer::{SynapticTransducer, TransductionLayer};
     use std::fs;
 
     #[test]

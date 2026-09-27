@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use askillify::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
-use askillify::nucleus::{ActuatorNucleus, ValveDriver, FileSystemDriver, TempSensorDriver};
-use askillify::wmis::{WmisEconomicLayer, WmisResource, ResourceType, SharingScope};
-use askillify::orchestrator::MetaOrchestrator;
-use askillify::wmis::WmisDiscoveryProvider;
+use unia::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
+use unia::nucleus::{ActuatorNucleus, ValveDriver, FileSystemDriver, TempSensorDriver};
+use unia::wmis::{WmisEconomicLayer, WmisResource, ResourceType, SharingScope};
+use unia::orchestrator::MetaOrchestrator;
+use unia::wmis::WmisDiscoveryProvider;
 
 fn main() {
     println!("\n🌟 Welcome to the unia Universal Demo: Autonomous Infrastructure Flow\n");
@@ -85,7 +85,7 @@ fn main() {
     let user = "operator_01";
 
     // We spawn one agent to handle everything
-    let agent_id = orchestrator.spawn_agent("Infrastructure Manager", "Full-Stack Actuation", askillify::meta_actuators::MetaActuatorType::Synthesizer);
+    let agent_id = orchestrator.spawn_agent("Infrastructure Manager", "Full-Stack Actuation", unia::meta_actuators::MetaActuatorType::Synthesizer);
 
     let tasks = vec![
         ("valve-001", "Emergency shutdown the main water valve"),
@@ -106,7 +106,7 @@ fn main() {
             owner: user.to_string(),
             sharing_scope: SharingScope::Global,
             capabilities: vec![],
-            quality: askillify::wmis::QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
+            quality: unia::wmis::QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
             metadata: serde_json::json!({}),
         };
 

@@ -1,6 +1,6 @@
 # Brainstorming Session: Predictive Resource Orchestration & Actuators
 Date: 2026-09-12
-Project: askillify
+Project: unia
 
 ## Context
 The user requested a design for a new identifier that respects UUID format but derives its randomness from compressing the .ure manifest (Deterministic URE-UUID). This evolved into a broader architectural discussion about turning .ure files into a Small Language Model (SLM) "vocabulary" for a predictive orchestration mesh.

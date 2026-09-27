@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use askillify::orchestrator::MetaOrchestrator;
-    use askillify::meta_actuators::MetaActuatorType;
+    use unia::orchestrator::MetaOrchestrator;
+    use unia::meta_actuators::MetaActuatorType;
 
     /*
     #[test]

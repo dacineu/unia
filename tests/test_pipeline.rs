@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use askillify::pipeline::EvolutionaryPipeline;
-    use askillify::registry::ActuatorRegistry;
-    use askillify::router::RouterSlm;
-    use askillify::transducer::{SynapticTransducer, TransductionLayer};
-    use askillify::learner::{Learner, TrainingBackend};
-    use askillify::harvester::ExplorerHarvester;
+    use unia::pipeline::EvolutionaryPipeline;
+    use unia::registry::ActuatorRegistry;
+    use unia::router::RouterSlm;
+    use unia::transducer::{SynapticTransducer, TransductionLayer};
+    use unia::learner::{Learner, TrainingBackend};
+    use unia::harvester::ExplorerHarvester;
     use std::sync::Arc;
 
     #[tokio::test]

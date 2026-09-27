@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use askillify::wmis::WmisAdapter;
+    use unia::wmis::WmisAdapter;
     use serde_json::json;
 
     #[test]

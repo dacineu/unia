@@ -105,7 +105,7 @@ impl MetaOrchestrator {
             interaction_protocol: "Strict JSON-RPC / .ure manifest".to_string(),
         };
 
-        let worktree_path = format!("/tmp/askillify/worktrees/{}", id);
+        let worktree_path = format!("/tmp/unia/worktrees/{}", id);
         if let Err(e) = self.profiler.generate_identity_files(&worktree_path, &profile) {
             eprintln!("Failed to inject identity: {}", e);
         }

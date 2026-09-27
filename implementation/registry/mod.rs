@@ -77,7 +77,7 @@ mod tests {
         let mut file = File::create(&file_path).unwrap();
         file.write_all(serde_json::to_string(&manifest).unwrap().as_bytes()).unwrap();
 
-        let registry = ActuatorRegistry::new("postgres://localhost/askillify");
+        let registry = ActuatorRegistry::new("postgres://localhost/unia");
         let id = registry.register_ure_file(&file_path, None).unwrap();
 
         assert!(!id.is_nil());

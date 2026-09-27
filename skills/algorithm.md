@@ -1,4 +1,4 @@
-# askillify - Skill Matching Algorithm
+# unia - Skill Matching Algorithm
 
 The core algorithm that matches project tasks to the optimal skills from the registry.
 

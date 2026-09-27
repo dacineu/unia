@@ -1,15 +1,15 @@
-# askillify - Implementation Approach
+# unia - Implementation Approach
 
 ## Phase 1: Foundation (Weeks 1-2)
 
 ### 1.1 Set Up Project Structure
-- [x] Create directory structure at `/home/dacineu/dev/dev-skills/askillify/`
+- [x] Create directory structure at `the repository root`
 - [ ] Initialize Git repository
 - [ ] Set up PostgreSQL database
 - [ ] Apply schema.sql to create tables
 
 ### 1.2 Import Existing Skills
-- [ ] Migrate 33 skills from `/home/dacineu/dev/dev-rust/zeroclaw/.claude/skills/`
+- [ ] Migrate 33 skills from `the source `.claude/skills` directory`
 - [ ] Parse each skill's SKILL.md to extract:
   - Name, description, categories, tags
   - Capabilities and requirements
@@ -23,10 +23,10 @@
 - [ ] Create fallback mechanism if external sources unavailable
 
 ### 1.4 Basic CLI Setup
-- [ ] Create `askillify CLI entry point
-- [ ] Implement `askillify list` - show available skills
-- [ ] Implement `askillify search [query]` - search skills
-- [ ] Implement `askillify dispatch --task "description"` - main feature
+- [ ] Create `unia CLI entry point
+- [ ] Implement `unia list` - show available skills
+- [ ] Implement `unia search [query]` - search skills
+- [ ] Implement `unia dispatch --task "description"` - main feature
 
 ## Phase 2: Core Engine (Weeks 3-4)
 

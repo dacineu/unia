@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use askillify::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
-use askillify::nucleus::{ActuatorNucleus, FileSystemDriver};
-use askillify::wmis::{WmisEconomicLayer, WmisResource, ResourceType, SharingScope};
+use unia::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
+use unia::nucleus::{ActuatorNucleus, FileSystemDriver};
+use unia::wmis::{WmisEconomicLayer, WmisResource, ResourceType, SharingScope};
 
 fn main() {
     println!("\n🧪 Verifying unia Pipeline: Intent -> Bridge -> Nucleus (FileSystem)\n");
@@ -47,7 +47,7 @@ fn main() {
         owner: "test_user".to_string(),
         sharing_scope: SharingScope::Global,
         capabilities: vec!["fs_access".to_string()],
-        quality: askillify::wmis::QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
+        quality: unia::wmis::QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
         metadata: serde_json::json!({}),
     };
 

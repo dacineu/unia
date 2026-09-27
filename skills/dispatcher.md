@@ -1,4 +1,4 @@
-# askillify - Skill Dispatcher Mechanism
+# unia - Skill Dispatcher Mechanism
 
 The system that takes matched skills and executes them in optimal order for project tasks.
 

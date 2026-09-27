@@ -2,7 +2,7 @@
 
 ## Overview
 
-Detailed phased implementation plan for the amater agent manager/administrator system, based on the approved design document at `/home/dacineu/dev/dev-skills/askillify/amater-agent-manager-design.md`.
+Detailed phased implementation plan for the amater agent manager/administrator system, based on the approved design document at `./amater-agent-manager-design.md`.
 
 ## Phase 1: Database Foundation (Weeks 1-2)
 
