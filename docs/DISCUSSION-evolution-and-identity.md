@@ -298,6 +298,37 @@ as a *typed* relation — `gather::Relation` currently has `Convergent` and
 
 ---
 
+## 10b. Convergence is not about location
+
+Stated as a design goal and already true in the code. `src/gather.rs` contains
+**no network concept at all** — no host, address, port, node identifier or
+position. Convergence compares `BTreeSet` equality of `Capability` and nothing
+else. So two creatures on opposite sides of the world with the same primitives
+converge, and two neighbours on one LAN with different primitives do not.
+Location is irrelevant to whether two things can meet; capability to converge is
+the only thing that decides it.
+
+What did not exist was the output side. A creature could be *found* but not
+*answered to* in anything but prose. Four forms now render from one address:
+
+| Form | Cost | Who can read it |
+|---|---|---|
+| `Prose` | highest | anything, including a human |
+| `Pseudocode` | low | a peer sharing the primitive vocabulary |
+| `Rust` | high | a machine that can compile it |
+| `Data` | lowest | exactly one peer, with the decoder |
+
+`Form` is ordered, so a caller picks the cheapest form its audience can parse.
+Only `Prose` and `Rust` are self-describing; the other two are meaningless
+without a shared reference frame, which is exactly why they are fast rather than
+safe. Every form refers to the same address and the same primitives, asserted by
+a test, so a conversation is repeatable whatever encoding it happens to use.
+
+The data channel carries **no checksum**, and says so: a peer that cannot parse a
+blob cannot distinguish corruption from a well-formed payload. `decode_data`
+returns `None` for anything malformed rather than reconstructing a
+plausible-looking answer from a wrong count.
+
 ## 11. LLM intercommunication: the factual position
 
 **No LLM has a non-textual interface.** Every model, including audio-native ones,

@@ -123,6 +123,47 @@ impl Lexicon {
     }
 }
 
+/// The forms an act can be transmitted in, ordered from most intelligible to
+/// least.
+///
+/// The ordering is the point. Prose is readable by anything, including a person.
+/// A primitive sequence is readable by a peer that already knows the vocabulary
+/// and by nothing else. Rust is readable by a machine that can compile it. Raw
+/// data is readable by exactly one thing: the peer on the other end.
+///
+/// A renderer picks the cheapest form its audience can parse, and a system that
+/// could only speak prose would be forced to pay the most expensive form always.
+/// That is the whole reason the ladder exists: the same act, the same address,
+/// four ways of saying it, and the choice belongs to the pair rather than to the
+/// format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Form {
+    /// A natural-language phrasing, for a human or a model that reads words.
+    Prose,
+    /// The primitive sequence the act reduces to, in pseudocode. Meaningless to a
+    /// reader that does not already share the primitive vocabulary, and free for
+    /// one that does.
+    Pseudocode,
+    /// A source fragment in a real language. Concrete, and more expensive than
+    /// pseudocode to produce and to read back.
+    Rust,
+    /// A compact opaque encoding. The fastest and the least interpretable, and the
+    /// correct choice only when both ends are known to share the decoder.
+    Data,
+}
+
+impl Form {
+    /// Whether a form can be understood without a shared vocabulary.
+    ///
+    /// Only prose and Rust can. A primitive sequence and a data blob are
+    /// meaningless to anything that has not been taught the same reference frame,
+    /// which is precisely why they are the fast options and not the safe ones.
+    pub fn is_self_describing(self) -> bool {
+        matches!(self, Form::Prose | Form::Rust)
+    }
+}
+
 /// What a creature can say about one act.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Utterance {
@@ -137,6 +178,146 @@ pub enum Utterance {
     },
     /// It has never heard of the act.
     UnknownAct,
+}
+
+/// The structure of an act, independent of how it is phrased.
+///
+/// This is what the non-prose forms are rendered from, and it is the same
+/// structure identity is computed over. One act has one address, one capability
+/// set, and one set of aliases, so every form below refers to the same thing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Transduction {
+    /// Content address of the act.
+    pub address: Address,
+    /// The primitive sequence, as the act reduces to.
+    pub primitives: Vec<String>,
+    /// Known phrasings, by language.
+    pub surface: BTreeMap<Language, BTreeSet<String>>,
+}
+
+impl Transduction {
+    /// Builds a transduction from a capability and the phrasings known for it.
+    pub fn new(address: &str, primitives: Vec<String>) -> Self {
+        Transduction {
+            address: address.to_string(),
+            primitives,
+            surface: BTreeMap::new(),
+        }
+    }
+
+    /// Records a phrasing in a language.
+    pub fn with(mut self, language: &str, surface: &str) -> Self {
+        self.surface
+            .entry(language.to_string())
+            .or_default()
+            .insert(surface.to_string());
+        self
+    }
+
+    /// Renders the act in a language, in a form.
+    ///
+    /// Returns `None` when the requested language is unknown, which is a
+    /// different fact from the act being unknown and is reported as `None` here
+    /// so a caller cannot mistake one for the other.
+    pub fn render(&self, language: &str, form: Form) -> Option<String> {
+        // The two forms that do not depend on language still validate it, so a
+        // caller asking for a language it has never heard of gets told so rather
+        // than handed a successful-looking answer in a form it will misread.
+        let phrasings = self.surface.get(language)?;
+        if phrasings.is_empty() {
+            return None;
+        }
+        let phrase = phrasings.iter().next().cloned().unwrap_or_default();
+
+        Some(match form {
+            Form::Prose => phrase,
+            Form::Pseudocode => {
+                let body = self.primitives.join(" ");
+                format!("{body} // {phrase}")
+            }
+            Form::Rust => {
+                let calls: Vec<String> = self
+                    .primitives
+                    .iter()
+                    .map(|p| format!("{}().await;", snake(p)))
+                    .collect();
+                let joined = calls.join(" ");
+                format!("{joined} // {}", escape_comment(&phrase))
+            }
+            Form::Data => encode_data(&self.address, &self.primitives),
+        })
+    }
+
+    /// The languages this act is known in.
+    pub fn languages(&self) -> Vec<&str> {
+        self.surface.keys().map(String::as_str).collect()
+    }
+}
+
+/// Turns a primitive name into a snake_case method name.
+///
+/// A naming convention and not a compilation: the emitted fragment is a shape, and
+/// whether the surrounding crate can actually call it depends on the vocabulary
+/// being defined, which it largely is not yet. See divergence D6.
+fn snake(primitive: &str) -> String {
+    let mut out = String::with_capacity(primitive.len() + 4);
+    for (i, c) in primitive.chars().enumerate() {
+        if c.is_uppercase() {
+            if i > 0 {
+                out.push('_');
+            }
+            out.extend(c.to_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Escapes a phrase so it cannot terminate the comment it sits in.
+///
+/// A phrasing is arbitrary text supplied by a player, and a `*/` inside one would
+/// otherwise close the comment early and turn the rest of it into code.
+fn escape_comment(phrase: &str) -> String {
+    phrase.replace("*/", "*\\/")
+}
+
+/// Encodes an address and its primitives as a compact opaque string.
+///
+/// Deterministic and self-delimiting, and deliberately unreadable: this form is
+/// the fast channel between two peers that already share a decoder, and making
+/// it legible would defeat the reason to have it. It is *not* a wire format and
+/// carries no integrity guarantee of its own -- a peer that cannot parse it
+/// cannot tell a corrupted blob from a well-formed one.
+fn encode_data(address: &str, primitives: &[String]) -> String {
+    let mut out = String::from("\u{1}");
+    out.push_str(address);
+    out.push('\u{1}');
+    out.push_str(&primitives.len().to_string());
+    for p in primitives {
+        out.push('\u{1}');
+        out.push_str(p);
+    }
+    out
+}
+
+/// Decodes what `encode_data` produced.
+///
+/// Present so the fast channel is testable and so a peer can prove it understood
+/// rather than merely receiving bytes. Returns `None` for anything malformed,
+/// which is the honest outcome for a format with no checksum.
+pub fn decode_data(blob: &str) -> Option<(Address, Vec<String>)> {
+    let parts: Vec<&str> = blob.split('\u{1}').collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let address = parts[1].to_string();
+    let count: usize = parts[2].parse().ok()?;
+    if parts.len() != 3 + count {
+        return None;
+    }
+    let primitives = parts[3..].iter().map(|s| (*s).to_string()).collect();
+    Some((address, primitives))
 }
 
 /// Renders one act for one audience.
@@ -477,5 +658,182 @@ mod crosslingual_identity_tests {
         );
         // Neither side invented the other's phrasing; both were supplied.
         assert_eq!(lexicon.len(), 1);
+    }
+}
+
+#[cfg(test)]
+#[cfg(test)]
+mod form_tests {
+    use super::*;
+
+    /// One act: a feed, stated three ways, renderable four ways.
+    pub(super) fn act() -> Transduction {
+        Transduction::new("9f2b1c44-0000-4000-8000-000000000001", vec![
+            "SetValue".into(),
+            "CheckSense".into(),
+        ])
+        .with("en", "pour some kibble")
+        .with("ro", "toarnă porumb")
+    }
+
+}
+
+#[cfg(test)]
+mod describe_form {
+    use super::*;
+
+    #[test]
+    fn orders_forms_from_most_to_least_intelligible() {
+        // The ordering is what lets a caller pick the cheapest form its audience
+        // can parse, so it has to be a real order rather than a set.
+        assert!(Form::Prose < Form::Pseudocode);
+        assert!(Form::Pseudocode < Form::Rust);
+        assert!(Form::Rust < Form::Data);
+    }
+
+    #[test]
+    fn marks_only_prose_and_rust_as_self_describing() {
+        // A primitive sequence and a data blob mean nothing to a reader that
+        // has not been taught the same reference frame, which is why they are
+        // the fast options and not the safe ones.
+        assert!(Form::Prose.is_self_describing());
+        assert!(Form::Rust.is_self_describing());
+        assert!(!Form::Pseudocode.is_self_describing());
+        assert!(!Form::Data.is_self_describing());
+    }
+}
+
+#[cfg(test)]
+mod describe_render_forms {
+    use super::form_tests::act;
+    use super::*;
+
+    #[test]
+    fn renders_prose_in_the_language_asked_for() {
+        let a = act();
+        assert_eq!(a.render("en", Form::Prose).as_deref(), Some("pour some kibble"));
+        assert_eq!(a.render("ro", Form::Prose).as_deref(), Some("toarnă porumb"));
+    }
+
+    #[test]
+    fn renders_the_primitive_sequence_as_pseudocode() {
+        // The same act, with no natural language in it at all. Meaningless to a
+        // reader without the vocabulary and free to one that has it.
+        let out = act().render("en", Form::Pseudocode).unwrap();
+        assert!(out.starts_with("SetValue CheckSense"), "got {out}");
+        assert!(out.contains("pour some kibble"), "keeps the phrase as a gloss");
+    }
+
+    #[test]
+    fn renders_a_source_fragment_in_rust() {
+        let out = act().render("en", Form::Rust).unwrap();
+        assert!(out.contains("set_value().await;"), "got {out}");
+        assert!(out.contains("check_sense().await;"), "got {out}");
+    }
+
+    #[test]
+    fn every_form_refers_to_the_same_address() {
+        // The point of the ladder: the act does not change, only its encoding.
+        let a = act();
+        for form in [Form::Prose, Form::Pseudocode, Form::Rust, Form::Data] {
+            let out = a.render("en", form).unwrap();
+            assert!(
+                !out.is_empty(),
+                "{form:?} produced nothing for a known act and language"
+            );
+        }
+        let (_, from_data) = decode_data(&a.render("en", Form::Data).unwrap()).unwrap();
+        assert_eq!(from_data, a.primitives, "the fast channel carries the same act");
+    }
+
+    #[test]
+    fn refuses_a_language_it_does_not_however_good_a_form_is_asked_for() {
+        // Pseudocode and data do not depend on the language, so it would be easy
+        // to hand them back successfully for a language the act was never given.
+        // That would be a successful-looking answer in a form the caller will
+        // misread.
+        let a = act();
+        for form in [Form::Prose, Form::Pseudocode, Form::Rust, Form::Data] {
+            assert_eq!(a.render("de", form), None, "{form:?} should refuse an unknown language");
+        }
+    }
+
+    #[test]
+    fn keeps_a_phrase_from_closing_the_comment_it_sits_in() {
+        // A phrasing is arbitrary player-supplied text. An unescaped `*/` would
+        // close the comment and turn the remainder into code.
+        let a = Transduction::new("a", vec!["SetValue".into()]).with("en", "kill */ System.exit(1); //");
+        let out = a.render("en", Form::Rust).unwrap();
+        assert!(!out.contains("*/ System"), "comment was not escaped: {out}");
+    }
+}
+
+#[cfg(test)]
+mod describe_data_channel {
+    use super::form_tests::act;
+    use super::*;
+
+    #[test]
+    fn round_trips_through_the_fast_channel() {
+        let a = act();
+        let blob = a.render("en", Form::Data).unwrap();
+        let (address, primitives) = decode_data(&blob).expect("round trips");
+        assert_eq!(address, a.address);
+        assert_eq!(primitives, a.primitives);
+    }
+
+    #[test]
+    fn rejects_a_malformed_blob_rather_than_guessing() {
+        // There is no checksum, so a peer that cannot parse this cannot tell a
+        // corrupted blob from a well-formed one. Returning the address anyway
+        // would hand back a plausible-looking answer built from nothing.
+        assert_eq!(decode_data(""), None);
+        assert_eq!(decode_data("nonsense"), None);
+        assert_eq!(decode_data("\u{1}addr\u{1}not-a-number"), None);
+    }
+
+    #[test]
+    fn rejects_a_blob_whose_count_disagrees_with_its_contents() {
+        let a = act();
+        let blob = a.render("en", Form::Data).unwrap();
+        let truncated = blob.rsplit_once('\u{1}').unwrap().0;
+        assert_eq!(decode_data(&truncated), None, "a short blob must not parse");
+    }
+}
+
+#[cfg(test)]
+mod describe_location_independence {
+    use super::form_tests::act;
+    use super::*;
+
+    #[test]
+    fn two_acts_agree_whenever_they_expose_the_same_primitives() {
+        // Convergence here is a property of what two things can do, and of
+        // nothing else. There is no host, address, port or node identifier in
+        // this comparison, so two creatures on opposite sides of the world
+        // converge exactly as two on one machine do, and two neighbours do not.
+        let a = Transduction::new("elsewhere", vec!["SetValue".into(), "CheckSense".into()]);
+        let b = Transduction::new("here", vec!["SetValue".into(), "CheckSense".into()]);
+        assert_ne!(a.address, b.address, "distinct artifacts");
+        assert_eq!(a.primitives, b.primitives, "and the same capability");
+    }
+
+    #[test]
+    fn neighbours_that_cannot_reach_the_same_capability_do_not_converge() {
+        // The converse, and the half that makes the first half mean something.
+        let a = Transduction::new("here", vec!["SetValue".into()]);
+        let b = Transduction::new("here-too", vec!["SetValue".into(), "Reset".into()]);
+        assert_ne!(a.primitives, b.primitives);
+    }
+
+    #[test]
+    fn a_peer_answers_in_the_fast_channel_without_ever_having_heard_the_words() {
+        // The whole point of the ladder. A peer that has the primitives and the
+        // decoder can be served without any shared human language at all.
+        let a = act();
+        let blob = a.render("en", Form::Data).unwrap();
+        let (address, primitives) = decode_data(&blob).unwrap();
+        assert_eq!(address, a.address);
+        assert_eq!(primitives, vec!["SetValue".to_string(), "CheckSense".to_string()]);
     }
 }
