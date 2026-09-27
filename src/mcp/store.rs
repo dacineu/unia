@@ -554,6 +554,17 @@ impl Store {
         self.malformed_traces
     }
 
+    /// Every trace loaded from the log, in the order they were recorded.
+    ///
+    /// Exposed so a caller can hand the log to `crate::induce`. Nothing in the
+    /// crate did this before: traces were written by `record` and read by
+    /// `readiness`, but the induction entry point takes a slice and no caller
+    /// could supply one, so a populated trace log could not reach the module
+    /// that exists to learn from it.
+    pub fn traces(&self) -> &[Trace] {
+        &self.traces
+    }
+
     pub fn readiness(&self, id: &str) -> Option<f64> {
         let observations: Vec<&Trace> = self
             .traces

@@ -34,6 +34,11 @@ pub mod induce;
 /// field, never by deleting them.
 pub mod gc;
 
+/// ca™maduci: a digital pet whose care is recorded as traces. Pure logic, with
+/// no clock and no I/O, so a terminal example, a browser client, and the tests
+/// all agree on how time passes. See `docs/camaduci.md`.
+pub mod camaduci;
+
 /// Gathering: continuous multidimensional interpenetration between knowledge
 /// spheres, converging on common denominators. Ancestry is a relation on
 /// content addresses, not a hash chain, so independent derivation of the same

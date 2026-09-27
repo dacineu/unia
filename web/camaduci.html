@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ca&trade;maduci</title>
+    <style>
+      :root {
+        --bg: #12100e;
+        --panel: #1b1815;
+        --line: #2e2924;
+        --ink: #e8e2d8;
+        --muted: #9a9086;
+        --accent: #c8a06a;
+        --good: #7fa66a;
+        --warn: #c8a06a;
+        --bad: #b4675e;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--ink);
+        font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 24px 16px 48px;
+      }
+      header { width: 100%; max-width: 560px; margin-bottom: 20px; }
+      h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.02em; }
+      .sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+      .stage { width: 100%; max-width: 560px; }
+      canvas {
+        width: 100%;
+        aspect-ratio: 1;
+        display: block;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .meters { width: 100%; max-width: 560px; margin-top: 16px; display: grid; gap: 10px; }
+      .meter { display: grid; grid-template-columns: 84px 1fr 46px; align-items: center; gap: 10px; }
+      .meter label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+      .track { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+      .fill { height: 100%; width: 0; border-radius: 3px; transition: width 260ms ease; }
+      .val { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+      .actions { width: 100%; max-width: 560px; margin-top: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+      button {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--ink);
+        border-radius: 8px;
+        padding: 12px 8px;
+        font: inherit;
+        font-size: 14px;
+        cursor: pointer;
+        transition: border-color 140ms ease, background 140ms ease;
+      }
+      button:hover:not(:disabled) { border-color: var(--accent); }
+      button:active:not(:disabled) { background: #241f1a; }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
+      .status { width: 100%; max-width: 560px; margin-top: 16px; font-size: 13px; color: var(--muted); }
+      .status b { color: var(--ink); font-weight: 500; }
+      .dead { border-color: var(--bad); }
+      .note { width: 100%; max-width: 560px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+      .note code { color: var(--ink); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>ca&trade;maduci</h1>
+      <p class="sub">Every action you take is recorded as a trace. Doing nothing records nothing.</p>
+    </header>
+
+    <div class="stage"><canvas id="c" width="560" height="560"></canvas></div>
+
+    <div class="meters">
+      <div class="meter">
+        <label>Fed</label>
+        <div class="track"><div class="fill" id="fed"></div></div>
+        <span class="val" id="fedv">—</span>
+      </div>
+      <div class="meter">
+        <label>Happy</label>
+        <div class="track"><div class="fill" id="happy"></div></div>
+        <span class="val" id="happyv">—</span>
+      </div>
+      <div class="meter">
+        <label>Health</label>
+        <div class="track"><div class="fill" id="health"></div></div>
+        <span class="val" id="healthv">—</span>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button data-care="feed">Feed</button>
+      <button data-care="play">Play</button>
+      <button data-care="clean">Clean</button>
+      <button data-care="sleep">Sleep</button>
+    </div>
+
+    <p class="status" id="status">connecting…</p>
+
+    <p class="note">
+      Traces land in <code>traces.jsonl</code> beside the corpus and are what
+      <code>unia::induce</code> reads. Age advances only on a completed sleep cycle, so
+      a pet that is never put to sleep stays an egg. When it dies it is quarantined,
+      not deleted.
+    </p>
+
+    <script>
+      // Fixed-point time so the drawing is reproducible between reloads. The
+      // server owns the clock; this only decides what the canvas looks like.
+      let phase = 0;
+      let last = null;
+      let dead = false;
+
+      const c = document.getElementById("c");
+      const ctx = c.getContext("2d");
+      const S = 560, mid = S / 2;
+
+      function set(id, v) {
+        document.getElementById(id + "v").textContent = v;
+        const el = document.getElementById(id);
+        el.style.width = Math.round(v * 100) + "%";
+        el.style.background = v > 0.6 ? "var(--good)" : v > 0.3 ? "var(--warn)" : "var(--bad)";
+      }
+
+      function bar(x, y, w, h, v, colour) {
+        ctx.fillStyle = "#2e2924";
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = colour;
+        ctx.fillRect(x, y, w * Math.max(0, Math.min(1, v)), h);
+      }
+
+      // The creature. Its spikes are the primitives it has actually been asked
+      // to run, so a well-tended pet is visibly more articulated than a neglected
+      // one; the count comes from the server, not from a local guess.
+      function draw(st) {
+        ctx.clearRect(0, 0, S, S);
+        ctx.save();
+        ctx.translate(mid, mid);
+
+        const life = st.health;
+        const glow = 0.10 + 0.06 * Math.sin(phase);
+        const r = 96 + 10 * Math.sin(phase * 0.7) * (0.3 + life);
+
+        // Aura, dimmer the closer to death.
+        const g = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, r * 1.9);
+        const tint = life > 0.5 ? "200,160,106" : "180,103,94";
+        g.addColorStop(0, "rgba(" + tint + "," + (glow * life).toFixed(3) + ")");
+        g.addColorStop(1, "rgba(" + tint + ",0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 1.9, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Body.
+        ctx.fillStyle = life > 0.5 ? "#cfc4b4" : "#6d5a52";
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Spikes: one per distinct primitive the pet has been asked to run.
+        const spikes = Math.max(3, (st.primitives || 3));
+        for (let i = 0; i < spikes; i++) {
+          const a = (i / spikes) * Math.PI * 2 + phase * 0.15;
+          const len = r * (0.22 + 0.16 * st.happiness);
+          ctx.strokeStyle = "rgba(200,160,106," + (0.35 + 0.5 * life).toFixed(3) + ")";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a) * r * 0.9, Math.sin(a) * r * 0.9);
+          ctx.lineTo(Math.cos(a) * (r + len), Math.sin(a) * (r + len));
+          ctx.stroke();
+        }
+
+        // Face. Closed when asleep, open when starving, flat when gone.
+        const eyeY = -r * 0.12;
+        const eye = dead ? 0 : 1;
+        ctx.strokeStyle = "#2a2520";
+        ctx.fillStyle = "#2a2520";
+        ctx.lineWidth = 4;
+        for (const sx of [-1, 1]) {
+          const ex = sx * r * 0.28;
+          if (dead) {
+            ctx.beginPath();
+            ctx.moveTo(ex - 9, eyeY - 9); ctx.lineTo(ex + 9, eyeY + 9);
+            ctx.moveTo(ex + 9, eyeY - 9); ctx.lineTo(ex - 9, eyeY + 9);
+            ctx.stroke();
+          } else {
+            ctx.beginPath();
+            ctx.arc(ex, eyeY, 8 * eye + 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        if (dead) {
+          ctx.moveTo(-14, r * 0.28); ctx.lineTo(14, r * 0.28);
+        } else {
+          ctx.arc(0, r * 0.14, 16, 0.15 * Math.PI, 0.85 * Math.PI);
+        }
+        ctx.stroke();
+
+        ctx.restore();
+
+        // Stage ring: one notch per cumulative sleep-cycle threshold reached.
+        const need = [1, 3, 5];
+        for (let i = 0; i < need.length; i++) {
+          const a = -Math.PI / 2 + (i - 1) * 0.34;
+          const rr = S - 46;
+          const on = st.age_ticks >= need[i];
+          ctx.beginPath();
+          ctx.arc(mid + Math.cos(a) * rr, mid + Math.sin(a) * rr, 6, 0, Math.PI * 2);
+          ctx.fillStyle = on ? "#c8a06a" : "#2e2924";
+          ctx.fill();
+        }
+
+        ctx.fillStyle = "#9a9086";
+        ctx.font = "13px ui-sans-serif, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(st.stage + "  ·  " + st.mood, mid, S - 16);
+      }
+
+      function apply(st) {
+        dead = st.quarantined;
+        last = st;
+        set("fed", 1 - st.hunger);
+        set("happy", st.happiness);
+        set("health", st.health);
+        c.className = dead ? "dead" : "";
+        document.querySelectorAll("button").forEach((b) => (b.disabled = dead));
+        document.getElementById("status").innerHTML = dead
+          ? "The pet is <b>gone</b>. It was quarantined, not deleted — its traces are still on disk. Restart the server to begin again."
+          : "Stage <b>" + st.stage + "</b> · " + st.age_ticks +
+            " sleep cycles · care recorded: <b>" + st.summary + "</b>";
+        draw(st);
+      }
+
+      async function refresh() {
+        try {
+          const r = await fetch("/api/pet", { cache: "no-store" });
+          if (!r.ok) throw new Error(r.status);
+          apply(await r.json());
+        } catch (e) {
+          document.getElementById("status").textContent =
+            "Cannot reach the ca™maduci server. Is `cargo run --bin unia-camaduci` running?";
+        }
+      }
+
+      // The evidence gate counts distinct phrasings, not clicks, so the wording
+      // a player uses is part of the training signal and is worth collecting. A
+      // prompt is unobtrusive: it appears only when the player is willing to say
+      // something, and an empty answer is simply not recorded.
+      function askHow(care) {
+        const w = window.prompt(
+          "How would you say that? (recorded as the phrasing for \"" + care + "\")"
+        );
+        return w && w.trim() ? w.trim() : null;
+      }
+
+      document.querySelectorAll("button").forEach((b) => {
+        b.addEventListener("click", async () => {
+          b.disabled = true;
+          const intent = askHow(b.dataset.care);
+          try {
+            const r = await fetch("/api/care", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(
+                intent ? { care: b.dataset.care, intent } : { care: b.dataset.care }
+              ),
+            });
+            const st = await r.json();
+            if (st.error && st.state) apply(st.state);
+            else apply(st);
+          } catch (e) {
+            document.getElementById("status").textContent = "Lost the server: " + e;
+          }
+        });
+      });
+
+      function loop(ts) {
+        // Normalised so the animation looks the same on any refresh rate, and
+        // decoupled from the poll: the last known state is redrawn continuously
+        // while fresh state arrives every two seconds.
+        phase = (ts || 0) / 1000;
+        if (last) draw(last);
+        requestAnimationFrame(loop);
+      }
+
+      refresh().then(() => {
+        const poll = setInterval(refresh, 2000);
+        window.addEventListener("beforeunload", () => clearInterval(poll));
+      });
+      requestAnimationFrame(loop);
+    </script>
+  </body>
+</html>
