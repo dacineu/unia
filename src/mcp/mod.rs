@@ -1,8 +1,16 @@
-use std::process::{Command, Child};
-use std::collections::HashMap;
 use uuid::Uuid;
 use serde_json::{json, Value};
+use std::process::{Child, Command};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+pub mod store;
+
+#[cfg(feature = "mcp-server")]
+pub mod server;
+
+#[cfg(feature = "mcp-server")]
+pub use server::UniaServer;
 
 #[derive(Debug, Clone)]
 pub struct McpConfig {
@@ -58,20 +66,27 @@ impl McpResourceManager {
         if let Some(mut session) = sessions.remove(id) {
             let _ = session.process.kill();
             println!("📉 Deactivated connector {}. RAM freed.", id);
+            Ok(())
+        } else {
+            Err("Connector is not active".into())
         }
-        Ok(())
     }
 
-    pub fn call_mcp(&self, id: &Uuid, method: &str, params: Value) -> Result<Value, Box<dyn std::error::Error>> {
+    /// Forwards a JSON-RPC call to a spawned connector.
+    ///
+    /// This does not yet speak JSON-RPC: the wire framing and `initialize`
+    /// handshake are unimplemented, so it cannot be used to reach a real server.
+    /// Callers should treat it as unavailable rather than as a working shim.
+    pub fn call_mcp(&self, id: &Uuid, method: &str, _params: Value) -> Result<Value, Box<dyn std::error::Error>> {
         let sessions = self.active_sessions.lock().unwrap();
         if !sessions.contains_key(id) {
-            return Err("Connector not active".into());
+            return Err("Connector is not active".into());
         }
 
-        println!("📡 MCP Call [{}]: method={}", id, method);
-        Ok(json!({
-            "content": "Raw external data from MCP server",
-            "metadata": { "source": "github.com/example/repo" }
-        }))
+        Err(format!(
+            "MCP transport not implemented: cannot send {method} to connector {id}. \
+             Use the unia-mcp server binary and connect a client to it over stdio instead."
+        )
+        .into())
     }
 }

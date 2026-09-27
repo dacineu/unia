@@ -12,6 +12,15 @@ this document follows the implementation and the disagreement is recorded in
 that describes intended behaviour instead of actual behaviour is worse than no
 specification, because implementations will target it and interop will fail.
 
+> **Relationship to the formal specification.** The normative mathematical
+> definition of `.ure` is [`ure-specification-formal.md`](./ure-specification-formal.md),
+> which defines the Resource Tuple $\langle \mathcal{I}, \mathcal{S}, \mathcal{A}, \mathcal{C} \rangle$
+> and the Bridge lifecycle. **That document takes precedence.** This one is a
+> conformance record: it states what the code does today, and the divergences
+> below are the gaps between the two. Where they conflict, the formal
+> specification is the requirement and the code is the defect — except where
+> noted, as with D3.
+
 ## 1. What the format is for
 
 A `.ure` file describes one addressable resource: a thing an agent can act on
@@ -261,7 +270,9 @@ Recorded rather than fixed, because each needs a design decision.
 | --- | --- | --- |
 | D1 | README describes five quality metrics (A–E); the code has three (`qor`, `qos`, `qop`). | A manifest author targeting the README would produce a file the code ignores. |
 | D2 | README specifies `ure_RES_CAT_LOC_UNIQ` with random UUID v4; the code implements content-derived DU-UUID. | Two incompatible identity schemes documented as one. |
-| D3 | `resources/smart_valve.ure` and `resources/filesystem.ure` are YAML. Every loader uses `serde_json::from_str`. | These two files cannot be loaded by any code path in this repository. |
+| D3 | The formal specification permits "JSON-LD/YAML" as the implementation representation (§3). Every loader uses `serde_json::from_str` and accepts JSON only. | The two example manifests were YAML and could not be loaded by any code path. They have been converted to JSON, which resolves the immediate failure but leaves the spec and code disagreeing. Fix by adding a YAML branch to the loader (`serde_yaml` is already a dependency) or by amending the formal specification. |
+| D8 | `category` is a free-text functional class (`actuator`, `sensor`, `memory`, `compute`) while the seven values in §4.2 are a different, non-overlapping vocabulary. The corpus directory uses `category`; the database schema uses `resource_class`. | Two axes are in use for the same dimension. `patterns/actuator/` is not one of the seven `resource_class` values. |
+| D9 | The formal specification's packet is `{ resource_id, primitive, params }` where `primitive` is the action name. The code resolves it to a generic `UniversalPrimitive` (see D6). | The Nucleus receives a coarser instruction than the specification describes, and loses the action identity on the way. |
 | D4 | Intent matching normalises underscores for action `id` but not for `aliases`. | An intent using underscores silently falls through to score-based matching instead of exact match. |
 | D5 | Action `constraints` are printed for operator visibility but not evaluated. | A manifest can declare a precondition that the system ignores. |
 | D6 | `resolve_primitive` resolves by substring on the action `id`, so `SetValue` is the fallback for every unrecognised action. | Most of the §3.3 vocabulary is unreachable through the bridge today. |

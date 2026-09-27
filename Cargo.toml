@@ -33,6 +33,30 @@ web-sys = { version = "0.3", features = ["console", "Window", "Response", "Reque
 [dev-dependencies]
 proptest = "1.11.0"
 
+[features]
+default = []
+# Exposes the `.ure` corpus over MCP. Kept off by default so consumers of the
+# library do not inherit the MCP SDK and its dependency tree; the store and its
+# matcher are always available and have no such dependency.
+mcp-server = ["dep:rmcp", "dep:schemars"]
+
+[dependencies.rmcp]
+version = "3.4.1"
+optional = true
+default-features = false
+features = ["server", "macros", "transport-io"]
+
+[dependencies.schemars]
+version = "1"
+optional = true
+
 [lib]
 name = "unia"
 path = "src/lib.rs"
+
+# Without this, a plain `cargo build` or `cargo test` tries to compile the binary
+# in a configuration where the optional rmcp dependency is absent.
+[[bin]]
+name = "unia-mcp"
+path = "src/bin/unia-mcp.rs"
+required-features = ["mcp-server"]
