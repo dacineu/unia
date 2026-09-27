@@ -4,6 +4,8 @@
 **Assistance:** authored and researched with AI assistance; see §A.
 **Status:** Position paper with working prototype. Pre-1.0.
 **Artifact:** https://github.com/dacineu/unia
+**Version:** 2 — adds §12 (collection), §13 (exchange, safety, interoperability)
+and revises §9 against the prototype as it now stands.
 **Prototype measurements:** all figures below were produced on the hardware
 described in §8. None are quoted from a vendor or a prior paper.
 
@@ -432,9 +434,11 @@ I consider this section load-bearing rather than a disclaimer.
   test. It found a real defect in an afternoon, which is its purpose, but it
   cannot estimate behaviour on real traffic. A 200-query fixture written by
   someone who did not build the matcher is the minimum credible next step.
-- **No learned component exists.** The induction module is implemented and
-  tested but not connected to a running trace log, so it has processed no real
-  data.
+- **No learned component exists.** The induction module (§5) is implemented and
+  covered by tests, but no trace log is being written: `unia_record` exists and
+  no agent calls it, so `primitives` is empty and it has processed no real data.
+  The same applies to collection (§12): the policy is tested against synthetic
+  usage and has never been reconciled against a real disagreement.
 - **Constraints do not gate dispatch** (D5), so §6's argument rests on the
   evidence gate alone.
 - **The analytical index is non-functional.** `term_idf` in the DuckDB retrieval
@@ -447,6 +451,12 @@ I consider this section load-bearing rather than a disclaimer.
   human-assigned identifiers where the specification expects a UUID.
 - **No performance comparison against a learned router** exists, because no
   learned router exists.
+- **Collection has never run.** §12 is tested, not exercised. `reconcile` in
+  particular has seen no conflicting proposals from independent observers, so its
+  monotonicity argument is unvalidated.
+- **The four failures in §7.2 are unfixed.** Alias scoping, the missing space
+  forms, and the per-phrase document-frequency weighting all remain, so the
+  reported 90% is a floor rather than a current best.
 - **No safety evaluation beyond the fixture.** The 2-of-8 false-positive rate is
   the only adversarial datapoint I have, and it is small.
 
@@ -496,6 +506,241 @@ model; a measured escalation rate; or that the safety argument is complete.
    property-based testing against observed outcomes is the current approach.
 
 ---
+
+---
+
+## 12. Collection is distributed, and distribution makes reachability mandatory
+
+### 12.1 The centralised design was wrong
+
+The first implementation of degradation kept every artifact's usage in a
+supervisor-side table and ran a global planning pass over it. That is a
+*reporting* architecture, not an inference one, and it was wrong for this system.
+`ActuatorDriver` exposes `execute()`, so an artifact is itself the observation
+point: it knows it was called, when, and whether the call succeeded. Routing that
+to a supervisor in order to obtain a decision is strictly more work than deciding
+locally.
+
+It also destroys a signal. An artifact attached to a nucleus that has gone away
+is, to a central collector, indistinguishable from one that is genuinely idle.
+Centralisation discards exactly the distinction that matters.
+
+The corrected design gives each artifact a `SelfReport` — connection, hit and
+miss counts, distinct observations, last use, and reachability — and a decision
+function of exactly that report and a policy. No corpus argument, no central
+usage table. The signature asserts the property.
+
+### 12.2 The distinction distribution makes mandatory
+
+Moving the decision into the artifact exposed something the centralised version
+had hidden:
+
+> An artifact can have no usage because it is **unwanted**, or because it is
+> **unreachable**. Those require opposite responses.
+
+The prototype already produces the second case. In the §7 baseline,
+`write output to results.txt` matched nothing, because the action id is
+`write_file` and containment requires the literal `write file`. That pattern is
+not idle. It is mis-indexed, and it reports zero usage indefinitely.
+
+A collector that cannot distinguish the two retires precisely the artifacts that
+need repair, and does so silently, because the symptom of a routing defect and
+the symptom of an unwanted artifact are the same observation: no hits.
+
+`Reachability` is therefore a three-valued discriminator, and the third value is
+the important one:
+
+| State | Meaning | Action |
+|---|---|---|
+| `Verified` | a query has matched the artifact | normal retirement policy |
+| `Unreachable` | queried; nothing matched | **quarantine as a defect** |
+| `Unknown` | never matched; reachability untested | **never retire** |
+
+`Unknown` is the default, deliberately. Absence of a match is not evidence of
+absence of demand, and most artifacts in a young corpus are in that state.
+Defaulting to `Unreachable` would empty the corpus within one collection cycle.
+An artifact that *is* unreachable is reported rather than retired, because
+retiring it destroys the only evidence that it was unreachable.
+
+### 12.3 Connection as the primary liveness signal
+
+A rarely-used attached actuator is a live capability; a detached one is not.
+Connection is therefore authoritative and is not derived from lifecycle, because
+the two are independent facts: a `Candidate` that lost its nucleus is served by
+lifecycle and detached by connection, and a `Harvested` artifact that a node
+wired up is unverified but connected. Deriving one from the other made both
+states unrepresentable and produced two sources of truth that could disagree —
+the same class of defect as the Rust/SQL `served()` divergence described in §6.
+
+An attached artifact is not retired on quality alone. Detaching something
+mid-traffic drops a live request, and the failure is bounded because protection
+applies only inside the idle window.
+
+### 12.4 Reconciling disagreement
+
+Copies of one artifact disagree, because each observes only its own window. The
+reconciliation rule is **monotone toward the less destructive action**: a proposal
+to retire loses to evidence of use, always. A node with a narrow window therefore
+cannot retire a capability that a node with a broad window is actively serving,
+and disagreement cannot compound. This is CRDT semantics applied to artifact
+lifecycle, and the claim of novelty there is explicitly disclaimed in §10.
+
+### 12.5 What remains centralised
+
+Nothing about observation is centralised. The evidence gate in §5.1 remains the
+precondition for promotion, enforced by whichever node performs the promotion.
+Distribution of observation does not require distribution of trust, and a mesh in
+which any attached node can synthesise and promote arbitrary executables is
+precisely the ClawHavoc surface that §13.2 describes. That boundary is stated
+rather than assumed, and it is the one place in the architecture where a
+distributed reading would be unsafe.
+
+---
+
+## 13. Exchange, redundancy, and safety
+
+### 13.1 Structural deduplication, and its three preconditions
+
+Exchange between models is a set union over content addresses, and is therefore
+idempotent and commutative: two models that independently induce the same rule
+exchange one artifact, not two. Redundancy is eliminated by the identity function
+rather than detected after the fact.
+
+This holds only if three properties are true, and one of them currently is not:
+
+| Property | Status |
+|---|---|
+| Identical body yields identical address | Holds |
+| Canonical serialisation is byte-stable | Holds, but by accident — see below |
+| Version label is correct | **Fails.** Content-derived, labelled v4 |
+
+A v4 label is the worst available choice, because RFC 4122 defines v4 as
+*random*, and tooling that reasons about v4 semantics will mishandle these
+identifiers. It should be v5, or a custom v8.
+
+The canonicalisation property holds only by accident. The implementation comment
+asserts that `serde_json` does not guarantee key order; that comment is wrong.
+Without the `preserve_order` feature, `serde_json::Map` is `BTreeMap`-backed and
+the serialisation is already sorted. If any contributor enables `preserve_order`
+for an unrelated reason, the comment becomes true and every content address in
+existence changes with no error. This requires a test asserting address
+stability, not a comment.
+
+### 13.2 Safety: the corpus is an injection surface
+
+The characteristic risk of promoting learned artifacts is that a wrong artifact
+becomes fast, silent and reused, and §6 addresses it from the inside. Exchange
+adds a second path to the same failure, because a promoted artifact carrying a
+payload *is* a driver. A pattern that reaches champion is persistent local code
+execution, and exchange is therefore a remote code execution vector unless gated.
+
+This is not hypothetical. koi Research reported ClawHavoc: 341 malicious skills
+found by the bot they were targeting, rising to 824 by February 2026. unia's
+exposure is worse than a typical skill library's, because `ActuatorDriver::execute`
+is called by the Nucleus.
+
+Four gates follow from the structures already in the design:
+
+- **`payload_kind: "none"` as a safety label.** The capability declaration and the
+  safety declaration become one field. An artifact that will not execute is one
+  that can be accepted more freely.
+- **Re-verify evidence on import, never inherit it.** A pattern that was champion
+  on a peer with 400 traces should not arrive as a candidate with zero local
+  evidence and equal standing.
+- **Content addressing as integrity proof.** A received manifest can be verified
+  byte-identical to what the sender claims. Most skill ecosystems have no
+  equivalent.
+- **Mandatory lineage.** `source_external_id` must record the peer, and
+  `lineage` must be populated on import rather than left empty.
+
+There is a further exposure that the skill-library literature does not discuss.
+A manifest's `guidance` and `aliases` are free text. If any part of a manifest is
+ever placed in a model's context — which is what a pattern-aware agent would do —
+then **an attacker who controls the corpus controls part of the prompt.** That is
+prompt injection arriving through the retrieval store rather than through the user.
+
+### 13.3 Union is not safe when precision binds
+
+The natural design is to merge pattern stores as a set union. §7.2 shows why that
+is wrong for this system. Precision is the binding constraint at 2 false positives
+across 8 negatives, and precision *degrades* as the corpus grows, because every
+alias is an additional opportunity to match the wrong artifact. Accepting a
+peer's patterns adds aliases faster than it adds coverage.
+
+So a model can get **worse** by receiving patterns, and union is harmful exactly
+when it appears most attractive. Exchange must be evidence-weighted, which
+implies:
+
+- artifacts are exchanged **with** their evidence, not alone, since an artifact's
+  value is its observation count, failure ratio and provenance;
+- the evidence gate is re-run on import rather than trusted;
+- provenance is mandatory.
+
+This is a negative result, and it is the most useful claim in this section,
+because it contradicts the obvious design.
+
+### 13.4 Redundancy: four distinct mechanisms
+
+Content addressing handles identical bodies. Three others are needed:
+
+- **Alias indirection.** Aliases should be edges in a graph, `alias → (artifact,
+  action)`, not fields owned by an artifact. Two artifacts can then share an
+  alias without duplicating it, the alias is scoped to an action rather than a
+  resource — which is the direct cause of two of the four failures in §7.2 — and
+  retrieval scales as the literature's own graph-structured skill libraries
+  found.
+- **Composition over duplication.** A pattern that sequences other patterns rather
+  than restating their steps, which is what the explicit control flow of §5
+  buys.
+- **Promotion monotonicity.** If a champion already covers a capability,
+  induction refines it rather than creating a sibling, or every re-induction
+  cycle produces near-duplicates differing only in aliases, which never dedupe.
+
+### 13.5 Interoperability, by severity
+
+1. **The constraint grammar is undefined.** `constraints` is an array of free
+   strings. Two implementations will parse it differently, and D5 means neither
+   evaluates it. You cannot execute a constraint you cannot parse, so this blocks
+   cross-model execution outright.
+2. **No capability declaration.** A receiver cannot be told which of the 20
+   primitives it implements, so it cannot detect that a peer sent a pattern it
+   cannot execute.
+3. **No schema negotiation.** `ure_version` is decorative; nothing reads it.
+4. **DU-UUID version mislabelling** — §13.1.
+5. **Canonical serialisation unspecified**, and one comment in the code is wrong
+   about it.
+6. **Alias semantics ambiguous** — resource-level or action-level. That ambiguity
+   is the §7.2 bug.
+7. **No manifest JSON Schema** — `patterns/_schema/` is empty, so nothing
+   validates an import.
+
+Items 2 through 7 are degraded mode. Item 1 is the one that stops the system
+working across models, and it is a specification task rather than an engineering
+one.
+
+---
+
+## 14. Threats to validity
+
+- **The author wrote both the fixture and the matcher.** The 30 queries were
+  authored by the same person who built the scorer. It is a smoke test that found
+  a real defect; it is not an unbiased evaluation.
+- **n = 2 artifacts.** Everything measured is at a corpus size with no
+  statistical meaning.
+- **The safety argument has one pillar.** D5 means constraints do not gate
+  dispatch, so §6 rests on the evidence gate alone, and §6.1 states that this
+  prevents thin evidence but not wrong evidence.
+- **No learned component has run.** Induction is tested against synthetic traces.
+  It has never seen real usage, and its behaviour on adversarial or degenerate
+  traces is unknown.
+- **Prior-art claims are not exhaustive.** §2 names the closest work I am aware
+  of. A reviewer with better recall of the literature may find more, and I would
+  expect a non-trivial amount of it.
+- **The prototype is 45 tests and one fixture.** A test suite is evidence of
+  internal consistency, not of external validity.
+- **The evaluation is single-hardware.** Every figure comes from a Vega 8 with no
+  matrix cores, which is the least favourable device in the class. The relative
+  claims should transfer; the absolute latencies will not.
 
 ## References
 
