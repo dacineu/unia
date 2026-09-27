@@ -52,7 +52,7 @@ manifest = {
     "resource_id": str(trainer_uuid),
     "resource_type": "identity",
     "complexity_score": 1.0,
-    "guidance": "Preemptive Training Governor: Orchestrates the evolution of agentic la-piece-de-résistance specialists.",
+    "guidance": "Preemptive Training Governor: Orchestrates the evolution of agentic unia specialists.",
     "compressed_data": encoded_content,
     "specialization": {
         "domain": "Agentic Evolution",

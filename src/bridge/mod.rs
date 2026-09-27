@@ -12,7 +12,7 @@ pub struct ExternalApi {
 impl ExternalApi {
     pub fn call(&self, prompt: &str) -> String {
         println!("[External API - {}] Processing: {}", self.provider, prompt);
-        format!("External response to '{}' using la-piece-de-résistance logic.", prompt)
+        format!("External response to '{}' using unia logic.", prompt)
     }
 }
 
@@ -35,7 +35,7 @@ impl IntelligenceBridge {
         }
     }
 
-    /// The la-piece-de-résistance interceptor.
+    /// The unia interceptor.
     /// Orchestrates: Intercept -> Intervene -> Evolve.
     pub fn request(&mut self, prompt: String) -> String {
         // 1. INTERCEPT: Check for internal prototype

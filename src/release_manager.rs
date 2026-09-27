@@ -18,7 +18,7 @@ impl ReleaseManager {
         println!("📦 Generating Best Release Snapshot...");
         
         let release_manifest = json!({
-            "release_version": "v1.0.0-la-piece-de-résistance",
+            "release_version": "v1.0.0-unia",
             "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
             "champions": champions.into_iter().map(|(cap, id)| {
                 json!({ "capability": cap, "actuator_id": id })

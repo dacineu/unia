@@ -35,7 +35,7 @@ impl EvolutionaryPipeline {
         }
     }
 
-    /// The la-piece-de-résistance unified learning flow.
+    /// The unia unified learning flow.
     /// Raw Resource $\rightarrow$ Capability Seed $\rightarrow$ Specialized Actuator $\rightarrow$ .ure
     pub async fn evolve_external_resource(&self, source_path: &str) -> Result<Uuid, Box<dyn std::error::Error>> {
         println!("🌀 Initiating Evolutionary Pipeline for: {}", source_path);
@@ -51,7 +51,7 @@ impl EvolutionaryPipeline {
         let specialized_id = self.learner.train_specialization(&task_trace, base_actuators).await?;
 
         // 3. TRANSDUCING Stage
-        println!("Stage 3: Transducing to la-piece-de-résistance Mattern...");
+        println!("Stage 3: Transducing to unia Mattern...");
         
         let pattern_id = format!("evolve:{}", specialized_id);
         

@@ -11,7 +11,7 @@ pub use factory::{FluidFactory, SynthesisRequest};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SlotType {
     Logic,      // The core reasoning/execution logic
-    Presenter,  // The UI/Output format (The la-piece-de-résistance interface)
+    Presenter,  // The UI/Output format (The unia interface)
     Auditor,    // The verification/security layer
     Optimizer,  // The efficiency/compression layer
 }

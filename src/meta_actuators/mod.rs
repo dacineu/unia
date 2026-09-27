@@ -22,7 +22,7 @@ impl MetaActuator {
                 Ok(serde_json::json!({
                     "status": "GAP_DETECTED",
                     "target_uuid": "...", 
-                    "suggestion": "Increase complexity_score or synthesize with la-piece-de-résistance"
+                    "suggestion": "Increase complexity_score or synthesize with unia"
                 }))
             },
             MetaActuatorType::Synthesizer => {

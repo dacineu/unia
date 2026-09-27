@@ -76,7 +76,7 @@ impl ExplorerHarvester {
         let temp_ure_path = format!("{}.ure", resource_id);
         fs::write(&temp_ure_path, serde_json::to_string(&manifest)?)?;
         
-        // We use the registry to officially add it to the la-piece-de-résistance mesh
+        // We use the registry to officially add it to the unia mesh
         // (Note: we assume register_ure_file is available in registry)
         // self.registry.register_ure_file(&temp_ure_path, None)?;
         

@@ -29,7 +29,7 @@ impl PrimitiveBridge {
     pub fn new(os: OsVariant) -> Self {
         let mut nuclei = HashMap::new();
         
-        // Seed the la-piece-de-résistance SEARCH primitive
+        // Seed the unia SEARCH primitive
         let mut search_map = HashMap::new();
         search_map.insert(OsVariant::Debian, "/bin/grep".to_string());
         search_map.insert(OsVariant::Arch, "/usr/bin/grep".to_string());
@@ -46,7 +46,7 @@ impl PrimitiveBridge {
         Self { nuclei, current_os: os }
     }
 
-    /// Resolves a primitive to either its OS-specific command or its la-piece-de-résistance Actuator.
+    /// Resolves a primitive to either its OS-specific command or its unia Actuator.
     pub fn resolve(&self, universal_id: &str) -> Result<String, String> {
         let nucleus = self.nuclei.get(universal_id)
             .ok_or_else(|| format!("Primitive {} not found", universal_id))?;

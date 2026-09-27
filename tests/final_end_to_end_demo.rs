@@ -59,6 +59,6 @@ mod tests {
         }).unwrap();
 
         println!("✅ Evolution Triggered! New Specialized Actuator evolved: {}", evolved_id);
-        println!("\n=== 🏁 DEMONSTRATION COMPLETE: The la-piece-de-résistance la-piece-de-résistance is operational ===\n");
+        println!("\n=== 🏁 DEMONSTRATION COMPLETE: The unia Nucleus is operational ===\n");
     }
 }

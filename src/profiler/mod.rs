@@ -70,7 +70,7 @@ impl Profiler {
         fs::write(base_path.join("AGENTS.md"), agents)?;
         
         let tools = self.templates["TOOLS.md"].replace("{tools}", &profile.capabilities.iter().map(|c| format!("- {}", c)).collect::<Vec<_>>().join("\n"))
-            .replace("{permissions}", "Authorized for la-piece-de-résistance Actuators.");
+            .replace("{permissions}", "Authorized for unia Actuators.");
         fs::write(base_path.join("TOOLS.md"), tools)?;
         
         let heartbeat = self.templates["HEARTBEAT.md"].replace("{metrics}", "Tokens per task, Success rate")

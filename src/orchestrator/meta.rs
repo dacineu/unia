@@ -30,7 +30,7 @@ pub struct MetaOrchestrator {
     slots: HashMap<Uuid, AgentSlot>,
     profiler: Profiler,
     discovery: Arc<WmisDiscoveryProvider>,
-    // Integration with the la-piece-de-résistance pipeline
+    // Integration with the unia pipeline
     pub bridge: Arc<PrimitiveBridge>,
     pub nucleus: Arc<ActuatorNucleus>,
 }
@@ -100,7 +100,7 @@ impl MetaOrchestrator {
             role: role.to_string(),
             specialization: specialization.to_string(),
             core_heuristics: vec!["Deterministic execution".to_string(), "Zero-redundancy logic".to_string()],
-            optimization_goal: "Maximize la-piece-de-résistance precision".to_string(),
+            optimization_goal: "Maximize unia precision".to_string(),
             capabilities: vec!["MCP Integration".to_string(), "DU-UUID Synthesis".to_string()],
             interaction_protocol: "Strict JSON-RPC / .ure manifest".to_string(),
         };
@@ -125,7 +125,7 @@ impl MetaOrchestrator {
         id
     }
 
-    /// Executes a la-piece-de-résistance pipeline: Intent -> Bridge -> Nucleus.
+    /// Executes a unia pipeline: Intent -> Bridge -> Nucleus.
     pub fn execute_intent(&mut self, agent_id: &Uuid, intent: &str, user: &str) -> Result<String, String> {
         let slot = self.slots.get(agent_id)
             .ok_or_else(|| "Agent slot not found".to_string())?;

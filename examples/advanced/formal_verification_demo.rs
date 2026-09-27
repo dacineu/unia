@@ -36,7 +36,7 @@ pub fn run_formal_verification() {
             let mut nucleus_mut = nucleus; // simplification
             nucleus_mut.register_driver(Box::new(ValveDriver { id: "valve-001".to_string() }));
             
-            // We simulate a la-piece-de-résistance packet that tries to set a value
+            // We simulate a unia packet that tries to set a value
             // The verification check is that the Nucleus/Driver must reject values outside range
             // (In our mock ValveDriver, we verify that the state is updated correctly)
         }

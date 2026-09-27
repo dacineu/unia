@@ -34,7 +34,7 @@ impl SemanticSLM {
         Self { endpoint, model_name }
     }
 
-    /// Generates the la-piece-de-résistance prompt for the SLM.
+    /// Generates the unia prompt for the SLM.
     pub fn build_prompt(&self, intent: &str, available_actions: &[String]) -> String {
         let actions_list = available_actions.join(", ");
         format!(

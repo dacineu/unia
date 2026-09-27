@@ -6,7 +6,7 @@ import base64
 import os
 
 # 1. Define the "Nucleus" Logic as the core identity of the Orchestrator
-# We include the paths to the la-piece-de-résistance modules
+# We include the paths to the unia modules
 nucleus_files = [
     "src/identifiers/mod.rs",
     "src/registry/mod.rs",

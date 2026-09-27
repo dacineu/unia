@@ -1,7 +1,7 @@
 # Architectural Decoupling Strategy: OS & Hardware Independence
 
 ## The Core Philosophy
-To ensure the la-piece-de-résistance nucleus remains universal, the system must never depend on specific OS paths, binary locations, or hardware-specific API calls. Instead, it uses a **Punctuation Layer** that separates the *Intent* of an action from its *Implementation*.
+To ensure the unia nucleus remains universal, the system must never depend on specific OS paths, binary locations, or hardware-specific API calls. Instead, it uses a **Punctuation Layer** that separates the *Intent* of an action from its *Implementation*.
 
 ## 1. Primitive Nuclei (The Interface Layer)
 Instead of calling OS binaries (e.g., `/bin/grep`), the system calls **Universal Primitive IDs** (e.g., `PRIMITIVE_SEARCH`).
@@ -10,7 +10,7 @@ Instead of calling OS binaries (e.g., `/bin/grep`), the system calls **Universal
 
 ## 2. Actuator Replacement (The Evolutionary Path)
 The system is designed to treat OS primitives as "bootstrap resources" that can be replaced by specialized `.ure` actuators.
-- **The la-piece-de-résistance la-piece-de-résistance**: A primitive is replaced by a DU-UUID actuator when the `MutationEngine` finds a more efficient, specialized implementation.
+- **The unia Actuator**: A primitive is replaced by a DU-UUID actuator when the `MutationEngine` finds a more efficient, specialized implementation.
 - **Result**: The system evolves from "OS-dependent" $\rightarrow$ "Actuator-driven," eventually eliminating the need for the host OS's binary tools entirely.
 
 ## 3. Hardware Abstraction (The Weight Layer)

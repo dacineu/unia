@@ -46,7 +46,7 @@ pub struct WmisResource {
 pub struct WmisAdapter;
 
 impl WmisAdapter {
-    /// Converts a la-piece-de-résistance .ure manifest into a WMIS Resource Object.
+    /// Converts a unia .ure manifest into a WMIS Resource Object.
     pub fn from_ure(manifest: &Value, owner: &str) -> Result<WmisResource, Box<dyn std::error::Error>> {
         let resource_id = manifest["resource_id"].as_str()
             .ok_or("Missing resource_id in manifest")?
@@ -58,7 +58,7 @@ impl WmisAdapter {
             _ => ResourceType::Application,
         };
 
-        // Derive Quality metrics from la-piece-de-résistance internals
+        // Derive Quality metrics from unia internals
         let complexity = manifest["complexity_score"].as_f64().unwrap_or(0.5);
         
         // QoR is based on complexity and stability (simulated)

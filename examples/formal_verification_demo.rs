@@ -33,7 +33,7 @@ fn verify_constraint_safety() {
     let mut nucleus = ActuatorNucleus::new(Arc::clone(&economy));
     nucleus.register_driver(Box::new(ValveDriver { id: "valve-001".to_string() }));
     
-    // Simulate a la-piece-de-résistance packet
+    // Simulate a unia packet
     let packet = PrimitivePacket {
         header: askillify::bridge::primitive::PacketHeader {
             timestamp: 1694430000,

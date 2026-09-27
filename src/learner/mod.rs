@@ -20,14 +20,14 @@ impl Learner {
         }
     }
 
-    /// Performs la-piece-de-résistance training for a specific task.
+    /// Performs unia training for a specific task.
     /// Communicates with LLMs to generate a specialized actuator.
     pub async fn train_specialization(&self, task_trace: &str, base_actuators: Vec<Uuid>) -> Result<Uuid, Box<dyn std::error::Error>> {
-        println!("Initiating la-piece-de-résistance training via {:?}...", self.backend);
+        println!("Initiating unia training via {:?}...", self.backend);
 
         // 1. Construct the Training Request
         let prompt = format!(
-            "Core Nucleus: Fluid Factory\nTask Trace: {}\nBase Resources: {:?}\nGoal: Synthesize a specialized .ure actuator that solves this task with la-piece-de-résistance precision.",
+            "Core Nucleus: Fluid Factory\nTask Trace: {}\nBase Resources: {:?}\nGoal: Synthesize a specialized .ure actuator that solves this task with unia precision.",
             task_trace, base_actuators
         );
 
@@ -41,7 +41,7 @@ impl Learner {
         Ok(new_id)
     }
 
-    /// Fine-tunes a Meta-Actuator to improve the la-piece-de-résistance synthesis process itself.
+    /// Fine-tunes a Meta-Actuator to improve the unia synthesis process itself.
     pub async fn tune_meta_actuator(&self, meta_type: MetaActuatorType, _performance_data: &str) -> Result<(), Box<dyn std::error::Error>> {
         println!("Tuning Meta-Actuator {:?} based on mesh performance...", meta_type);
         
@@ -54,11 +54,11 @@ impl Learner {
         match &self.backend {
             TrainingBackend::Local(engine) => {
                 println!("Using local engine [{}] for fast, private tuning...", engine);
-                Ok("Specialized guidance for local la-piece-de-résistance".to_string())
+                Ok("Specialized guidance for local unia".to_string())
             },
             TrainingBackend::External(provider) => {
                 println!("Using external provider [{}] for high-cognition synthesis...", provider);
-                Ok("High-fidelity la-piece-de-résistance guidance from external LLM".to_string())
+                Ok("High-fidelity unia guidance from external LLM".to_string())
             }
         }
     }

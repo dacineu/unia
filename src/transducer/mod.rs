@@ -47,7 +47,7 @@ impl SynapticTransducer {
         println!("Shadowing pattern for {}: [Input: {}, Success: {}]", resource_id, input, success);
     }
 
-    /// Converts captured interaction patterns into a internal la-piece-de-résistance .ure actuator.
+    /// Converts captured interaction patterns into an internal unia .ure actuator.
     pub fn transduce(&self, resource_id: &str, provenance: Option<&Value>) -> Result<Uuid, Box<dyn std::error::Error>> {
         let logs = self.shadow_logs.lock().unwrap();
         let patterns = logs.get(resource_id)
