@@ -26,15 +26,23 @@ not intentions.
   click, and the public record currently names a privacy proxy. Until the PDF is
   read, no ownership claim belongs in the paper.
 
-- [ ] **Decide the paper's author line.** The pseudonym `iulian dacineu` is
-  currently used, but the 2020 Devpost submission publishes the author's
-  civil name in public (`devpost.com/dacineu`, Romania). `TRADEMARK.md` and
-  `LICENSE-COMMERCIAL.md` both rest on the pseudonym holding. Options: civil
-  name, pseudonym, or both with a disclosure note.
+- [x] **Decide the paper's author line.** Resolved: the paper carries the
+  pseudonym `iulian dacineu` and does not name the author. The 2020 Devpost
+  submission publishes the civil name in public (`devpost.com/dacineu`,
+  Romania), so the name is reachable by anyone who goes looking for it, but it
+  is not asserted in the paper. The rendered capture is held at `docs/proof/` and
+  is gitignored, because a PDF containing the civil name inside this public
+  repository would be a stronger and more convenient exposure than the page that
+  has been public since 2020.
+  **Residual, not a defect:** `TRADEMARK.md` and `LICENSE-COMMERCIAL.md` rest on
+  the pseudonym being the operative identity, and that remains true — the
+  pseudonym is what the licences, the repository and the paper all use.
 
-- [ ] **Add a provenance section to the paper** citing the Devpost record, which
-  is dated, attributed, and third-party-hosted. This does not depend on the
-  domain question above and should not wait for it.
+- [x] **Add a provenance section to the paper** citing the Devpost record, which
+  is dated, attributed, and third-party-hosted. Done: §A now records the 24 April
+  2020 EUvsVirus submission, cites the canonical URL, and notes that a capture is
+  held locally. It does not depend on the domain question above and did not wait
+  for it.
 
 ---
 
