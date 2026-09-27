@@ -35,3 +35,17 @@ venv/
 
 /*.ure
 /orchestrator_*.ure
+
+# Provenance artefact for the prior EUNIA submission (docs/proof/).
+#
+# NOT committed: the rendered Devpost page contains the author's civil name, and
+# this repository is public. Committing it would publish that name inside the
+# repository, which defeats the pseudonym the paper uses. The paper cites the
+# canonical URL instead, which any interested reader can follow themselves.
+#
+# Regenerate with:
+#   chromium --headless --no-sandbox \
+#     --user-agent="Mozilla/5.0 (X11; Linux x86_64) Chrome/148.0.0.0" \
+#     --virtual-time-budget=20000 --print-to-pdf=docs/proof/devpost-eunia-2020.pdf \
+#     "https://devpost.com/software/eunia-european-union-national-informal-assistance-oz4kcp"
+docs/proof/*.pdf
