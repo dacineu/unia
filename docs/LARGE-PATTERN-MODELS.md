@@ -1,5 +1,7 @@
 # Large Pattern Models: Replacing Token Consumption with Artifact Reuse
 
+**Author:** iulian dacineu
+**Assistance:** authored and researched with AI assistance; see §A.
 **Status:** Position paper with working prototype. Pre-1.0.
 **Artifact:** https://github.com/dacineu/unia
 **Prototype measurements:** all figures below were produced on the hardware
@@ -14,23 +16,23 @@ before pays for it again, because the solution it produced is stored as text —
 in context, in a commit, in a skill file — and text must be re-read by a
 transformer to become an action. This paper argues that the unit of reuse should
 be an *executable artifact* rather than a *description*, and that the resulting
-system should be optimised for a metric we call **escalation rate**: the fraction
+system should be optimised for a metric I call **escalation rate**: the fraction
 of requests that cannot be served from a local artifact and must reach a
 provider.
 
-We formalise a resource model, the `.ure` format, in which a unit of capability
-is a content-addressed declaration bound to a runnable body. We describe an
+I formalise a resource model, the `.ure` format, in which a unit of capability
+is a content-addressed declaration bound to a runnable body. I describe an
 induction loop that converts recorded interactions into candidate artifacts
 without gradient descent, and an evidence gate that makes premature promotion
-structurally difficult. We present `unia`, a working prototype in Rust with a
-Model Context Protocol server surface.
+structurally difficult. The prototype is `unia`, in Rust, with a Model Context
+Protocol server surface.
 
-Our measurements characterise the retrieval tier and establish a first
+My measurements characterise the retrieval tier and establish a first
 retrieval-quality baseline: a 4.6 µs lexical matcher achieves 90% Hit@1 against
 a hand-written fixture, with all observed failures attributable to manifest
-authoring rather than to the need for semantic machinery. We are explicit that
-this fixture is too small to support the thesis, and we state the experiment
-that would falsify it.
+authoring rather than to the need for semantic machinery. I am explicit that
+this fixture is too small to support the thesis, and I state the experiment that
+would falsify it.
 
 ---
 
@@ -84,12 +86,12 @@ the evidence. It fails if:
 > requests — that is, if a substantial residue of intents shares no vocabulary
 > with any candidate artifact and resists paraphrase.
 
-We do not yet have this experiment. §9 states what exists and what does not. The
+I do not yet have this experiment. §9 states what exists and what does not. The
 prototype exists to make F1 answerable, not to claim C1 is established.
 
 ---
 
-## 2. Prior work and our relation to it
+## 2. Prior work and my relation to it
 
 This is not a new idea in the shape of the idea. It is a specific claim about
 the *unit* of reuse, and the literature already contains most of the ingredients.
@@ -98,25 +100,25 @@ the *unit* of reuse, and the literature already contains most of the ingredients
 action sequences fail, and that inducing *rules* — explicit control flow,
 preconditions, variable binding — generalises better (NSI, ICML 2026). SkillGen
 synthesises a single auditable skill from trajectories. SkillRevise couples
-execution evidence with general repair knowledge. Our induction follows this
+execution evidence with general repair knowledge. My induction follows this
 line: traces are grouped by the **primitive sequence**, and the observed
 phrasings become aliases, so the induced unit is a rule and not a script.
 
 **Executable accumulation.** AgentFactory accumulates executable subagents and
-reuses them. This is the closest prior work to our claim, and we do not claim
-novelty over it. Our contributions are narrower and are stated as such in §10.
+reuses them. This is the closest prior work to my claim, and I do not claim
+novelty over it. My contributions are narrower and are stated as such in §10.
 
 **Library learning and program synthesis.** DreamCoder-style systems induce
 reusable libraries from traces. The relevant difference is the target: a
 synthesised program versus a declaration of intent bound to a pre-existing
 driver.
 
-**Semantic caching.** Caches return prior *responses*. We are describing a
-system where the cache entry is executable and the provider is not called. The
-relationship is a strict generalisation: our tier 1.5 is a semantic cache, and
+**Semantic caching.** Caches return prior *responses*. I am describing a system where
+the cache entry is executable and the provider is not called. The
+relationship is a strict generalisation: my tier 1.5 is a semantic cache, and
 tiers 1–2 are the part that has no analogue.
 
-**Our specific position.** We combine three properties that we have not found
+**My specific position.** I combine three properties that I have not found
 together elsewhere:
 
 1. The reusable unit is **content-addressed**, so two independently induced
@@ -127,7 +129,7 @@ together elsewhere:
 3. The objective is **escalation rate**, not accuracy — because accuracy is the
    wrong metric when a correct answer still costs a request.
 
-We do not claim the combination is unprecedented in principle. We claim it is
+I do not claim the combination is unprecedented in principle. I claim it is
 unusual, that it is cheaper, and that it is auditable in a way weight-based
 learning is not.
 
@@ -180,11 +182,11 @@ action to be dispatched to the Nucleus." The implementation prints constraints
 for operator visibility and does not evaluate them. This is recorded as
 divergence D5 in `docs/SPEC.md` and is not yet closed.
 
-We report this rather than hide it because it is a load-bearing discrepancy: §6's
+I report this rather than hide it because it is a load-bearing discrepancy: §6's
 safety argument assumes constraints gate dispatch, and today they do not. The
 argument therefore currently rests on the evidence gate alone.
 
-We also record two identity divergences: the identifier scheme documented in
+I also record two identity divergences: the identifier scheme documented in
 prose is not the one implemented (D2), and a document category vocabulary and a
 resource-class enumeration are both in use for the same dimension (D8). A
 manifest is currently addressable only if its category is trusted, because the
@@ -283,7 +285,7 @@ consequences follow, both intended:
 
 ### 5.2 On auto-generating a corpus
 
-A natural suggestion is to synthesesise a large corpus up front. We consider
+A natural suggestion is to synthesesise a large corpus up front. I consider
 this a category error in the current system. A corpus of artifacts that were
 never executed has no evidence of correctness behind it, and would become
 champion-eligible on the strength of a generative model's plausibility. The
@@ -421,7 +423,7 @@ execution. The iGPU is 1.76× on prompt processing and 1.17× on generation.
 
 ## 9. What is not demonstrated
 
-We consider this section load-bearing rather than a disclaimer.
+I consider this section load-bearing rather than a disclaimer.
 
 - **No escalation rate is measured.** The corpus holds two usable artifacts. A
   rate over two artifacts is not an escalation rate, and the number that would
@@ -446,7 +448,7 @@ We consider this section load-bearing rather than a disclaimer.
 - **No performance comparison against a learned router** exists, because no
   learned router exists.
 - **No safety evaluation beyond the fixture.** The 2-of-8 false-positive rate is
-  the only adversarial datapoint we have, and it is small.
+  the only adversarial datapoint I have, and it is small.
 
 ---
 
@@ -469,7 +471,7 @@ Stated conservatively, relative to the prior work surveyed in §2.
    in manifest authoring rather than in retrieval, and identifies a
    document-frequency weighting defect that is cheap to fix.
 
-We do not claim: novelty over executable skill accumulation; a working learned
+I do not claim: novelty over executable skill accumulation; a working learned
 model; a measured escalation rate; or that the safety argument is complete.
 
 ---
