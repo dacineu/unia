@@ -30,6 +30,10 @@ pub mod node;
 /// Induction of candidate actuators from recorded LLM interactions.
 pub mod induce;
 
+/// Degradation and self-collection. Retires artifacts by changing a lifecycle
+/// field, never by deleting them.
+pub mod gc;
+
 // Wasm Entry Point
 #[cfg(target_arch = "wasm32")]
 pub mod wasm_core;
