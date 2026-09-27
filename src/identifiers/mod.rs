@@ -13,8 +13,61 @@ pub enum UreIdError {
     General(String),
 }
 
+/// The language-independent interior of a manifest.
+///
+/// This is what an artifact *is*, separated from how it is phrased. Identity is
+/// computed over this and not over the whole body, so that the same capability
+/// carries the same address whether it was expressed in English, Romanian, or a
+/// mix, and so that learning a new phrasing does not change what a thing is.
+///
+/// Everything removed here is surface: the aliases a reader recognises it by, the
+/// guidance written for a human, and any free-text description. Everything kept is
+/// structure: which action primitives exist, what state they act on, and what
+/// payload makes them runnable.
+///
+/// The alternative — hashing the whole body — makes identity depend on wording,
+/// and has two consequences that are both fatal. A capability learned in two
+/// languages becomes two artifacts, so it can never converge. And a rule becomes
+/// a different rule the first time a player uses a phrase nobody had used before,
+/// which is not a rare event but the normal one.
+pub fn skeleton(manifest: &Value) -> Value {
+    let mut out = serde_json::Map::new();
+
+    // Keys that are surface rather than structure. A deny-list and not an
+    // allow-list, deliberately: an allow-list silently drops any field it has not
+    // heard of, so a manifest carrying something new would get an address that
+    // ignores it and two genuinely different artifacts could collide. Unknown
+    // keys stay in the skeleton until they are known to be prose.
+    const SURFACE_KEYS: &[&str] = &["resource_id", "guidance", "description", "aliases"];
+
+    if let Some(obj) = manifest.as_object() {
+        for (key, value) in obj {
+            if SURFACE_KEYS.contains(&key.as_str()) {
+                continue;
+            }
+            out.insert(key.clone(), value.clone());
+        }
+
+        // Action primitives reduced to their ids. Aliases are the surface and are
+        // dropped; the id is the action.
+        if let Some(actions) = obj.get("action_primitives").and_then(|a| a.as_array()) {
+            let ids: Vec<Value> = actions
+                .iter()
+                .filter_map(|a| a.get("id").cloned())
+                .collect();
+            if !ids.is_empty() {
+                out.insert("action_primitives".to_string(), Value::Array(ids));
+            }
+        }
+    }
+
+    Value::Object(out)
+}
+
 /// Deterministic URE-UUID (DU-UUID) implementation.
-/// Generates a UUID based on the content of a .ure manifest.
+///
+/// Generates a UUID from the *skeleton* of a .ure manifest, so identity is
+/// independent of the language the manifest is written in.
 pub struct DuUuid;
 
 impl DuUuid {
@@ -27,15 +80,20 @@ impl DuUuid {
         manifest: &Value,
         encryption_key: Option<&[u8; 32]>,
     ) -> Result<Uuid, UreIdError> {
-        // 1. Externalize the ID to prevent circular dependency
-        let mut content = manifest.clone();
-        if let Some(obj) = content.as_object_mut() {
-            obj.remove("resource_id");
-        }
+        // 1. Reduce to the language-independent interior.
+        //
+        // This also externalises the ID, because `resource_id` is not part of the
+        // skeleton, so a resource cannot contain its own identity in its own
+        // identity computation.
+        let content = skeleton(manifest);
 
-        // 2. Deterministic Serialization
-        // Note: serde_json's Value doesn't guarantee key order in the map
-        // For true determinism, we would use a BTreeMap or canonical JSON.
+        // 2. Deterministic serialization.
+        //
+        // `serde_json::Map` is `BTreeMap`-backed and therefore already sorted
+        // unless the `preserve_order` feature is enabled, in which case this
+        // becomes non-deterministic and every address changes silently. The
+        // comment that previously said the opposite was wrong; the risk it
+        // described is real and is now asserted by a test rather than by prose.
         let serialized = serde_json::to_vec(&content)?;
 
         // 3. Payload Processing (Compression simulation & Encryption)
@@ -120,5 +178,98 @@ mod tests {
         let id2 = DuUuid::generate(&manifest, Some(&key2)).unwrap();
 
         assert_ne!(id1, id2);
+    }
+}
+
+#[cfg(test)]
+mod skeleton_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn valve(aliases: [&str; 2]) -> Value {
+        json!({
+            "resource_id": "valve-001",
+            "category": "actuator",
+            "guidance": "A motorised valve.",
+            "state_space": {"flow_rate": {"type": "float", "range": [0.0, 1.0]}},
+            "action_primitives": [
+                {"id": "emergency_shutdown", "aliases": aliases, "params": {},
+                 "target_state": "flow_rate = 0.0", "constraints": []}
+            ]
+        })
+    }
+
+    #[test]
+    fn drops_the_guidance_written_for_a_human() {
+        let s = skeleton(&valve(["halt", "stop"]));
+        assert!(s.get("guidance").is_none(), "guidance is prose, not structure");
+    }
+
+    #[test]
+    fn drops_aliases_but_keeps_the_action_they_name() {
+        let s = skeleton(&valve(["halt", "stop"]));
+        let actions = s["action_primitives"].as_array().unwrap();
+        assert_eq!(actions[0], json!("emergency_shutdown"));
+    }
+
+    #[test]
+    fn keeps_an_unrecognised_field_rather_than_dropping_it() {
+        // A deny-list, not an allow-list. An allow-list silently discards fields
+        // it has not heard of, so a manifest carrying something new would get an
+        // address that ignores it and two different artifacts could collide.
+        let m = json!({"resource_id": "x", "some_future_field": {"deeply": ["nested"]}});
+        let s = skeleton(&m);
+        assert_eq!(s["some_future_field"], json!({"deeply": ["nested"]}));
+    }
+
+    #[test]
+    fn address_is_stable_across_key_order_in_the_manifest() {
+        // serde_json::Map is BTreeMap-backed and therefore already sorted, so
+        // this holds today. It stops holding the moment anyone enables the
+        // `preserve_order` feature, and the failure would be silent: every
+        // address in existence changes. Asserted here rather than left as a
+        // comment, because a comment was what let the wrong claim stand.
+        let a = json!({"category": "actuator", "payload": {"kind": "native"}, "ure_version": "1.0"});
+        let b = json!({"ure_version": "1.0", "payload": {"kind": "native"}, "category": "actuator"});
+        assert_eq!(
+            DuUuid::generate(&a, None).unwrap(),
+            DuUuid::generate(&b, None).unwrap()
+        );
+    }
+
+    #[test]
+    fn address_is_stable_across_key_order_inside_an_action() {
+        let a = json!({"id": "halt", "target_state": "x", "constraints": []});
+        let b = json!({"constraints": [], "target_state": "x", "id": "halt"});
+        assert_eq!(
+            DuUuid::generate(&a, None).unwrap(),
+            DuUuid::generate(&b, None).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_payload_change_moves_the_address() {
+        // Making a thing runnable is a change to what it is, so the payload is
+        // structure and stays in the skeleton.
+        let mut a = valve(["halt", "stop"]);
+        a["payload"] = json!({"kind": "none"});
+        let mut b = a.clone();
+        b["payload"] = json!({"kind": "wasm", "module": "x.wasm"});
+        assert_ne!(
+            DuUuid::generate(&a, None).unwrap(),
+            DuUuid::generate(&b, None).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_state_space_change_moves_the_address() {
+        let mut a = valve(["halt", "stop"]);
+        a["state_space"] = json!({"pressure": {"type": "float"}});
+        let mut b = a.clone();
+        b["state_space"] = json!({"flow_rate": {"type": "float"}});
+        assert_ne!(
+            DuUuid::generate(&a, None).unwrap(),
+            DuUuid::generate(&b, None).unwrap()
+        );
     }
 }

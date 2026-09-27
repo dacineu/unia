@@ -39,6 +39,12 @@ pub mod gc;
 /// all agree on how time passes. See `docs/camaduci.md`.
 pub mod camaduci;
 
+/// Surface forms held beside identity rather than inside it. Maps a content
+/// address to the phrasings known in each language, which is what lets two
+/// creatures holding the same act in different vocabularies understand each
+/// other.
+pub mod lexicon;
+
 /// Turning a session with a language model into evidence a creature can learn
 /// from. Extracts corrections and confirmations; does not emit traces, because
 /// the primitive vocabulary a trace needs is not yet defined. See D5 and D6.

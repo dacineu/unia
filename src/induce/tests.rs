@@ -205,7 +205,23 @@ mod synthesis {
     }
 
     #[test]
-    fn identical_rules_deduplicate_by_content_address() {
+    fn rules_differing_only_in_phrasing_now_deduplicate() {
+        // This reverses a decision this file previously asserted in the other
+        // direction, and the reversal was deliberate.
+        //
+        // The alias set used to be part of the content address, so two groups of
+        // traces reducing to the same primitive sequence but phrased differently
+        // produced two artifacts. That made identity depend on wording, with
+        // consequences that are all fatal: the same capability learned in two
+        // languages could never converge, a rule became a different rule the first
+        // time a player used a phrase nobody had used before, and "learn a new way
+        // to ask for this" silently created a sibling artifact instead of
+        // extending one.
+        //
+        // Identity is now computed over the skeleton, so wording is surface. The
+        // cost is real and is this: a narrow rule and a broad rule exposing the
+        // same primitives are now one artifact and cannot be kept apart. Breadth of
+        // phrasing is a property of how a thing is recognised, not of what it is.
         let a = induce(
             &group_traces(&[
                 trace("one phrasing", &["SetValue"], false),
@@ -220,11 +236,34 @@ mod synthesis {
             ])["SetValue"],
         )
         .unwrap();
-        // The bodies differ only in aliases, so addresses must differ; the
-        // addresses are equal only when the induced rule is identical.
+        assert_eq!(
+            a.du_uuid, b.du_uuid,
+            "the same primitive sequence is one rule however it was phrased"
+        );
+    }
+
+    #[test]
+    fn rules_exposing_different_primitives_stay_distinct() {
+        // The counterpart, and the one that matters: if wording no longer
+        // separates artifacts then structure has to, or "identity is
+        // language-independent" would only mean "identity is useless".
+        let a = induce(
+            &group_traces(&[
+                trace("one phrasing", &["SetValue"], false),
+                trace("another phrasing", &["SetValue"], false),
+            ])["SetValue"],
+        )
+        .unwrap();
+        let b = induce(
+            &group_traces(&[
+                trace("same words entirely", &["SetValue", "GetValue"], false),
+                trace("and these too", &["SetValue", "GetValue"], false),
+            ])["SetValue_GetValue"],
+        )
+        .unwrap();
         assert_ne!(
             a.du_uuid, b.du_uuid,
-            "different alias sets are different patterns, not one deduped"
+            "a rule that does more is a different rule"
         );
     }
 
