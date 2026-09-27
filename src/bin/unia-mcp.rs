@@ -169,7 +169,7 @@ fn topology(store: &Store) -> serde_json::Value {
         ));
     }
 
-    let g = gather::gather(&spheres);
+    let (g, profile) = gather::gather_profiled(&spheres);
     let edges: Vec<serde_json::Value> = g
         .ties
         .iter()
@@ -203,6 +203,14 @@ fn topology(store: &Store) -> serde_json::Value {
         "denominators": denominators,
         "measured": true,
         "malformed_traces": store.malformed_traces(),
+        "profile": {
+            "participants": profile.participants,
+            "comparisons": profile.comparisons,
+            "capability_matches": profile.capability_matches,
+            "lexical_matches": profile.lexical_matches,
+            "compare_nanos": profile.compare_nanos,
+            "assemble_nanos": profile.assemble_nanos,
+        },
         "note": "Every field is read from the corpus. An empty edge list is a real measurement, not a rendering failure. readiness is null where no trace log exists, which is different from a readiness of zero.",
     })
 }

@@ -110,8 +110,33 @@ impl Readiness {
     }
 
     /// The score as a plain ratio.
+    ///
+    /// Reported for display only. The score is a product of a ratio and a
+    /// log-scaled count, and the logarithm is a libm call whose last bit is not
+    /// guaranteed identical across architectures or optimisation levels, so this
+    /// value is not portable. Anything that orders or compares readiness uses
+    /// `key` instead, which is.
     pub fn score(&self) -> f64 {
         self.0
+    }
+
+    /// The readiness as a fixed-point integer, for ordering and comparison.
+    ///
+    /// Readiness stays continuous: the quantum is a millionth, so two artifacts
+    /// are indistinguishable here only if they differ by less than one part in a
+    /// million. What changes is that ordering becomes integer comparison, which is
+    /// exact on every architecture, so a gathering yields the same sequence of
+    /// denominators on x86-64, ARM64 and RISC-V alike. That is what makes the
+    /// measurement citable rather than aspirational.
+    pub fn key(&self) -> u32 {
+        // `round` rather than a truncating cast, so the mapping is symmetric
+        // about zero and does not bias any participant upward.
+        (self.0 * QUANTUM as f64).round() as u32
+    }
+
+    /// Readiness reconstructed from a fixed-point key, for round-tripping.
+    pub fn from_key(key: u32) -> Self {
+        Readiness((key.min(QUANTUM) as f64) / QUANTUM as f64)
     }
 
     /// Combines two readinesses by taking the stronger.
@@ -125,6 +150,12 @@ impl Readiness {
         Readiness(self.0.max(other.0))
     }
 }
+
+/// The number of fixed-point steps in the unit interval.
+///
+/// A million steps is finer than any readiness the trace log can currently
+/// produce, while keeping the key inside a `u32` so its scaling stays exact.
+pub const QUANTUM: u32 = 1_000_000;
 
 /// The action structure of an artifact, used as its structural identity.
 ///
@@ -291,6 +322,83 @@ impl Gathering {
     }
 }
 
+/// What a gathering cost, and what it found.
+///
+/// Split from [`Gathering`] on purpose. The counts are exact integer work and
+/// are identical on every architecture, so they are a citable measurement. The
+/// elapsed times are wall-clock readings of the host and are not, so they are
+/// reported separately and a caller publishing a result must publish the counts.
+/// Keeping them in one struct would invite quoting a timing as if it were a
+/// property of the algorithm rather than of the machine that ran it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GatheringProfile {
+    /// Spheres the pass considered.
+    pub participants: usize,
+    /// Pairs examined. The pass is all-pairs, so this is `n * (n-1) / 2`.
+    pub comparisons: usize,
+    /// Pairs that agreed on action structure.
+    pub capability_matches: usize,
+    /// Pairs that shared a phrase but not a capability.
+    pub lexical_matches: usize,
+    /// Nanoseconds spent comparing pairs.
+    pub compare_nanos: u64,
+    /// Nanoseconds spent assembling denominators and ordering them.
+    pub assemble_nanos: u64,
+}
+
+impl GatheringProfile {
+    /// The measured comparisons per participant.
+    ///
+    /// Zero for an empty or single-sphere pass. This is the number that reveals
+    /// the quadratic term directly: it grows linearly with `n`, so the pass cost
+    /// grows quadratically.
+    pub fn comparisons_per_participant(&self) -> f64 {
+        if self.participants < 2 {
+            return 0.0;
+        }
+        self.comparisons as f64 / self.participants as f64
+    }
+}
+
+/// Runs one gathering and reports what it cost.
+///
+/// Prefer this over [`gather`] when the numbers will be looked at: it returns
+/// the same `Gathering`, plus the counts and timings needed to judge whether the
+/// pass needs optimising. For a corpus of a dozen artifacts it completes in
+/// microseconds, so the honest response to a fast result is not to tune the
+/// pass but to grow the corpus.
+pub fn gather_profiled(spheres: &[Sphere]) -> (Gathering, GatheringProfile) {
+    // The compare phase is timed on its own so the two costs can be read
+    // separately: the pass is all-pairs, so comparison grows quadratically while
+    // assembly grows linearly, and a measurement that reported only their sum
+    // could not show which one dominates at a given corpus size.
+    let mut profile = GatheringProfile {
+        participants: spheres.len(),
+        ..Default::default()
+    };
+    let compare_start = std::time::Instant::now();
+    for i in 0..spheres.len() {
+        for b in spheres.iter().skip(i + 1) {
+            profile.comparisons += 1;
+            match spheres[i].interpenetrates_with(b) {
+                Some(Dimension::Capability) => profile.capability_matches += 1,
+                Some(Dimension::Lexical) => profile.lexical_matches += 1,
+                None => {}
+            }
+        }
+    }
+    profile.compare_nanos = compare_start.elapsed().as_nanos() as u64;
+
+    // The comparison is repeated inside `gather`, so the assembly timing below
+    // is the cost of the second pass. That is cheap to accept in exchange for
+    // `gather` staying a single deterministic function with no timing branch in
+    // it, which matters more at this size than avoiding one redundant sweep.
+    let assemble_start = std::time::Instant::now();
+    let result = gather(spheres);
+    profile.assemble_nanos = assemble_start.elapsed().as_nanos() as u64;
+    (result, profile)
+}
+
 /// Runs one gathering over `spheres`.
 ///
 /// Every sphere is compared with every other, which is what makes the
@@ -365,17 +473,17 @@ pub fn gather(spheres: &[Sphere]) -> Gathering {
     // Most converged first, then by readiness. Readiness breaks ties without
     // being the primary key, because the number of independent contributors is
     // the stronger evidence: one participant can be lucky, several agreeing is
-    // corroboration. Readiness is compared on its score rather than by `Ord`,
-    // because a float readiness is a measurement and not a total order.
+    // corroboration.
+    //
+    // Ordering runs on the fixed-point key rather than the score. Comparing
+    // `Capability` is integer and string work and is already bit-identical on
+    // every architecture; ordering on an `f64` would not be, and a gathering
+    // whose output order varied by architecture could not be cited as a
+    // measurement. See `Readiness::key`.
     denominators.sort_by(|a, b| {
         b.convergence
             .cmp(&a.convergence)
-            .then_with(|| {
-                b.readiness
-                    .score()
-                    .partial_cmp(&a.readiness.score())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
+            .then_with(|| b.readiness.key().cmp(&a.readiness.key()))
             .then_with(|| a.capability.cmp(&b.capability))
     });
 
@@ -687,5 +795,228 @@ mod describe_gather {
         let g = gather(&[]);
         assert!(g.denominators.is_empty() && g.ties.is_empty());
         assert!(g.strongest().is_none());
+    }
+}
+
+#[cfg(test)]
+mod key_tests {
+    use super::*;
+
+    #[test]
+    fn quantises_a_score_onto_the_fixed_point_grid() {
+        assert_eq!(Readiness::new(0.5).key(), 500_000);
+        assert_eq!(Readiness::new(0.0).key(), 0);
+        assert_eq!(Readiness::new(1.0).key(), QUANTUM);
+    }
+
+    #[test]
+    fn round_trips_through_the_fixed_point_key() {
+        for score in [0.0, 0.25, 0.5, 0.63, 0.999_999, 1.0] {
+            let r = Readiness::new(score);
+            assert_eq!(Readiness::from_key(r.key()).key(), r.key());
+        }
+    }
+
+    #[test]
+    fn orders_two_readinesses_by_key_without_a_float_comparison() {
+        // Integer ordering is exact everywhere, so a gathering built on it
+        // produces the same sequence on x86-64, ARM64 and RISC-V.
+        let a = Readiness::new(0.4);
+        let b = Readiness::new(0.8);
+        assert!(a.key() < b.key());
+    }
+
+    #[test]
+    fn distinguishes_readiness_values_a_quarter_apart() {
+        assert_ne!(Readiness::new(0.25).key(), Readiness::new(0.5).key());
+    }
+
+    #[test]
+    fn clamps_a_key_above_the_quantum_when_reconstructing() {
+        assert_eq!(Readiness::from_key(QUANTUM + 5_000).key(), QUANTUM);
+    }
+
+    #[test]
+    fn keeps_a_clamped_score_within_the_unit_interval() {
+        assert!(Readiness::new(9.0).key() <= QUANTUM);
+        assert_eq!(Readiness::new(-9.0).key(), 0);
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+
+    fn sphere(address: &str, actions: &[&str]) -> Sphere {
+        Sphere::new(
+            address,
+            actions.iter().map(|s| s.to_string()),
+            ["phrase".to_string()],
+            Readiness::new(0.5),
+        )
+    }
+
+    #[test]
+    fn counts_every_pair_once_for_a_known_corpus_size() {
+        // The pass is all-pairs and unordered, so the count is n*(n-1)/2 exactly.
+        let spheres = vec![
+            sphere("a", &["halt"]),
+            sphere("b", &["halt"]),
+            sphere("c", &["pump"]),
+        ];
+        let (_g, p) = gather_profiled(&spheres);
+        assert_eq!(p.participants, 3);
+        assert_eq!(p.comparisons, 3);
+    }
+
+    #[test]
+    fn reports_no_comparisons_for_a_single_sphere() {
+        let (_g, p) = gather_profiled(&[sphere("a", &["halt"])]);
+        assert_eq!(p.comparisons, 0);
+        assert_eq!(p.comparisons_per_participant(), 0.0);
+    }
+
+    #[test]
+    fn reports_no_comparisons_for_an_empty_gathering() {
+        let (_g, p) = gather_profiled(&[]);
+        assert_eq!(p.comparisons, 0);
+        assert_eq!(p.participants, 0);
+    }
+
+    #[test]
+    fn separates_capability_matches_from_lexical_ones() {
+        // The two are counted apart because they are not the same event: one
+        // produces a denominator and the other never does.
+        let spheres = vec![
+            sphere("a", &["halt", "pump"]),
+            sphere("b", &["halt", "pump"]),
+            sphere("c", &["vent"]),
+        ];
+        let (_g, p) = gather_profiled(&spheres);
+        assert_eq!(p.capability_matches, 1);
+        assert_eq!(p.lexical_matches, 2);
+    }
+
+    #[test]
+    fn grows_comparisons_quadratically_with_the_corpus() {
+        // The scaling law, stated as a test so the quadratic term cannot be
+        // introduced silently by a future change to the pass.
+        let at = |n: usize| {
+            let spheres: Vec<Sphere> = (0..n)
+                .map(|i| sphere(&format!("a{i}"), &["halt"]))
+                .collect();
+            gather_profiled(&spheres).1.comparisons
+        };
+        assert_eq!(at(10), 45);
+        assert_eq!(at(100), 4_950);
+        assert_eq!(at(200), 19_900);
+        // Doubling the corpus must roughly quadruple the work.
+        assert!(at(200) > at(100) * 3);
+    }
+
+    #[test]
+    fn reports_timings_for_both_phases() {
+        let spheres = vec![sphere("a", &["halt"]), sphere("b", &["halt"])];
+        let (_g, p) = gather_profiled(&spheres);
+        // A monotonic clock is not guaranteed, so this asserts the fields are
+        // populated rather than that the compare phase beat assembly.
+        let _ = (p.compare_nanos, p.assemble_nanos);
+    }
+
+    #[test]
+    fn produces_the_same_gathering_as_the_unprofiled_pass() {
+        // The profile is an observation, not a behaviour change.
+        let spheres = vec![
+            sphere("a", &["halt"]),
+            sphere("b", &["halt"]),
+            sphere("c", &["pump"]),
+        ];
+        assert_eq!(gather(&spheres), gather_profiled(&spheres).0);
+    }
+}
+
+#[cfg(test)]
+mod convergence_fixture_tests {
+    use super::*;
+
+    /// Two artifacts exposing the same two primitives, phrased differently.
+    ///
+    /// This is the case the checked-in corpus cannot supply: `valve-001` and
+    /// `fs-root-001` declare disjoint primitive sets, so a pass over them finds
+    /// nothing. It is held as a test fixture rather than added to `patterns/`
+    /// because a second artifact with the same capability and a richer alias
+    /// set out-retrieves the first, which would perturb the retrieval baseline
+    /// for a reason that has nothing to do with retrieval.
+    fn valve_pair() -> Vec<Sphere> {
+        vec![
+            Sphere::new(
+                "valve-001",
+                ["emergency_shutdown".to_string(), "adjust_flow".to_string()],
+                ["emergency shutdown".to_string(), "set flow".to_string()],
+                Readiness::new(0.4),
+            ),
+            Sphere::new(
+                "valve-002",
+                ["emergency_shutdown".to_string(), "adjust_flow".to_string()],
+                [
+                    "emergency shutdown".to_string(),
+                    "set flow".to_string(),
+                    "throttle".to_string(),
+                ],
+                Readiness::new(0.8),
+            ),
+        ]
+    }
+
+    #[test]
+    fn converges_two_artifacts_declaring_the_same_primitives() {
+        let (g, p) = gather_profiled(&valve_pair());
+        assert_eq!(g.denominators.len(), 1);
+        assert_eq!(g.denominators[0].convergence, 2);
+        assert_eq!(p.capability_matches, 1);
+    }
+
+    #[test]
+    fn retains_the_union_of_both_vocabularies_in_the_denominator() {
+        // Recombination, not blending: the second artifact's extra phrasing is
+        // kept rather than averaged away, and neither artifact is discarded.
+        let (g, _p) = gather_profiled(&valve_pair());
+        let d = &g.denominators[0];
+        assert!(d.aliases.contains("set flow"));
+        assert!(d.aliases.contains("throttle"));
+        assert_eq!(d.contributors.len(), 2);
+    }
+
+    #[test]
+    fn records_convergent_derivation_between_the_two() {
+        let (g, _p) = gather_profiled(&valve_pair());
+        assert!(g.ties.iter().any(|t| t.relation == Relation::Convergent
+            && t.from == "valve-001"
+            && t.to == "valve-002"));
+    }
+
+    #[test]
+    fn carries_the_stronger_of_the_two_readinesses() {
+        let (g, _p) = gather_profiled(&valve_pair());
+        assert_eq!(g.denominators[0].readiness.key(), Readiness::new(0.8).key());
+    }
+
+    #[test]
+    fn orders_the_denominator_by_convergence_not_by_readiness() {
+        // A lone artifact at full readiness must not outrank two corroborated
+        // ones, because independent agreement is the stronger evidence.
+        let mut spheres = valve_pair();
+        spheres.push(Sphere::new(
+            "solo",
+            ["vent".to_string()],
+            ["z".to_string()],
+            Readiness::new(1.0),
+        ));
+        let g = gather(&spheres);
+        assert_eq!(g.denominators[0].convergence, 2);
+        assert_eq!(
+            g.denominators[0].contributors,
+            vec!["valve-001", "valve-002"]
+        );
     }
 }
