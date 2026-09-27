@@ -2,56 +2,46 @@
 
 # unia
 
-**Universal Nucleus Interface Architecture**
-
-An orchestration system that decouples an agent's *intent* from its
-*implementation*.
+**Identity is what a thing does, not how it is worded.**
 
 [![CI](https://github.com/dacineu/unia/actions/workflows/ci.yml/badge.svg)](https://github.com/dacineu/unia/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/unia.svg)](https://crates.io/crates/unia)
 [![docs.rs](https://img.shields.io/docsrs/unia.svg)](https://docs.rs/unia)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![DCO](https://img.shields.io/badge/DCO-required-blue.svg)](./DCO)
 
-[`.ure` specification](./docs/SPEC.md) ·
-[Whitepaper (PDF)](./docs/whitepaper_unia.pdf) ·
-[Commercial and support](./LICENSE-COMMERCIAL.md) ·
-[Contributing](./CONTRIBUTING.md) ·
-[Security](./SECURITY.md)
+[`docs/SPEC.md`](./docs/SPEC.md) ·
+[the paper](./docs/LARGE-PATTERN-MODELS.md) ·
+[the game](./docs/camaduci-game.md) ·
+[commercial and support](./LICENSE-COMMERCIAL.md) ·
+[contributing](./CONTRIBUTING.md) ·
+[security](./SECURITY.md)
 
 </div>
 
-## The problem
+---
 
-An agent that can do one useful thing is usually hardcoded to the machine that
-thing lives on. It shells out to `/usr/bin/grep`, it expects a CUDA device, it
-assumes a POSIX filesystem. Moving it to a browser, a different GPU, or a
-different OS means rewriting the integration, so the capability and the
-environment stay welded together and neither can evolve.
+## The one idea
 
-## The idea
+An agent that can do one useful thing is usually welded to the machine that
+thing lives on. It shells out to `/usr/bin/grep`, expects a CUDA device, assumes
+a POSIX filesystem. Move it to a browser or another OS and you rewrite the
+integration, so the capability and the environment can never evolve apart.
 
-Separate *what* an agent wants done from *how* it gets done.
-
-A **Primitive Bridge** maps natural-language intent onto a small, stable
-vocabulary of universal primitives. An **Actuator Nucleus** then satisfies those
-primitives against a real resource. Neither knows much about the other, and
-neither knows about the operating system.
-
-The middle layer is a **Punctuation Layer**: capabilities are declared as
-`.ure` resources rather than as paths to binaries, so the same declaration can be
-satisfied by a shell command, a Wasm module, or a GPU kernel.
+unia separates **what** is wanted from **how** it is served. A capability is
+declared as a `.ure` resource. A **Primitive Bridge** maps intent onto a small
+stable vocabulary of primitives. An **Actuator Nucleus** satisfies them against
+a real resource, which may be a shell command, a Wasm module, or a GPU kernel.
 
 ```json
 {
   "resource_id": "valve-001",
   "category": "actuator",
-  "state_space": {
-    "flow_rate": { "type": "float", "range": [0.0, 1.0], "unit": "percentage" }
-  },
+  "state_space": { "flow_rate": { "type": "float", "range": [0.0, 1.0] } },
   "action_primitives": [
     {
       "id": "emergency_shutdown",
-      "aliases": ["emergency_shutdown", "emergency shutdown"],
+      "aliases": ["emergency_shutdown", "opriți supapa"],
       "params": {},
       "target_state": "flow_rate = 0.0",
       "constraints": ["status != 'fault'"]
@@ -60,149 +50,262 @@ satisfied by a shell command, a Wasm module, or a GPU kernel.
 }
 ```
 
-```
-"Emergency shutdown the valve"
-        │
-        ▼
-  PrimitiveBridge ──► PrimitivePacket ──► ActuatorNucleus ──► driver
-  (intent → primitive)                   (packet → hardware)
-```
+The claim that matters is narrower than "orchestration system", and it is the
+part the rest of this repository is trying to earn:
 
-## Evolution path
+> **Prose must never determine identity.** The same capability, declared once and
+> worded differently, is one artifact with one address — not a sibling that
+> happens to look similar.
 
-```
-OS-dependent  →  Primitive Bridge  →  Actuator-driven  →  Universal Nucleus
-```
+That single rule is what lets two people who share no language converge, and it
+is enforced by hashing a *skeleton* of the manifest with the surface fields
+(`resource_id`, `guidance`, `description`, `aliases`) removed. Measured before
+the change: the same valve in English and in Romanian were two different
+artifacts. Measured after: one address.
 
-OS primitives are treated as bootstrap resources. Over time an optimised `.ure`
-actuator replaces them, and the system stops depending on the host OS's tooling.
+The surface lives beside the identity, in a `Lexicon` — address → language →
+phrasings — so a rule learned in one language extends the rule you already have
+instead of quietly creating a near-duplicate.
 
-## What is implemented today
+## The research question
 
-Twenty-two modules, in five layers. This is a working prototype, not a product,
-and the [specification](./docs/SPEC.md) records where the code and the prose
-still disagree.
+The paper is [`docs/LARGE-PATTERN-MODELS.md`](./docs/LARGE-PATTERN-MODELS.md).
+In one paragraph:
 
-| Layer | Modules | Role |
-| --- | --- | --- |
-| **Declaration** | `identifiers`, `registry` | DU-UUID content addressing, manifest resolution, champion selection |
-| **Resolution** | `bridge`, `primitives`, `router`, `slm` | Intent to primitive mapping, semantic scoring, SLM routing |
-| **Execution** | `nucleus`, `os`, `weights`, `profiler` | Packet dispatch, virtual kernel and VFS, hardware abstraction, LoRA memory |
-| **Economics** | `wmis` | Token metering, permissions, resource quality |
-| **Evolution** | `orchestrator`, `pipeline`, `harvester`, `learner`, `transducer`, `evolution`, `fluid`, `meta_actuators` | Harvest, learn, transduce, project, mutate |
+Software reuses *artifacts*. Machine learning reuses *weights*. We are
+interested in a third unit: a **large pattern** — an executable artifact that can
+be recognised in a language you do not speak, addressed by what it does, and
+handed to another party without either of you agreeing on a shared human
+language. The reuse rate we optimise for is **escalation rate**: how much
+capability a corpus gains per artifact added, rather than how much a single
+artifact can do.
 
-Cross-cutting: `mcp` for Model Context Protocol connectors, `release_manager` for
-champion promotion, `node` and `transducer` for the distributed fabric, and a
-`wasm32` build via `wasm_core`.
+**The model is a transduction layer, not the interface.** The interface is the
+sequence of primitives. A language model helps *call* an act; it is never what
+identifies it. Today it can be removed entirely, and the vocabulary-free channel
+still works — that is the design target, and it is not yet the default path.
 
-## Quick start
+The paper has a section called **"What is not demonstrated"** and it is
+load-bearing. Read it before quoting anything from this project.
 
-```sh
-git clone https://github.com/dacineu/unia
-cd unia
-cargo test
-cargo run --example camaduci
-```
+## ca(R)maduci
 
-Requires a stable Rust toolchain, 1.75 or later.
+The smallest thing that exercises the whole loop is a pet.
 
-```sh
-cargo check --all-targets     # library, tests and examples
-cargo test                    # 112 tests
-cargo run --example verify_fs_pipeline
-cargo build --target wasm32-unknown-unknown
-```
-
-### Examples
-
-| Example | Shows |
-| --- | --- |
-| `camaduci` | A digital pet whose vitals are a declared state space and whose care is recorded as traces. Start here. |
-| `full_system_demo` | Provisioning, orchestration, SLM execution and learning, end to end |
-| `verify_fs_pipeline` | Bridge to nucleus with economic accounting on each actuation |
-| `formal_verification_demo` | Property-based verification of the actuation contract |
-| `benchmark_unia` | Decoupled intent mapping against a coupled baseline |
-| `universal_demo` | Several resource categories through one pipeline |
-
-#### ca(R)maduci — the first example
-
-```sh
-cargo run --example camaduci
-```
-
-A creature whose vitals are a declared state space, whose care operations are
-primitives, and whose neglect is the *absence* of a call. It is the smallest
-thing that exercises the whole loop, and it is first because everything else in
-this crate is harder to see working.
+It has a hunger, a happiness and a health. It never asks for them. It gets
+worse quietly, at a rate you will not notice until you have already lost the
+thread of it. You feed it, play with it, clean it, and eventually put it to
+sleep — **and sleep is the only thing that ages it.** Feed a creature for a week
+and it is the same egg.
 
 ```
 tended:                             neglected:
   stage       adult                   stage       egg
   age ticks   6                      age ticks   0
   vitals      hunger 0.05            vitals      hunger 1.00
-              happiness 1.00                     happiness 0.00
-              health 1.00                        health 0.00
+               happiness 1.00                     happiness 0.00
+               health 1.00                        health 0.00
   mood        content                 mood        gone
   lifecycle   served                 lifecycle   quarantined
 ```
 
-Both creatures received the same number of ticks. One reached adulthood and has
-a trace log; the other stayed an egg, died, and was **quarantined rather than
-deleted**, because death is a lifecycle transition and the traces that caused it
-are still evidence.
+Both received the same number of ticks. One has a trace log; the other died and
+was **quarantined rather than deleted**, because death is a lifecycle transition
+and the traces that caused it are still evidence.
 
-Three properties carry over from the research, and they are the reason the
-example is worth reading:
+There is no antagonist. **There is apathy.** A creature nobody fed does not
+announce itself: no alert, no badge, one notch of drift at a time. That is
+deliberate, and it is the property the whole system is built to detect — a
+service that is quietly getting worse is indistinguishable from one that is
+idle.
 
-- **Age advances on a completed sleep cycle, not on a clock.** A pet that is never
-  put to sleep never leaves the egg. Progress is gated on a finished interaction
-  rather than on elapsed time.
-- **Neglect is not a punishment.** It is what happens when no intent arrives and
-  no primitive is dispatched. The game cannot levy it at will, which is what
-  makes the obligation real.
-- **The clock is injected.** `now` is a parameter, not a call to the system
-  clock, so the whole example is deterministic and testable.
+The game is named for its own question:
 
-What it does **not** show: escalation rate at any interesting corpus size,
-cross-model execution, or convergence between nodes. One pet is one artifact with
-no peer to converge with. See [`docs/camaduci.md`](./docs/camaduci.md) for the
-design and the prior art it draws on.
+> *Let's find together the answer to the ever question: what came first, the egg
+> or the chicken?*
+
+One creature cannot answer it, because within one creature the egg obviously
+comes first. The interesting answer needs two. If two players tend their
+creatures with the same words, the creatures learn the *same act* — and since
+identity **is** the act, they are not two creatures that happened to agree. They
+are one act arrived at twice. When they meet, the system does not say who came
+first. It says **neither**, and hands over the address both reached independently.
+When two creatures never match, it says **undetermined**. It will not invent an
+ancestor to give you a satisfying answer.
+
+There is no host, address, port or position anywhere in the convergence rule.
+Two creatures on opposite sides of the world with the same capabilities converge
+exactly as two on one machine do. Two neighbours with different capabilities do
+not. **Proximity is not intimacy.**
+
+The full design, including the revisions this project forced on it, is in
+[`docs/camaduci-game.md`](./docs/camaduci-game.md). The mechanics are in
+[`docs/camaduci.md`](./docs/camaduci.md), the peer relay in
+[`docs/signalling.md`](./docs/signalling.md).
+
+```sh
+cargo run --example camaduci                       # terminal, deterministic
+cargo run --bin unia-camaduci -- --port 7731       # playable in a browser
+```
+
+## What is measured, and what is not
+
+This is the section to read before forming an opinion.
+
+Reproduce any of it with `cargo run --features mcp-server --bin unia-mcp -- eval`
+and `... -- topology`.
+
+| Claim | Measurement |
+| --- | --- |
+| Retrieval hit@1 on the 20-case fixture | **20/20 (100%)** |
+| False negatives | **0** |
+| False positives | **2** |
+| Primitive vocabulary reachable by the resolver | **16 of 16**, and it returns an error otherwise |
+| Tests | **242** |
+| Corpus | **63 patterns**, 0 edges, 0 denominators |
+| Capability matches across the corpus | **0** |
+
+Two of those rows are the interesting ones.
+
+**The two false positives score 0.2197 and 0.2236 against a weakest true
+positive of 0.2041.** No threshold separates them. They need a capability check
+against the declared state space, not a better score — which is why the honest
+answer here is "not fixed" and not "tune the constant".
+
+**The corpus has 63 artifacts and zero shared capabilities.** So there is no
+escalation rate to report, and this repository does not report one. The gather
+machinery converges on common denominators; on this corpus it has 63
+participants and finds nothing, which is a real measurement and is printed as
+one. Everything downstream of that — the research claim, the paper's central
+figure — is waiting on a corpus with shared primitives in it. Building one is
+the next piece of work, not a footnote.
+
+**What this project does not have yet**, stated plainly:
+
+- **A creature cannot learn a new power.** It can be kept, it persists across
+  restarts, and it induces its own routines. It cannot be taught to reach
+  anything it was not built to reach — not a file, not a socket, not another
+  creature. The limbs are missing, and this blocks meeting, handover, and the
+  whole primitive protocol.
+- **Nothing is translated.** A phrasing exists because somebody supplied it. No
+  code infers that one word is another, on purpose: an inferred synonym that
+  turns out to be an antonym is worse than a missing one. Measured: `inchide
+  supapa` scores 0.850 while `open the valve` scores 0.289 against the same
+  artifact, and a corpus with one antonym in an alias set is currently
+  undetectable. It needs a typed `Opposes` relation, not a flat bag of words.
+- **Induced sequences are unaddressable.** A creature can learn
+  `SetValue_CheckSense` and never be able to call it, because candidates are
+  never written back to `patterns/`.
+- **Constraints are declared and not evaluated.** `constraints` is an array of
+  free strings. This is the second pillar of the safety argument and it is
+  currently a comment.
+
+## What is implemented
+
+Twenty-seven modules in five layers. This is a working prototype, not a product,
+and [`docs/SPEC.md`](./docs/SPEC.md) records every place the code and the prose
+still disagree.
+
+| Layer | Modules | Role |
+| --- | --- | --- |
+| **Declaration** | `identifiers`, `registry`, `lexicon` | skeleton hashing and content addressing, manifest resolution, surface forms |
+| **Resolution** | `bridge`, `primitives`, `router`, `slm`, `session` | intent to primitive mapping, semantic scoring, SLM routing, session extraction |
+| **Execution** | `nucleus`, `os`, `weights`, `profiler` | packet dispatch, virtual kernel and VFS, hardware abstraction, LoRA memory |
+| **Economics** | `wmis` | token metering, permissions, resource quality |
+| **Evolution** | `orchestrator`, `pipeline`, `harvester`, `learner`, `transducer`, `evolution`, `fluid`, `meta_actuators`, `induce`, `gather`, `gc` | harvest, induce, converge, transduce, retire |
+
+Cross-cutting: `camaduci` (the creature), `mcp` (Model Context Protocol
+connectors, off by default), `node` and `transducer` (the distributed fabric),
+and a `wasm32` build via `wasm_core`.
+
+Three binaries: `unia-mcp` (the corpus over MCP), `unia-camaduci` (the playable
+server, no dependencies), `unia-signal` (the peer-to-peer relay, running as a
+systemd user service).
+
+## Quick start
+
+```sh
+git clone https://github.com/dacineu/unia
+cd unia
+cargo test                                          # 242 tests
+cargo run --example camaduci                        # start here
+```
+
+Requires a stable Rust toolchain, 1.75 or later.
+
+```sh
+cargo check --all-targets
+cargo build --target wasm32-unknown-unknown
+
+# the corpus, over MCP
+cargo run --features mcp-server --bin unia-mcp -- search "purge the temp storage"
+cargo run --features mcp-server --bin unia-mcp -- eval
+cargo run --features mcp-server --bin unia-mcp -- topology
+
+# the creature, playable
+cargo run --bin unia-camaduci -- --port 7731
+cargo run --bin unia-signal -- --port 8787
+```
+
+### Examples
+
+| Example | Shows |
+| --- | --- |
+| `camaduci` | A creature whose vitals are a declared state space and whose care is recorded as traces. Start here. |
+| `full_system_demo` | Provisioning, orchestration, SLM execution and learning, end to end |
+| `verify_fs_pipeline` | Bridge to nucleus with economic accounting on each actuation |
+| `formal_verification_demo` | Property-based verification of the actuation contract |
+| `benchmark_unia` | Decoupled intent mapping against a coupled baseline |
+| `universal_demo` | Several resource categories through one pipeline |
 
 ## Status
 
-**Pre-1.0. Experimental.** Known limitations are listed as divergences D1–D7 in
-the [specification](./docs/SPEC.md), including two identifier schemes that are
-documented but not yet reconciled, and action constraints that are declared but
-not yet evaluated. Read those before building on this.
+**Pre-1.0. Experimental.** Known limitations are tracked as divergences in
+[`docs/SPEC.md`](./docs/SPEC.md) and, in prose, in
+[`docs/DISCUSSION-evolution-and-identity.md`](./docs/DISCUSSION-evolution-and-identity.md)
+— which also records the claims that were **withdrawn**, and why, including three
+that were wrong in this project's own favour. Two of the more expensive lessons:
+
+- Ancestry was modelled as a hash chain. A chain asserts a tree; the data is a
+  DAG, and the most informative event is independent convergence. Withdrawn.
+- "Convergence makes a growing corpus better" was asserted before the
+  denominator was ever served by retrieval. Disproved by the code: the
+  denominator is computed and then ignored.
 
 ## Documentation
 
 | Document | Contents |
 | --- | --- |
-| [`docs/SPEC.md`](./docs/SPEC.md) | The normative `.ure` format, version 0.1.0 |
-| [`docs/whitepaper_unia.pdf`](./docs/whitepaper_unia.pdf) | The full design argument |
+| [`docs/SPEC.md`](./docs/SPEC.md) | The normative `.ure` format, version 0.1.0, and its open divergences |
+| [`docs/LARGE-PATTERN-MODELS.md`](./docs/LARGE-PATTERN-MODELS.md) | The paper, including §9 *What is not demonstrated* |
+| [`docs/DISCUSSION-evolution-and-identity.md`](./docs/DISCUSSION-evolution-and-identity.md) | The study record: what was tried, what was measured, what was retracted |
+| [`docs/camaduci-game.md`](./docs/camaduci-game.md) | The game, and the revisions the research forced on it |
+| [`docs/camaduci.md`](./docs/camaduci.md) | Creature mechanics and the prior art they draw on |
+| [`docs/signalling.md`](./docs/signalling.md) | The peer-to-peer relay |
+| [`docs/whitepaper/whitepaper_unia.tex`](./docs/whitepaper/whitepaper_unia.tex) | LaTeX source of the whitepaper (compiles to 8pp) |
 | [`docs/arch_decoupling_strategy.md`](./docs/arch_decoupling_strategy.md) | Why the decoupling layer exists |
-| [`amater-agent-manager-design.md`](./amater-agent-manager-design.md) | Agent manager design |
 | [`docs/PROVENANCE.md`](./docs/PROVENANCE.md) | Publication dates, authorship, prior art |
-| [`COGNITION_LOG.md`](./COGNITION_LOG.md) | Design rationale, including the Patten/Mattern distinction |
+| [`docs/cognition-log.md`](./docs/cognition-log.md) | Design rationale, including the Patten/Mattern distinction |
+| [`TODO.md`](./TODO.md) | The live, ranked list of what is not done |
 
 ## Using unia
 
 The reference implementation is **MIT licensed**. You may use it commercially,
-modify it, and sell products built on it, with only the requirement of
-preserving the copyright notice.
+modify it, and sell products built on it, with the only requirement of preserving
+the copyright notice.
 
-MIT does **not** cover the names. `unia`, `unia-OS`, `UPA`, `DU-UUID` and
-`.ure` are trademarks and are not licensed. See
-[`TRADEMARK.md`](./TRADEMARK.md).
+MIT does **not** cover the names. `unia`, `unia-OS`, `UPA`, `DU-UUID`, `.ure`
+and `ca(R)maduci` are trademarks and are not licensed. See
+[`TRADEMARK.md`](./TRADEMARK.md), which records their actual status rather than
+an aspiration — nothing here has been filed or cleared yet.
 
 If you want supported, warranted, or bespoke work, a negotiated licence where
 MIT does not fit, or permission to use the marks, contact
-**<dacineu@proton.me>**. The terms are in
+**<dacineu@proton.me>**. Terms are in
 [`LICENSE-COMMERCIAL.md`](./LICENSE-COMMERCIAL.md).
 
-If you are implementing `.ure` independently: no licence is required, provided
-you avoid the marks. Tell us and it will be listed here.
+If you are implementing `.ure` independently: **no licence is required**, so
+long as you avoid the marks. Tell us and it will be listed here.
 
 ## Contributing
 
@@ -221,10 +324,6 @@ unia is the work of a single author, published under the pseudonym
 The pseudonym is deliberate. Please use it in correspondence, and treat
 unsolicited approaches involving a legal identity as a security matter under
 [`SECURITY.md`](./SECURITY.md).
-
-<p align="center">
-  <a href="https://ko-fi.com/A7O02756VY">☕ Support via Ko-fi</a>
-</p>
 
 ## Licence
 
