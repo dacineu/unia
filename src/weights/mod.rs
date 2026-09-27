@@ -1,5 +1,5 @@
-use uuid::Uuid;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct LoraAdapter {
@@ -25,21 +25,25 @@ impl WeightManager {
 
     /// Simulates loading a LoRA adapter into GPU memory for a "Deep Dive".
     pub fn load_adapter(&mut self, adapter: LoraAdapter) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Loading LoRA adapter {} from {}...", adapter.adapter_id, adapter.weights_path);
-        
+        println!(
+            "Loading LoRA adapter {} from {}...",
+            adapter.adapter_id, adapter.weights_path
+        );
+
         let adapter_size = match adapter.precision.as_str() {
             "int4" => 100 * 1024 * 1024, // 100MB
             "int8" => 200 * 1024 * 1024, // 200MB
             _ => 400 * 1024 * 1024,      // 400MB
         };
 
-        if self.gpu_memory_usage + adapter_size > 8 * 1024 * 1024 * 1024 { // 8GB limit
+        if self.gpu_memory_usage + adapter_size > 8 * 1024 * 1024 * 1024 {
+            // 8GB limit
             return Err("GPU_OUT_OF_MEMORY: Cannot load more adapters".into());
         }
 
         self.active_adapters.insert(adapter.adapter_id, adapter);
         self.gpu_memory_usage += adapter_size;
-        
+
         Ok(())
     }
 
@@ -75,7 +79,7 @@ mod tests {
 
         assert!(manager.load_adapter(adapter.clone()).is_ok());
         assert!(manager.is_loaded(&adapter.adapter_id));
-        
+
         manager.unload_adapter(&adapter.adapter_id);
         assert!(!manager.is_loaded(&adapter.adapter_id));
     }

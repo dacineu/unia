@@ -1,38 +1,51 @@
 use proptest::prelude::*;
 use std::collections::HashMap;
-use unia::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType, UniversalPrimitive, PrimitivePacket};
-use unia::nucleus::{ActuatorNucleus, ValveDriver};
-use unia::wmis::{WmisEconomicLayer, WmisResource, ResourceType, SharingScope};
 use std::sync::{Arc, Mutex};
+use unia::bridge::primitive::{
+    PrimitiveBridge, PrimitivePacket, StateType, UniversalPrimitive, UreAction, UreResource,
+};
+use unia::nucleus::{ActuatorNucleus, ValveDriver};
+use unia::wmis::{ResourceType, SharingScope, WmisEconomicLayer, WmisResource};
 
 /// Formal verification of the unia Pipeline.
 /// We use property-based testing to ensure that the system remains in a safe state
 /// regardless of the input intent or sequence of operations.
 fn verify_determinism() {
     println!("Testing Property: Intent-to-Primitive Determinism...");
-    
+
     // Using a simpler manual loop since proptest macros require specific test harnesses
-    let intents = vec!["stop the valve", "Emergency shutdown", "close water", "random text"];
-    
+    let intents = vec![
+        "stop the valve",
+        "Emergency shutdown",
+        "close water",
+        "random text",
+    ];
+
     for intent in intents {
         let mut bridge = PrimitiveBridge::new();
         setup_demo_resource(&mut bridge);
-        
+
         let res1 = bridge.map_intent("valve-001", intent);
         let res2 = bridge.map_intent("valve-001", intent);
-        
-        assert_eq!(res1, res2, "Non-deterministic mapping detected for intent: {}", intent);
+
+        assert_eq!(
+            res1, res2,
+            "Non-deterministic mapping detected for intent: {}",
+            intent
+        );
     }
     println!("✅ Determinism verified.");
 }
 
 fn verify_constraint_safety() {
     println!("Testing Property: Constraint Invariance...");
-    
+
     let economy = Arc::new(Mutex::new(WmisEconomicLayer::new()));
     let mut nucleus = ActuatorNucleus::new(Arc::clone(&economy));
-    nucleus.register_driver(Box::new(ValveDriver { id: "valve-001".to_string() }));
-    
+    nucleus.register_driver(Box::new(ValveDriver {
+        id: "valve-001".to_string(),
+    }));
+
     // Simulate a unia packet
     let packet = PrimitivePacket {
         header: unia::bridge::primitive::PacketHeader {
@@ -57,23 +70,33 @@ fn verify_constraint_safety() {
         owner: "tester".to_string(),
         sharing_scope: SharingScope::Global,
         capabilities: vec![],
-        quality: unia::wmis::QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
+        quality: unia::wmis::QualityMetrics {
+            qor: 1.0,
+            qos: 1.0,
+            qop: 1.0,
+        },
         metadata: serde_json::json!({}),
     };
 
     let result = nucleus.dispatch(packet, "tester", &meta);
-    assert!(result.is_ok(), "Safety violation: Valid reset should be permitted");
+    assert!(
+        result.is_ok(),
+        "Safety violation: Valid reset should be permitted"
+    );
     println!("✅ Constraint safety verified.");
 }
 
 fn setup_demo_resource(bridge: &mut PrimitiveBridge) {
     let mut state_space = HashMap::new();
-    state_space.insert("flow_rate".to_string(), StateType {
-        r#type: "float".to_string(),
-        range: Some((0.0, 1.0)),
-        unit: Some("percentage".to_string()),
-        values: None,
-    });
+    state_space.insert(
+        "flow_rate".to_string(),
+        StateType {
+            r#type: "float".to_string(),
+            range: Some((0.0, 1.0)),
+            unit: Some("percentage".to_string()),
+            values: None,
+        },
+    );
 
     let actions = vec![UreAction {
         id: "emergency_shutdown".to_string(),

@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// The dimensionality of the computation, determining the required hardware target.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]

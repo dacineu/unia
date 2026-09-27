@@ -1,7 +1,7 @@
-use sha2::{Sha256, Digest};
+use aes_gcm::{aead::Aead, Aes256Gcm, Key, KeyInit, Nonce};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use aes_gcm::{Aes256Gcm, Key, Nonce, KeyInit, aead::Aead};
 
 #[derive(Debug, thiserror::Error)]
 pub enum UreIdError {
@@ -19,11 +19,14 @@ pub struct DuUuid;
 
 impl DuUuid {
     /// Generates a UUID from a .ure manifest.
-    /// 
+    ///
     /// # Arguments
     /// * `manifest` - The .ure manifest as a JSON Value.
     /// * `encryption_key` - Optional 32-byte key for AES-256-GCM encryption.
-    pub fn generate(manifest: &Value, encryption_key: Option<&[u8; 32]>) -> Result<Uuid, UreIdError> {
+    pub fn generate(
+        manifest: &Value,
+        encryption_key: Option<&[u8; 32]>,
+    ) -> Result<Uuid, UreIdError> {
         // 1. Externalize the ID to prevent circular dependency
         let mut content = manifest.clone();
         if let Some(obj) = content.as_object_mut() {
@@ -63,14 +66,15 @@ impl DuUuid {
     fn encrypt_payload(data: &[u8], key_bytes: &[u8; 32]) -> Result<Vec<u8>, UreIdError> {
         let key = Key::<Aes256Gcm>::from_slice(key_bytes);
         let cipher = Aes256Gcm::new(key);
-        
+
         // For deterministic UUIDs, the nonce must be deterministic.
         // WARNING: In standard encryption, nonces must NEVER be reused.
         // Here, since the purpose is generating a unique ID from content (not secrecy),
         // a fixed nonce is used to ensure the same content -> same UUID.
         let nonce = Nonce::from_slice(b"ure_det_nonc"); // exactly 12 bytes
 
-        cipher.encrypt(nonce, data)
+        cipher
+            .encrypt(nonce, data)
             .map_err(|e| UreIdError::Encryption(e.to_string()))
     }
 }

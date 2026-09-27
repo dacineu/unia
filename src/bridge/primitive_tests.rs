@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use crate::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType, UniversalPrimitive};
+    use crate::bridge::primitive::{
+        PrimitiveBridge, StateType, UniversalPrimitive, UreAction, UreResource,
+    };
     use std::collections::HashMap;
 
     #[test]
@@ -9,12 +11,15 @@ mod tests {
 
         // 1. Setup a sample URE resource (Smart Valve)
         let mut state_space = HashMap::new();
-        state_space.insert("flow_rate".to_string(), StateType {
-            r#type: "float".to_string(),
-            range: Some((0.0, 1.0)),
-            unit: Some("percentage".to_string()),
-            values: None,
-        });
+        state_space.insert(
+            "flow_rate".to_string(),
+            StateType {
+                r#type: "float".to_string(),
+                range: Some((0.0, 1.0)),
+                unit: Some("percentage".to_string()),
+                values: None,
+            },
+        );
 
         let actions = vec![
             UreAction {
@@ -29,10 +34,7 @@ mod tests {
             },
             UreAction {
                 id: "adjust_flow".to_string(),
-                aliases: Some(vec![
-                    "adjust_flow".to_string(),
-                    "adjust flow".to_string(),
-                ]),
+                aliases: Some(vec!["adjust_flow".to_string(), "adjust flow".to_string()]),
                 params: {
                     let mut p = HashMap::new();
                     p.insert("target".to_string(), "float".to_string());
@@ -57,9 +59,12 @@ mod tests {
         let intent = "Please perform an emergency_shutdown on the valve";
         let result = bridge.map_intent("valve-001", intent);
 
-        assert!(result.is_ok(), "Bridge should map the intent to a primitive");
+        assert!(
+            result.is_ok(),
+            "Bridge should map the intent to a primitive"
+        );
         let packet = result.unwrap();
-        
+
         // Verify the mapping: emergency_shutdown -> UniversalPrimitive::Reset
         assert_eq!(packet.payload.primitive, UniversalPrimitive::Reset);
         assert_eq!(packet.payload.resource_id, "valve-001");
@@ -71,7 +76,7 @@ mod tests {
 
         assert!(result_2.is_ok());
         let packet_2 = result_2.unwrap();
-        
+
         // Verify the mapping: adjust_flow -> UniversalPrimitive::SetValue
         assert_eq!(packet_2.payload.primitive, UniversalPrimitive::SetValue);
         println!("✅ Successfully mapped 'adjust' intent to UniversalPrimitive::SetValue");

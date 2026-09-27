@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use unia::wmis::WmisAdapter;
     use serde_json::json;
+    use unia::wmis::WmisAdapter;
 
     #[test]
     fn test_ure_to_wmis_conversion() {

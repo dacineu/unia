@@ -1,10 +1,10 @@
-use std::net::{TcpListener, TcpStream};
-use std::io::{Read, Write};
 use crate::bridge::primitive::{PrimitivePacket, UniversalPrimitive};
 use crate::nucleus::{ActuatorNucleus, ValveDriver};
-use crate::wmis::{WmisEconomicLayer, WmisResource, ResourceType, SharingScope};
-use std::sync::{Arc, Mutex};
+use crate::wmis::{ResourceType, SharingScope, WmisEconomicLayer, WmisResource};
 use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
 
 /// A simple unia-node that listens for remote PrimitivePackets and executes them locally.
 pub struct UniaNode {
@@ -20,7 +20,7 @@ impl UniaNode {
     pub fn listen(&self) -> Result<(), String> {
         let listener = TcpListener::bind(&self.addr)
             .map_err(|e| format!("Failed to bind to {}: {}", self.addr, e))?;
-        
+
         println!("📡 unia-node listening on {}", self.addr);
 
         for stream in listener.incoming() {
@@ -39,18 +39,26 @@ impl UniaNode {
                                     owner: "remote_user".to_string(),
                                     sharing_scope: SharingScope::Global,
                                     capabilities: vec![],
-                                    quality: crate::wmis::QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
+                                    quality: crate::wmis::QualityMetrics {
+                                        qor: 1.0,
+                                        qos: 1.0,
+                                        qop: 1.0,
+                                    },
                                     metadata: serde_json::json!({}),
                                 };
-                                
+
                                 match nucleus.dispatch(packet, "remote_user", &mock_meta) {
-                                    Ok(res) => { let _ = s.write_all(res.as_bytes()); },
-                                    Err(e) => { let _ = s.write_all(e.as_bytes()); },
+                                    Ok(res) => {
+                                        let _ = s.write_all(res.as_bytes());
+                                    }
+                                    Err(e) => {
+                                        let _ = s.write_all(e.as_bytes());
+                                    }
                                 }
                             }
                         }
                     });
-                },
+                }
                 Err(e) => eprintln!("Connection error: {}", e),
             }
         }

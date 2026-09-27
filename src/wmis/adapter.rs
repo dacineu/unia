@@ -1,7 +1,7 @@
-use serde::{Serialize, Deserialize};
-use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ResourceType {
@@ -47,11 +47,15 @@ pub struct WmisAdapter;
 
 impl WmisAdapter {
     /// Converts a unia .ure manifest into a WMIS Resource Object.
-    pub fn from_ure(manifest: &Value, owner: &str) -> Result<WmisResource, Box<dyn std::error::Error>> {
-        let resource_id = manifest["resource_id"].as_str()
+    pub fn from_ure(
+        manifest: &Value,
+        owner: &str,
+    ) -> Result<WmisResource, Box<dyn std::error::Error>> {
+        let resource_id = manifest["resource_id"]
+            .as_str()
             .ok_or("Missing resource_id in manifest")?
             .to_string();
-        
+
         let resource_type = match manifest["resource_type"].as_str() {
             Some("skill") | Some("mirror_actuator") => ResourceType::CodeLibrary,
             Some("ai_assistant") => ResourceType::AIAssistant,
@@ -60,22 +64,23 @@ impl WmisAdapter {
 
         // Derive Quality metrics from unia internals
         let complexity = manifest["complexity_score"].as_f64().unwrap_or(0.5);
-        
+
         // QoR is based on complexity and stability (simulated)
-        let qor = 1.0 - (complexity * 0.1); 
-        
+        let qor = 1.0 - (complexity * 0.1);
+
         Ok(WmisResource {
             id: resource_id,
             resource_type,
             owner: owner.to_string(),
             sharing_scope: SharingScope::Global, // Default for prototype
-            capabilities: vec![
-                manifest["guidance"].as_str().unwrap_or("general_capability").to_string()
-            ],
+            capabilities: vec![manifest["guidance"]
+                .as_str()
+                .unwrap_or("general_capability")
+                .to_string()],
             quality: QualityMetrics {
                 qor,
                 qos: 0.95, // Baseline QoS
-                qop: 0.8,   // Baseline QoP
+                qop: 0.8,  // Baseline QoP
             },
             metadata: manifest.clone(),
         })

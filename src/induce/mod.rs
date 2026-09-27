@@ -130,13 +130,15 @@ pub fn group_traces(traces: &[Trace]) -> BTreeMap<String, Induction> {
             continue;
         }
         let signature = t.primitives.join("_");
-        let entry = groups.entry(signature.clone()).or_insert_with(|| Induction {
-            signature,
-            observations: BTreeSet::new(),
-            hits: 0,
-            misses: 0,
-            tokens_saved: 0,
-        });
+        let entry = groups
+            .entry(signature.clone())
+            .or_insert_with(|| Induction {
+                signature,
+                observations: BTreeSet::new(),
+                hits: 0,
+                misses: 0,
+                tokens_saved: 0,
+            });
         let intent = t.intent.trim().to_lowercase();
         if !intent.is_empty() {
             entry.observations.insert(intent);
@@ -229,8 +231,8 @@ pub fn induce(group: &Induction) -> Result<Candidate, String> {
 
     let value = serde_json::to_value(&manifest)
         .map_err(|e| format!("could not serialise manifest: {e}"))?;
-    let du_uuid = DuUuid::generate(&value, None)
-        .map_err(|e| format!("could not derive DU-UUID: {e}"))?;
+    let du_uuid =
+        DuUuid::generate(&value, None).map_err(|e| format!("could not derive DU-UUID: {e}"))?;
 
     let mut manifest = manifest;
     manifest.resource_id = du_uuid.to_string();

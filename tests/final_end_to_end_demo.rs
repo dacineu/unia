@@ -1,15 +1,15 @@
 #[cfg(test)]
 mod tests {
-    use unia::registry::ActuatorRegistry;
-    use unia::orchestrator::{Orchestrator, BehavioralVector};
-    use unia::router::RouterSlm;
-    use unia::slm::MockSlm;
-    use unia::weights::{WeightManager, LoraAdapter};
-    use unia::learner::{Learner, TrainingBackend};
-    use uuid::Uuid;
     use serde_json::json;
     use std::fs;
     use tempfile::tempdir;
+    use unia::learner::{Learner, TrainingBackend};
+    use unia::orchestrator::{BehavioralVector, Orchestrator};
+    use unia::registry::ActuatorRegistry;
+    use unia::router::RouterSlm;
+    use unia::slm::MockSlm;
+    use unia::weights::{LoraAdapter, WeightManager};
+    use uuid::Uuid;
 
     #[test]
     fn test_the_complete_fluid_factory_loop() {
@@ -20,13 +20,18 @@ mod tests {
         let reg = ActuatorRegistry::with_base_dir("mock_db", dir.path());
         let res_id = Uuid::new_v4();
         let path = dir.path().join(format!("{}.ure", res_id));
-        fs::write(&path, serde_json::to_string(&json!({
-            "resource_id": res_id.to_string(),
-            "resource_type": "skill",
-            "complexity_score": 0.8,
-            "guidance": "Expert in Crypto-Yield Strategies",
-            "tokens_per_task": 1000
-        })).unwrap()).unwrap();
+        fs::write(
+            &path,
+            serde_json::to_string(&json!({
+                "resource_id": res_id.to_string(),
+                "resource_type": "skill",
+                "complexity_score": 0.8,
+                "guidance": "Expert in Crypto-Yield Strategies",
+                "tokens_per_task": 1000
+            }))
+            .unwrap(),
+        )
+        .unwrap();
 
         println!("✅ Resource Provisioned: {} (Complexity: 0.8)\n", res_id);
 
@@ -34,18 +39,23 @@ mod tests {
         let orchestrator = Orchestrator::new(reg);
         let vector = BehavioralVector::Smartest;
         let activation = orchestrator.collapse_actuator(res_id, vector).unwrap();
-        println!("✅ State Collapsed: Mode={:?}, DeepDive={}", activation.behavioral_mode, activation.is_deep_dive);
+        println!(
+            "✅ State Collapsed: Mode={:?}, DeepDive={}",
+            activation.behavioral_mode, activation.is_deep_dive
+        );
 
         // 3. EXECUTION: Deep Dive with Weights
         let mut weight_manager = WeightManager::new();
         let slm = MockSlm::new();
 
         if activation.is_deep_dive {
-            weight_manager.load_adapter(LoraAdapter {
-                adapter_id: res_id,
-                weights_path: "/weights/core.bin".to_string(),
-                precision: "int4".to_string(),
-            }).unwrap();
+            weight_manager
+                .load_adapter(LoraAdapter {
+                    adapter_id: res_id,
+                    weights_path: "/weights/core.bin".to_string(),
+                    precision: "int4".to_string(),
+                })
+                .unwrap();
             println!("⚡ LoRA Weights Loaded into GPU Memory.");
         }
 
@@ -54,11 +64,22 @@ mod tests {
 
         // 4. LEARNING: Triggering the Learner because we want to "Optimize" this path
         let learner = Learner::new(TrainingBackend::Local("ollama".to_string()));
-        let evolved_id = tokio::runtime::Runtime::new().unwrap().block_on(async {
-            learner.train_specialization("User requested Smartest, result was successful but slow", vec![res_id]).await
-        }).unwrap();
+        let evolved_id = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(async {
+                learner
+                    .train_specialization(
+                        "User requested Smartest, result was successful but slow",
+                        vec![res_id],
+                    )
+                    .await
+            })
+            .unwrap();
 
-        println!("✅ Evolution Triggered! New Specialized Actuator evolved: {}", evolved_id);
+        println!(
+            "✅ Evolution Triggered! New Specialized Actuator evolved: {}",
+            evolved_id
+        );
         println!("\n=== 🏁 DEMONSTRATION COMPLETE: The unia Nucleus is operational ===\n");
     }
 }

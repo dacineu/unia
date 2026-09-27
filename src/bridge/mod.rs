@@ -1,6 +1,6 @@
+use crate::orchestrator::BehavioralVector;
 use crate::registry::ActuatorRegistry;
 use crate::router::RouterSlm;
-use crate::orchestrator::BehavioralVector;
 use crate::transducer::SynapticTransducer;
 use std::collections::HashMap;
 
@@ -25,12 +25,19 @@ pub struct IntelligenceBridge {
 }
 
 impl IntelligenceBridge {
-    pub fn new(registry: ActuatorRegistry, router: RouterSlm, transducer: SynapticTransducer, provider: &str) -> Self {
+    pub fn new(
+        registry: ActuatorRegistry,
+        router: RouterSlm,
+        transducer: SynapticTransducer,
+        provider: &str,
+    ) -> Self {
         Self {
             registry,
             router,
             transducer,
-            external_api: ExternalApi { provider: provider.to_string() },
+            external_api: ExternalApi {
+                provider: provider.to_string(),
+            },
             pattern_frequency: HashMap::new(),
         }
     }
@@ -40,10 +47,10 @@ impl IntelligenceBridge {
     pub fn request(&mut self, prompt: String) -> String {
         // 1. INTERCEPT: Check for internal prototype
         let matches = self.registry.find_matching_actuators(&prompt);
-        
+
         if !matches.is_empty() {
             println!("🎯 Internal Hit! Intercepting request with pre-compiled Actuators.");
-            
+
             // PREFER CHAMPION: If a champion exists for this prompt, use it exclusively
             let champion_id = self.registry.get_champion(&prompt);
             let selected_actuators = if let Some(cid) = champion_id {
@@ -55,11 +62,21 @@ impl IntelligenceBridge {
 
             // 2. INTERVENE: Synthesize an internal response
             if !selected_actuators.is_empty() {
-                if let Ok(hybrid) = self.router.synthesize(selected_actuators, BehavioralVector::Smartest) {
+                if let Ok(hybrid) = self
+                    .router
+                    .synthesize(selected_actuators, BehavioralVector::Smartest)
+                {
                     let activation = hybrid.to_activation_vector(BehavioralVector::Smartest);
-                    return format!("[INTERNAL_ACTUATOR] Result based on {}: {}", 
-                        hybrid.source_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(", "),
-                        activation.system_prompt);
+                    return format!(
+                        "[INTERNAL_ACTUATOR] Result based on {}: {}",
+                        hybrid
+                            .source_ids
+                            .iter()
+                            .map(|id| id.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        activation.system_prompt
+                    );
                 }
             }
         }
@@ -76,18 +93,21 @@ impl IntelligenceBridge {
 
     fn evolve_pattern(&mut self, prompt: &str, response: &str) {
         let pattern_id = format!("{}:{}", prompt, response); // Simplified pattern ID
-        
+
         // Shadow the interaction
         self.transducer.shadow_resource(
-            &pattern_id, 
-            prompt, 
-            response, 
+            &pattern_id,
+            prompt,
+            response,
             150, // simulated latency
-            true
+            true,
         );
 
         // Track frequency for crystallization
-        let count = self.pattern_frequency.entry(pattern_id.clone()).or_insert(0);
+        let count = self
+            .pattern_frequency
+            .entry(pattern_id.clone())
+            .or_insert(0);
         *count += 1;
 
         if *count >= 3 {
@@ -99,8 +119,8 @@ impl IntelligenceBridge {
     }
 }
 pub mod primitive;
-pub mod semantic;
-pub mod upa;
-pub mod slm_mapper;
 #[cfg(test)]
 mod primitive_tests;
+pub mod semantic;
+pub mod slm_mapper;
+pub mod upa;

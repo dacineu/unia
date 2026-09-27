@@ -5,9 +5,9 @@
 //! path, and to show how cost scales as the corpus grows, because the ranking
 //! is currently a linear scan and that is the limit worth knowing about.
 
-use std::time::Instant;
-use unia::mcp::store::{Action, Payload, Pattern, Store};
 use std::path::PathBuf;
+use std::time::Instant;
+use unia::mcp::store::{Action, Pattern, Payload, Store};
 
 /// Intents shaped like the ones a coding agent would actually issue.
 const INTENTS: &[&str] = &[
@@ -33,10 +33,7 @@ fn synth(n: usize) -> Vec<Pattern> {
                 // benchmark exercises the scoring path rather than timing a scan
                 // that rejects every candidate at the threshold.
                 aliases: if i % 4 == 0 {
-                    vec![
-                        INTENTS[i % INTENTS.len()].to_string(),
-                        format!("alias {i}"),
-                    ]
+                    vec![INTENTS[i % INTENTS.len()].to_string(), format!("alias {i}")]
                 } else {
                     vec![format!("alias {i}"), format!("op {i}")]
                 },
@@ -95,7 +92,6 @@ fn main() {
         samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let p50 = samples[samples.len() / 2];
         let p99 = samples[(samples.len() as f64 * 0.99) as usize % samples.len()];
-
 
         println!(
             "{:>8}  {:>12.1}  {:>12.1}  {:>10}  {:>12.1}",

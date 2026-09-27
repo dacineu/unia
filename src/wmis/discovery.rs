@@ -1,4 +1,4 @@
-use crate::wmis::{WmisResource, SharingScope};
+use crate::wmis::{SharingScope, WmisResource};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -24,13 +24,16 @@ impl WmisDiscoveryProvider {
 
     pub fn broadcast_actuator(&self, resource: WmisResource) {
         let mut mesh = self.mesh.write().unwrap();
-        println!("🌐 WMIS: Broadcasting actuator {} to global fabric", resource.id);
+        println!(
+            "🌐 WMIS: Broadcasting actuator {} to global fabric",
+            resource.id
+        );
         mesh.insert(resource.id.clone(), resource);
     }
 
     pub fn discover_resources(&self, query: DiscoveryQuery) -> Vec<WmisResource> {
         let mesh = self.mesh.read().unwrap();
-        
+
         mesh.values()
             .filter(|res| {
                 // Scope check
@@ -44,7 +47,7 @@ impl WmisDiscoveryProvider {
                 // Tags check (simplified)
                 if !query.tags.is_empty() {
                     // In a real system, we'd check tags here
-                    return false; 
+                    return false;
                 }
                 true
             })

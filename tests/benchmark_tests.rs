@@ -1,9 +1,9 @@
-use unia::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
-use unia::nucleus::{ActuatorNucleus, ValveDriver};
-use unia::wmis::{QualityMetrics, ResourceType, SharingScope, WmisEconomicLayer, WmisResource};
-use std::time::{Instant, Duration};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use unia::bridge::primitive::{PrimitiveBridge, StateType, UreAction, UreResource};
+use unia::nucleus::{ActuatorNucleus, ValveDriver};
+use unia::wmis::{QualityMetrics, ResourceType, SharingScope, WmisEconomicLayer, WmisResource};
 
 #[test]
 fn run_empirical_benchmark() {
@@ -16,22 +16,23 @@ fn run_empirical_benchmark() {
 
     // Define a Smart Valve Resource
     let mut state_space = HashMap::new();
-    state_space.insert("flow_rate".to_string(), StateType {
-        r#type: "float".to_string(),
-        range: Some((0.0, 1.0)),
-        unit: Some("percentage".to_string()),
-        values: None,
-    });
-
-    let actions = vec![
-        UreAction {
-            id: "emergency_shutdown".to_string(),
-            aliases: None,
-            params: HashMap::new(),
-            target_state: "flow_rate = 0.0".to_string(),
-            constraints: vec!["status != 'fault'".to_string()],
+    state_space.insert(
+        "flow_rate".to_string(),
+        StateType {
+            r#type: "float".to_string(),
+            range: Some((0.0, 1.0)),
+            unit: Some("percentage".to_string()),
+            values: None,
         },
-    ];
+    );
+
+    let actions = vec![UreAction {
+        id: "emergency_shutdown".to_string(),
+        aliases: None,
+        params: HashMap::new(),
+        target_state: "flow_rate = 0.0".to_string(),
+        constraints: vec!["status != 'fault'".to_string()],
+    }];
 
     let valve_ure = UreResource {
         ure_version: "1.0".to_string(),
@@ -42,21 +43,29 @@ fn run_empirical_benchmark() {
     };
 
     bridge.load_resource(valve_ure);
-    nucleus.register_driver(Box::new(ValveDriver { id: "valve-001".to_string() }));
+    nucleus.register_driver(Box::new(ValveDriver {
+        id: "valve-001".to_string(),
+    }));
 
     // --- TEST CASE: "Emergency Shutdown" ---
     let intent = "Emergency shutdown the valve";
 
     // 1. Benchmark unia (Decoupled)
     let start_unia = Instant::now();
-    let packet = bridge.map_intent("valve-001", intent).expect("Bridge mapping failed");
+    let packet = bridge
+        .map_intent("valve-001", intent)
+        .expect("Bridge mapping failed");
     let resource_meta = WmisResource {
         id: "valve-001".to_string(),
         resource_type: ResourceType::Application,
         owner: "benchmark".to_string(),
         sharing_scope: SharingScope::Global,
         capabilities: vec![],
-        quality: QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
+        quality: QualityMetrics {
+            qor: 1.0,
+            qos: 1.0,
+            qop: 1.0,
+        },
         metadata: serde_json::json!({}),
     };
     let _res_unia = nucleus
@@ -80,7 +89,10 @@ fn run_empirical_benchmark() {
     println!("--------------------------------------------------");
     println!("Metric              | Coupled-LLM       | unia");
     println!("--------------------|------------------|------------------");
-    println!("Latency             | {:<16?} | {:<16?}", duration_coupled, duration_unia);
+    println!(
+        "Latency             | {:<16?} | {:<16?}",
+        duration_coupled, duration_unia
+    );
     println!("Success Rate        | {:<16} | {:<16}", "100%", "100%");
     println!("Adaptation Cost     | High (Retrain)    | Low (URE update)");
     println!("--------------------------------------------------");

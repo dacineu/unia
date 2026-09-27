@@ -37,17 +37,28 @@ mod grouping {
     fn groups_by_primitive_sequence_not_by_phrasing() {
         let traces = vec![
             trace("add a rust dependency", &["GetValue", "SetValue"], true),
-            trace("bump the crate and refresh", &["GetValue", "SetValue"], true),
+            trace(
+                "bump the crate and refresh",
+                &["GetValue", "SetValue"],
+                true,
+            ),
         ];
         let groups = group_traces(&traces);
-        assert_eq!(groups.len(), 1, "two phrasings of one sequence are one rule");
+        assert_eq!(
+            groups.len(),
+            1,
+            "two phrasings of one sequence are one rule"
+        );
         let g = &groups["GetValue_SetValue"];
         assert_eq!(g.observations(), 2);
         // Both escalated, and both succeeded: escalation costs tokens but is
         // still evidence that the sequence is the right one.
         assert_eq!(g.hits, 2);
         assert_eq!(g.misses, 0);
-        assert!(g.tokens_saved > 0, "escalation is where the cost is recorded");
+        assert!(
+            g.tokens_saved > 0,
+            "escalation is where the cost is recorded"
+        );
     }
 
     #[test]
@@ -65,8 +76,10 @@ mod grouping {
             trace("no sequence recorded", &[], true),
             trace("also none", &[], true),
         ];
-        assert!(group_traces(&traces).is_empty(),
-                "a trace without primitives is not inducible and must not be guessed at");
+        assert!(
+            group_traces(&traces).is_empty(),
+            "a trace without primitives is not inducible and must not be guessed at"
+        );
     }
 }
 
@@ -101,11 +114,17 @@ mod evidence_gate {
             trace("second phrasing", &["SetValue"], false),
         ];
         for i in 0..8 {
-            traces.push(failed_trace(&format!("failing phrasing {i}"), &["SetValue"]));
+            traces.push(failed_trace(
+                &format!("failing phrasing {i}"),
+                &["SetValue"],
+            ));
         }
         let g = &group_traces(&traces)["SetValue"];
         assert!(g.failure_ratio() > MAX_FAILURE_RATIO);
-        assert!(!g.is_evidentiary(), "a rule that mostly fails is not a rule");
+        assert!(
+            !g.is_evidentiary(),
+            "a rule that mostly fails is not a rule"
+        );
     }
 
     #[test]
@@ -122,7 +141,10 @@ mod evidence_gate {
         ]);
         let n = narrow["SetValue"].confidence();
         let w = wide["SetValue"].confidence();
-        assert!(w > n, "more phrasings must mean more confidence: {w} vs {n}");
+        assert!(
+            w > n,
+            "more phrasings must mean more confidence: {w} vs {n}"
+        );
 
         let degraded = group_traces(&[
             trace("alpha", &["SetValue"], false),
@@ -139,7 +161,11 @@ mod synthesis {
     fn evidenced() -> Induction {
         group_traces(&[
             trace("add a rust dependency", &["GetValue", "SetValue"], true),
-            trace("bump the crate and refresh the lock", &["GetValue", "SetValue"], true),
+            trace(
+                "bump the crate and refresh the lock",
+                &["GetValue", "SetValue"],
+                true,
+            ),
         ])["GetValue_SetValue"]
             .clone()
     }
@@ -147,7 +173,9 @@ mod synthesis {
     #[test]
     fn learned_aliases_are_the_observed_phrasings() {
         let c = induce(&evidenced()).expect("two clean phrasings are evidentiary");
-        assert!(c.learned_aliases.contains(&"add a rust dependency".to_string()));
+        assert!(c
+            .learned_aliases
+            .contains(&"add a rust dependency".to_string()));
         assert!(c
             .learned_aliases
             .contains(&"bump the crate and refresh the lock".to_string()));
@@ -160,8 +188,14 @@ mod synthesis {
         let c = induce(&evidenced()).unwrap();
         let a = &c.manifest.action_primitives[0];
         let aliases = a.aliases.as_ref().expect("aliases are always synthesised");
-        assert!(aliases.contains(&"GetValue_SetValue".to_string()), "got {aliases:?}");
-        assert!(aliases.contains(&"GetValue SetValue".to_string()), "got {aliases:?}");
+        assert!(
+            aliases.contains(&"GetValue_SetValue".to_string()),
+            "got {aliases:?}"
+        );
+        assert!(
+            aliases.contains(&"GetValue SetValue".to_string()),
+            "got {aliases:?}"
+        );
     }
 
     #[test]
@@ -172,27 +206,35 @@ mod synthesis {
 
     #[test]
     fn identical_rules_deduplicate_by_content_address() {
-        let a = induce(&group_traces(&[
-            trace("one phrasing", &["SetValue"], false),
-            trace("another phrasing", &["SetValue"], false),
-        ])["SetValue"])
+        let a = induce(
+            &group_traces(&[
+                trace("one phrasing", &["SetValue"], false),
+                trace("another phrasing", &["SetValue"], false),
+            ])["SetValue"],
+        )
         .unwrap();
-        let b = induce(&group_traces(&[
-            trace("completely different words", &["SetValue"], false),
-            trace("yet another", &["SetValue"], false),
-        ])["SetValue"])
+        let b = induce(
+            &group_traces(&[
+                trace("completely different words", &["SetValue"], false),
+                trace("yet another", &["SetValue"], false),
+            ])["SetValue"],
+        )
         .unwrap();
         // The bodies differ only in aliases, so addresses must differ; the
         // addresses are equal only when the induced rule is identical.
-        assert_ne!(a.du_uuid, b.du_uuid,
-                   "different alias sets are different patterns, not one deduped");
+        assert_ne!(
+            a.du_uuid, b.du_uuid,
+            "different alias sets are different patterns, not one deduped"
+        );
     }
 
     #[test]
     fn candidate_is_never_emitted_as_champion() {
         let c = induce(&evidenced()).unwrap();
-        assert_eq!(c.lifecycle, "candidate",
-                   "promotion must be a separate, deliberate step");
+        assert_eq!(
+            c.lifecycle, "candidate",
+            "promotion must be a separate, deliberate step"
+        );
     }
 
     #[test]
@@ -203,8 +245,10 @@ mod synthesis {
         ];
         traces.push(failed_trace("gamma", &["SetValue"]));
         let c = induce(&group_traces(&traces)["SetValue"]).unwrap();
-        assert!(!c.manifest.action_primitives[0].constraints.is_empty(),
-                "an observed failure should be recorded as a precondition");
+        assert!(
+            !c.manifest.action_primitives[0].constraints.is_empty(),
+            "an observed failure should be recorded as a precondition"
+        );
     }
 
     #[test]

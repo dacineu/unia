@@ -1,9 +1,9 @@
-use uuid::Uuid;
-use serde::{Serialize, Deserialize};
+use crate::wmis::WmisResource;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use crate::wmis::WmisResource;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum WmisOperation {
@@ -41,7 +41,7 @@ impl WmisEconomicLayer {
         let path_str = path.as_ref().to_string_lossy().into_owned();
         let mut economy = Self::new();
         economy.persistence_path = Some(path_str.clone());
-        
+
         if let Ok(data) = fs::read_to_string(&path_str) {
             if let Ok(wallets) = serde_json::from_str(&data) {
                 economy.token_wallets = wallets;
@@ -65,7 +65,7 @@ impl WmisEconomicLayer {
     pub fn calculate_cost(&self, resource: &WmisResource, op: &WmisOperation) -> f64 {
         let base_cost = 1.0;
         let qor_multiplier = 1.0 + resource.quality.qor;
-        
+
         let op_multiplier = match op {
             WmisOperation::Read => 0.5,
             WmisOperation::Execute => 1.0,
@@ -77,21 +77,31 @@ impl WmisEconomicLayer {
         base_cost * qor_multiplier * op_multiplier
     }
 
-    pub fn charge_actuation(&mut self, user: &str, resource: &WmisResource, op: &WmisOperation) -> Result<(), String> {
+    pub fn charge_actuation(
+        &mut self,
+        user: &str,
+        resource: &WmisResource,
+        op: &WmisOperation,
+    ) -> Result<(), String> {
         let cost = self.calculate_cost(resource, op);
         let balance = self.token_wallets.entry(user.to_string()).or_insert(100.0);
 
         if *balance >= cost {
             *balance -= cost;
-            println!("💰 Charged {:.2} tokens from {}. Resource: {} (QoR: {:.2}). New balance: {:.2}", 
-                cost, user, resource.id, resource.quality.qor, balance);
-            
+            println!(
+                "💰 Charged {:.2} tokens from {}. Resource: {} (QoR: {:.2}). New balance: {:.2}",
+                cost, user, resource.id, resource.quality.qor, balance
+            );
+
             if let Some(_) = &self.persistence_path {
                 let _ = self.save();
             }
             Ok(())
         } else {
-            Err(format!("Insufficient tokens. Need {:.2}, have {:.2}", cost, balance))
+            Err(format!(
+                "Insufficient tokens. Need {:.2}, have {:.2}",
+                cost, balance
+            ))
         }
     }
 
@@ -99,7 +109,10 @@ impl WmisEconomicLayer {
         let balance = self.token_wallets.entry(user.to_string()).or_insert(100.0);
         if *balance >= cost {
             *balance -= cost;
-            println!("💰 Charged fixed {:.2} tokens from {}. New balance: {:.2}", cost, user, balance);
+            println!(
+                "💰 Charged fixed {:.2} tokens from {}. New balance: {:.2}",
+                cost, user, balance
+            );
             if let Some(_) = &self.persistence_path {
                 let _ = self.save();
             }
@@ -112,7 +125,10 @@ impl WmisEconomicLayer {
     pub fn reward_contributor(&mut self, user: &str, reward: f64) {
         let balance = self.token_wallets.entry(user.to_string()).or_insert(0.0);
         *balance += reward;
-        println!("🎁 Rewarded {:.2} tokens to contributor {}. New balance: {:.2}", reward, user, balance);
+        println!(
+            "🎁 Rewarded {:.2} tokens to contributor {}. New balance: {:.2}",
+            reward, user, balance
+        );
         if let Some(_) = &self.persistence_path {
             let _ = self.save();
         }
@@ -131,12 +147,17 @@ impl WmisPermissionEngine {
     }
 
     pub fn grant_permission(&mut self, perm: ObjectivePermission) {
-        self.permissions.entry(perm.resource_id).or_default().push(perm);
+        self.permissions
+            .entry(perm.resource_id)
+            .or_default()
+            .push(perm);
     }
 
     pub fn check_permission(&self, principal: &str, resource_id: Uuid, op: WmisOperation) -> bool {
         if let Some(perms) = self.permissions.get(&resource_id) {
-            return perms.iter().any(|p| p.principal == principal && p.operations.contains(&op));
+            return perms
+                .iter()
+                .any(|p| p.principal == principal && p.operations.contains(&op));
         }
         false
     }

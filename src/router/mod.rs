@@ -1,6 +1,6 @@
-use crate::orchestrator::{BehavioralVector, ActivationVector};
-use uuid::Uuid;
+use crate::orchestrator::{ActivationVector, BehavioralVector};
 use serde_json::Value;
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct HybridActuator {
@@ -14,7 +14,7 @@ impl HybridActuator {
     /// Converts a Hybrid Actuator into a standard ActivationVector for the SLM.
     pub fn to_activation_vector(&self, vector: BehavioralVector) -> ActivationVector {
         let is_deep_dive = vector == BehavioralVector::Smartest;
-        
+
         ActivationVector {
             system_prompt: self.synthesized_prompt.clone(),
             token_budget: self.merged_budget,
@@ -35,7 +35,11 @@ impl RouterSlm {
         }
     }
 
-    pub fn synthesize(&self, actuators: Vec<(Uuid, Value)>, vector: BehavioralVector) -> Result<HybridActuator, Box<dyn std::error::Error>> {
+    pub fn synthesize(
+        &self,
+        actuators: Vec<(Uuid, Value)>,
+        vector: BehavioralVector,
+    ) -> Result<HybridActuator, Box<dyn std::error::Error>> {
         if actuators.is_empty() {
             return Err("No actuators provided for synthesis".into());
         }
@@ -85,12 +89,20 @@ mod tests {
     fn test_synthesis_to_activation() {
         let router = RouterSlm::new("phi-3-router");
         let actuators = vec![
-            (Uuid::new_v4(), json!({"guidance": "A", "tokens_per_task": 1000})),
-            (Uuid::new_v4(), json!({"guidance": "B", "tokens_per_task": 1000})),
+            (
+                Uuid::new_v4(),
+                json!({"guidance": "A", "tokens_per_task": 1000}),
+            ),
+            (
+                Uuid::new_v4(),
+                json!({"guidance": "B", "tokens_per_task": 1000}),
+            ),
         ];
-        let hybrid = router.synthesize(actuators, BehavioralVector::Smartest).unwrap();
+        let hybrid = router
+            .synthesize(actuators, BehavioralVector::Smartest)
+            .unwrap();
         let activation = hybrid.to_activation_vector(BehavioralVector::Smartest);
-        
+
         assert!(activation.is_deep_dive);
         assert_eq!(activation.behavioral_mode, BehavioralVector::Smartest);
     }

@@ -1,9 +1,9 @@
 use crate::registry::ActuatorRegistry;
 use crate::router::RouterSlm;
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 use uuid::Uuid;
-use sha2::{Sha256, Digest};
 
 pub struct ExplorerHarvester {
     _registry: ActuatorRegistry,
@@ -17,7 +17,10 @@ impl ExplorerHarvester {
 
     /// Scans a directory for "Capability Seeds" (scripts, config files, docs)
     /// and attempts to convert them into Actuators.
-    pub fn harvest_local_directory<P: AsRef<Path>>(&self, path: P) -> Result<Vec<Uuid>, Box<dyn std::error::Error>> {
+    pub fn harvest_local_directory<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> Result<Vec<Uuid>, Box<dyn std::error::Error>> {
         let mut discovered_actuators = Vec::new();
         let root = path.as_ref();
 
@@ -45,20 +48,20 @@ impl ExplorerHarvester {
     /// Analyzes a file to extract guidance and complexity, then wraps it as a .ure.
     fn analyze_and_actuate(&self, path: &Path) -> Result<Option<Uuid>, Box<dyn std::error::Error>> {
         let content = fs::read_to_string(path)?;
-        
+
         // 1. Use the Router-SLM to extract "Guidance" and "Complexity" from the raw file.
         // In production, the Router-SLM would parse the code/text to summarize its a-priori capability.
         let extracted_guidance = format!("Extracted capability from: {}", path.display());
-        let extracted_complexity = 0.5; 
+        let extracted_complexity = 0.5;
 
         // 2. Generate DU-UUID based on the content
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
         let result = hasher.finalize();
-        
+
         let mut bytes = [0u8; 16];
         bytes.copy_from_slice(&result[..16]);
-        bytes[6] = (bytes[6] & 0x0f) | 0x40; 
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
         bytes[8] = (bytes[8] & 0x3f) | 0x80;
         let resource_id = Uuid::from_bytes(bytes);
 
@@ -75,11 +78,11 @@ impl ExplorerHarvester {
         // 4. Register in the Mesh
         let temp_ure_path = format!("{}.ure", resource_id);
         fs::write(&temp_ure_path, serde_json::to_string(&manifest)?)?;
-        
+
         // We use the registry to officially add it to the unia mesh
         // (Note: we assume register_ure_file is available in registry)
         // self.registry.register_ure_file(&temp_ure_path, None)?;
-        
+
         let _ = fs::remove_file(temp_ure_path);
 
         Ok(Some(resource_id))

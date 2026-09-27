@@ -1,7 +1,7 @@
 use crate::registry::ActuatorRegistry;
 use serde_json::Value;
-use uuid::Uuid;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 pub mod meta;
 pub use meta::MetaOrchestrator;
@@ -34,7 +34,11 @@ impl Orchestrator {
         }
     }
 
-    pub fn collapse_actuator(&self, resource_id: Uuid, vector: BehavioralVector) -> Result<ActivationVector, Box<dyn std::error::Error>> {
+    pub fn collapse_actuator(
+        &self,
+        resource_id: Uuid,
+        vector: BehavioralVector,
+    ) -> Result<ActivationVector, Box<dyn std::error::Error>> {
         let manifest = if let Some(m) = self.warm_cache.get(&resource_id) {
             m.clone()
         } else {

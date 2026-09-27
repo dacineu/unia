@@ -100,7 +100,8 @@ impl Report {
 
     /// Per-case detail, so a failure can be acted on rather than guessed at.
     pub fn render_cases(&self, rows: &[(String, String, Option<String>, Vec<String>)]) -> String {
-        let mut out = String::from("\n  case                                    expected      got\n");
+        let mut out =
+            String::from("\n  case                                    expected      got\n");
         for (q, kind, expect, got) in rows {
             let verdict = match (expect.as_deref(), got.first().map(|s| s.as_str())) {
                 (Some(w), Some(g)) if w == g => "ok",
@@ -131,10 +132,26 @@ impl Report {
             }
         };
         out.push_str("\n  retrieval quality\n");
-        out.push_str(&format!("  hit@1                {}/{}  {}\n", self.hit1, self.hits_total, pct(self.hit1, self.hits_total)));
-        out.push_str(&format!("  hit@3                {}/{}  {}\n", self.hit3, self.hits_total, pct(self.hit3, self.hits_total)));
-        out.push_str(&format!("  false negatives      {}\n", self.false_negatives));
-        out.push_str(&format!("  false positives      {}\n", self.false_positives));
+        out.push_str(&format!(
+            "  hit@1                {}/{}  {}\n",
+            self.hit1,
+            self.hits_total,
+            pct(self.hit1, self.hits_total)
+        ));
+        out.push_str(&format!(
+            "  hit@3                {}/{}  {}\n",
+            self.hit3,
+            self.hits_total,
+            pct(self.hit3, self.hits_total)
+        ));
+        out.push_str(&format!(
+            "  false negatives      {}\n",
+            self.false_negatives
+        ));
+        out.push_str(&format!(
+            "  false positives      {}\n",
+            self.false_positives
+        ));
         out.push_str(&format!("  unsatisfiable        {}\n", self.unsatisfiable));
         out.push_str(&format!(
             "  no-vocabulary misses {}/{}  {}\n",
@@ -172,13 +189,15 @@ fn shares_vocabulary(query: &str, resource_id: &str) -> bool {
 pub fn load(path: &Path) -> Result<QueryFixture, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| format!("could not read {}: {e}", path.display()))?;
-    serde_json::from_str(&text)
-        .map_err(|e| format!("could not parse {}: {e}", path.display()))
+    serde_json::from_str(&text).map_err(|e| format!("could not parse {}: {e}", path.display()))
 }
 
-pub fn run(fixture: &QueryFixture, search: impl Fn(&str) -> Vec<crate::mcp::store::Match>, corpus_ids: &[String]) -> Report {
-    let known: BTreeMap<&str, bool> =
-        corpus_ids.iter().map(|s| (s.as_str(), true)).collect();
+pub fn run(
+    fixture: &QueryFixture,
+    search: impl Fn(&str) -> Vec<crate::mcp::store::Match>,
+    corpus_ids: &[String],
+) -> Report {
+    let known: BTreeMap<&str, bool> = corpus_ids.iter().map(|s| (s.as_str(), true)).collect();
     let mut r = Report::default();
     let mut rows: Vec<(String, String, Option<String>, Vec<String>)> = Vec::new();
     for q in &fixture.input {
@@ -192,8 +211,12 @@ pub fn run(fixture: &QueryFixture, search: impl Fn(&str) -> Vec<crate::mcp::stor
             }
         }
         let matches = search(&q.query);
-        rows.push((q.query.clone(), q.kind.clone(), q.expect.clone(),
-                   matches.iter().map(|m| m.id.clone()).collect()));
+        rows.push((
+            q.query.clone(),
+            q.kind.clone(),
+            q.expect.clone(),
+            matches.iter().map(|m| m.id.clone()).collect(),
+        ));
         r.note(q, &matches);
     }
     let _ = &fixture.notes;

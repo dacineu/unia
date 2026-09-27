@@ -16,7 +16,11 @@ impl MockSlm {
 
     /// Executes a request using the provided Activation Vector.
     /// This simulates the behavioral effects of the different modes.
-    pub fn execute(&self, user_input: &str, activation: &ActivationVector) -> Result<SlmResponse, Box<dyn std::error::Error>> {
+    pub fn execute(
+        &self,
+        user_input: &str,
+        activation: &ActivationVector,
+    ) -> Result<SlmResponse, Box<dyn std::error::Error>> {
         let (response_text, tokens, steps) = match activation.behavioral_mode {
             BehavioralVector::Quickest => {
                 (format!("FAST_EXECUTION: [Direct answer to '{}']", user_input), 30, 1)
@@ -31,7 +35,10 @@ impl MockSlm {
 
         // Budget Enforcement
         if tokens > activation.token_budget {
-            return Err("TOKEN_BUDGET_EXCEEDED: The actuator's budget was too small for this execution.".into());
+            return Err(
+                "TOKEN_BUDGET_EXCEEDED: The actuator's budget was too small for this execution."
+                    .into(),
+            );
         }
 
         Ok(SlmResponse {

@@ -1,10 +1,10 @@
-use uuid::Uuid;
+use crate::fluid::{MicroNucleus, SlotType};
+use crate::registry::ActuatorRegistry;
+use crate::wmis::{DiscoveryQuery, SharingScope, WmisDiscoveryProvider};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde_json::Value;
-use crate::registry::ActuatorRegistry;
-use crate::wmis::{WmisDiscoveryProvider, DiscoveryQuery, SharingScope};
-use crate::fluid::{MicroNucleus, SlotType};
+use uuid::Uuid;
 
 pub struct SynthesisRequest {
     pub objective: String,
@@ -27,8 +27,14 @@ impl FluidFactory {
     }
 
     /// Synthesizes a new MicroNucleus by assembling the best matching actuators for the request.
-    pub fn synthesize_nucleus(&self, request: SynthesisRequest) -> Result<MicroNucleus, Box<dyn std::error::Error>> {
-        println!("🏭 Fluid Factory: Synthesizing Nucleus for objective: '{}'", request.objective);
+    pub fn synthesize_nucleus(
+        &self,
+        request: SynthesisRequest,
+    ) -> Result<MicroNucleus, Box<dyn std::error::Error>> {
+        println!(
+            "🏭 Fluid Factory: Synthesizing Nucleus for objective: '{}'",
+            request.objective
+        );
 
         let mut slots = HashMap::new();
 
@@ -59,9 +65,13 @@ impl FluidFactory {
         })
     }
 
-    /// Resolves the best available actuator for a specific capability, 
+    /// Resolves the best available actuator for a specific capability,
     /// checking the local champion registry first, then the WMIS mesh.
-    fn resolve_best_actuator(&self, capability: &str, request: &SynthesisRequest) -> Result<Uuid, Box<dyn std::error::Error>> {
+    fn resolve_best_actuator(
+        &self,
+        capability: &str,
+        request: &SynthesisRequest,
+    ) -> Result<Uuid, Box<dyn std::error::Error>> {
         // 1. Check Local Champions
         if let Some(id) = self.registry.get_champion(capability) {
             println!("🏆 Local Champion found for {}: {}", capability, id);
@@ -93,6 +103,10 @@ impl FluidFactory {
             return Ok(*id);
         }
 
-        Err(format!("Could not resolve any suitable actuator for capability: {}", capability).into())
+        Err(format!(
+            "Could not resolve any suitable actuator for capability: {}",
+            capability
+        )
+        .into())
     }
 }

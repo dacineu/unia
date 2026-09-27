@@ -82,7 +82,10 @@ impl Lifecycle {
 
     /// Whether a pattern in this state may be promoted.
     pub fn promotable(self) -> bool {
-        matches!(self, Lifecycle::Harvested | Lifecycle::Crystallised | Lifecycle::Candidate)
+        matches!(
+            self,
+            Lifecycle::Harvested | Lifecycle::Crystallised | Lifecycle::Candidate
+        )
     }
 
     pub fn as_str(self) -> &'static str {
@@ -149,7 +152,10 @@ impl Default for SelfReport {
 
 impl SelfReport {
     pub fn new(du_uuid: impl Into<String>) -> Self {
-        Self { du_uuid: du_uuid.into(), ..Default::default() }
+        Self {
+            du_uuid: du_uuid.into(),
+            ..Default::default()
+        }
     }
 
     /// Whether a search may return this artifact.
@@ -244,7 +250,10 @@ impl Default for Policy {
 }
 
 pub fn now_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// An artifact's proposal about itself. Pure; touches nothing but its own report.
@@ -253,17 +262,22 @@ pub fn now_secs() -> u64 {
 /// the common case and not a failure.
 pub fn decide(report: &SelfReport, policy: &Policy, now: u64) -> Option<Proposal> {
     // Already out of service. Re-proposing would bury the history.
-    if matches!(report.lifecycle, Lifecycle::Quarantined | Lifecycle::Deprecated) {
+    if matches!(
+        report.lifecycle,
+        Lifecycle::Quarantined | Lifecycle::Deprecated
+    ) {
         return None;
     }
 
-    let propose = |to: Lifecycle, reason: Reason, is_defect: bool| Some(Proposal {
-        du_uuid: report.du_uuid.clone(),
-        from: report.lifecycle,
-        to,
-        reason,
-        is_defect,
-    });
+    let propose = |to: Lifecycle, reason: Reason, is_defect: bool| {
+        Some(Proposal {
+            du_uuid: report.du_uuid.clone(),
+            from: report.lifecycle,
+            to,
+            reason,
+            is_defect,
+        })
+    };
 
     // A routing defect is reported, not retired. Retiring an unreachable
     // artifact destroys the evidence that it was unreachable, which is the only
@@ -281,10 +295,7 @@ pub fn decide(report: &SelfReport, policy: &Policy, now: u64) -> Option<Proposal
 
     // Unproven and unestablished. Absence of a match is not evidence of absence
     // of demand, and this is the state most artifacts in a young corpus are in.
-    if report.reachability == Reachability::Unknown
-        && !policy.retire_unknown
-        && report.hits == 0
-    {
+    if report.reachability == Reachability::Unknown && !policy.retire_unknown && report.hits == 0 {
         return None;
     }
 
@@ -308,7 +319,10 @@ pub fn decide(report: &SelfReport, policy: &Policy, now: u64) -> Option<Proposal
     if failing || stale {
         return propose(
             Lifecycle::Deprecated,
-            Reason::Unproductive { failure_ratio: report.failure_ratio(), idle_days: if idle == u64::MAX { 0 } else { idle } },
+            Reason::Unproductive {
+                failure_ratio: report.failure_ratio(),
+                idle_days: if idle == u64::MAX { 0 } else { idle },
+            },
             false,
         );
     }
@@ -428,8 +442,10 @@ mod tests {
             reachability: Reachability::Unknown,
             ..SelfReport::new("u")
         };
-        assert!(decide(&r, &Policy::default(), NOW).is_none(),
-                "absence of a match is not evidence of absence of demand");
+        assert!(
+            decide(&r, &Policy::default(), NOW).is_none(),
+            "absence of a match is not evidence of absence of demand"
+        );
     }
 
     #[test]
@@ -455,7 +471,10 @@ mod tests {
     fn attached_artifact_is_protected_from_retirement() {
         // Fails badly, used moments ago. Detaching it drops a live request.
         let r = SelfReport {
-            hits: 20, misses: 18, last_used: Some(NOW), ..verified_used("c")
+            hits: 20,
+            misses: 18,
+            last_used: Some(NOW),
+            ..verified_used("c")
         };
         assert!(decide(&r, &Policy::default(), NOW).is_none());
     }
@@ -463,8 +482,16 @@ mod tests {
     #[test]
     fn protection_can_be_disabled_and_then_it_is_retired() {
         // 5 hits, 30 misses: a 0.857 failure ratio, unambiguously failing.
-        let r = SelfReport { hits: 5, misses: 30, last_used: Some(NOW), ..verified_used("c") };
-        let policy = Policy { protect_attached: false, ..Policy::default() };
+        let r = SelfReport {
+            hits: 5,
+            misses: 30,
+            last_used: Some(NOW),
+            ..verified_used("c")
+        };
+        let policy = Policy {
+            protect_attached: false,
+            ..Policy::default()
+        };
         let p = decide(&r, &policy, NOW).expect("protection off, so it is retired");
         assert!(matches!(p.reason, Reason::Unproductive { .. }));
     }
@@ -481,7 +508,11 @@ mod tests {
 
     #[test]
     fn retirement_is_reversible() {
-        let mut r = SelfReport { attached: false, lifecycle: Lifecycle::Candidate, ..verified_used("d") };
+        let mut r = SelfReport {
+            attached: false,
+            lifecycle: Lifecycle::Candidate,
+            ..verified_used("d")
+        };
         let p = decide(&r, &Policy::default(), NOW).unwrap();
         assert!(apply(&mut r, &p));
         assert_eq!(r.lifecycle, Lifecycle::Deprecated);
@@ -501,7 +532,10 @@ mod tests {
             reason: Reason::Detached,
             is_defect: false,
         };
-        assert!(!apply(&mut r, &stale), "proposal built from a different state must not force");
+        assert!(
+            !apply(&mut r, &stale),
+            "proposal built from a different state must not force"
+        );
         assert_eq!(r.lifecycle, Lifecycle::Champion);
     }
 
@@ -511,13 +545,26 @@ mod tests {
         // saw 4000 hits. The retirement must lose.
         let mut busy = verified_used("f");
         busy.hits = 4000;
-        let quiet = SelfReport { hits: 0, last_used: Some(NOW - 200 * DAY), ..verified_used("f") };
+        let quiet = SelfReport {
+            hits: 0,
+            last_used: Some(NOW - 200 * DAY),
+            ..verified_used("f")
+        };
         let p1 = Proposal {
-            du_uuid: "f".into(), from: Lifecycle::Champion, to: Lifecycle::Deprecated,
-            reason: Reason::Unproductive { failure_ratio: 0.0, idle_days: 200 }, is_defect: false,
+            du_uuid: "f".into(),
+            from: Lifecycle::Champion,
+            to: Lifecycle::Deprecated,
+            reason: Reason::Unproductive {
+                failure_ratio: 0.0,
+                idle_days: 200,
+            },
+            is_defect: false,
         };
         let out = reconcile(&[p1.clone()], &[quiet, busy]);
-        assert!(out.is_empty(), "a node with hits vetoes a retirement from a quiet window");
+        assert!(
+            out.is_empty(),
+            "a node with hits vetoes a retirement from a quiet window"
+        );
     }
 
     #[test]
@@ -535,12 +582,23 @@ mod tests {
         // connection from lifecycle would make one of these unrepresentable,
         // and would give the module two sources of truth for liveness, which is
         // how the Rust predicate came to disagree with the SQL filter earlier.
-        let mut r = SelfReport { lifecycle: Lifecycle::Candidate, attached: false, ..SelfReport::new("x") };
+        let mut r = SelfReport {
+            lifecycle: Lifecycle::Candidate,
+            attached: false,
+            ..SelfReport::new("x")
+        };
         assert!(!r.attached);
         assert!(r.lifecycle.served(), "lifecycle says served...");
-        assert!(!r.attached, "...but the connection says detached, and connection wins");
+        assert!(
+            !r.attached,
+            "...but the connection says detached, and connection wins"
+        );
 
-        let mut h = SelfReport { lifecycle: Lifecycle::Harvested, attached: true, ..SelfReport::new("y") };
+        let mut h = SelfReport {
+            lifecycle: Lifecycle::Harvested,
+            attached: true,
+            ..SelfReport::new("y")
+        };
         assert!(h.attached, "an unverified artifact can still be connected");
         // Harvested is promotable: an artifact collected from a trace should be
         // promotable once it gathers evidence. The connection says nothing about

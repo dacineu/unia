@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+    use std::collections::HashMap;
+    use std::fs;
+    use std::path::Path;
+    use std::sync::Arc;
     use unia::fluid::{FluidStateProjector, MicroNucleus, SlotType};
     use unia::registry::ActuatorRegistry;
     use unia::router::RouterSlm;
     use uuid::Uuid;
-    use std::collections::HashMap;
-    use std::path::Path;
-    use std::sync::Arc;
-    use serde_json::json;
-    use std::fs;
 
     fn create_mock_ure(dir: &Path, id: Uuid, guidance: &str) {
         let manifest = json!({
@@ -16,7 +16,11 @@ mod tests {
             "guidance": guidance,
             "complexity_score": 0.5
         });
-        fs::write(dir.join(format!("{}.ure", id)), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
+        fs::write(
+            dir.join(format!("{}.ure", id)),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -27,7 +31,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let registry = Arc::new(ActuatorRegistry::with_base_dir("simulated_db", dir.path()));
         let router = Arc::new(RouterSlm::new("phi-3-router"));
-        
+
         let logic_id = Uuid::new_v4();
         let presenter_a = Uuid::new_v4();
         let presenter_b = Uuid::new_v4();
@@ -53,7 +57,9 @@ mod tests {
         assert!(out1.contains("Detailed Table"));
 
         // 2. The Flux Point: Swap Presenter only
-        projector.flux_swap(SlotType::Presenter, presenter_b).expect("Swap failed");
+        projector
+            .flux_swap(SlotType::Presenter, presenter_b)
+            .expect("Swap failed");
 
         // 3. Second Execution
         let out2 = projector.execute("Run");

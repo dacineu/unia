@@ -1,6 +1,6 @@
-use uuid::Uuid;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::fs;
+use uuid::Uuid;
 
 pub struct ReleaseManager {
     _registry_path: String,
@@ -14,9 +14,12 @@ impl ReleaseManager {
     }
 
     /// Generates a "Best Release" manifest containing only Champions.
-    pub fn generate_best_release(&self, champions: Vec<(String, Uuid)>) -> Result<Value, Box<dyn std::error::Error>> {
+    pub fn generate_best_release(
+        &self,
+        champions: Vec<(String, Uuid)>,
+    ) -> Result<Value, Box<dyn std::error::Error>> {
         println!("📦 Generating Best Release Snapshot...");
-        
+
         let release_manifest = json!({
             "release_version": "v1.0.0-unia",
             "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
@@ -27,7 +30,7 @@ impl ReleaseManager {
 
         let path = "release_snapshot.json";
         fs::write(path, serde_json::to_string_pretty(&release_manifest)?)?;
-        
+
         println!("✅ Release snapshot saved to {}", path);
         Ok(release_manifest)
     }

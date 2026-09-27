@@ -1,11 +1,11 @@
-use crate::wmis::{WmisDiscoveryProvider, DiscoveryQuery, SharingScope, WmisResource};
-use uuid::Uuid;
-use std::collections::HashMap;
-use crate::profiler::{Profiler, AgentProfile};
-use crate::meta_actuators::MetaActuatorType;
 use crate::bridge::primitive::{PrimitiveBridge, PrimitivePacket};
+use crate::meta_actuators::MetaActuatorType;
 use crate::nucleus::ActuatorNucleus;
+use crate::profiler::{AgentProfile, Profiler};
+use crate::wmis::{DiscoveryQuery, SharingScope, WmisDiscoveryProvider, WmisResource};
+use std::collections::HashMap;
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct AgentSlot {
@@ -36,7 +36,11 @@ pub struct MetaOrchestrator {
 }
 
 impl MetaOrchestrator {
-    pub fn new(discovery: Arc<WmisDiscoveryProvider>, bridge: Arc<PrimitiveBridge>, nucleus: Arc<ActuatorNucleus>) -> Self {
+    pub fn new(
+        discovery: Arc<WmisDiscoveryProvider>,
+        bridge: Arc<PrimitiveBridge>,
+        nucleus: Arc<ActuatorNucleus>,
+    ) -> Self {
         Self {
             slots: HashMap::new(),
             profiler: Profiler::new(),
@@ -72,10 +76,21 @@ impl MetaOrchestrator {
 
             let (role, spec, actuator_type) = if let Some(res) = found.first() {
                 println!("✅ Found WMIS Champion for {}: {}", capability, res.id);
-                ("Champion".to_string(), res.id.clone(), MetaActuatorType::Synthesizer)
+                (
+                    "Champion".to_string(),
+                    res.id.clone(),
+                    MetaActuatorType::Synthesizer,
+                )
             } else {
-                println!("⚠️ No WMIS Champion for {}. Using synthetic profile.", capability);
-                ("Synthetic".to_string(), capability.clone(), MetaActuatorType::Synthesizer)
+                println!(
+                    "⚠️ No WMIS Champion for {}. Using synthetic profile.",
+                    capability
+                );
+                (
+                    "Synthetic".to_string(),
+                    capability.clone(),
+                    MetaActuatorType::Synthesizer,
+                )
             };
 
             let id = self.spawn_agent(&role, &spec, actuator_type);
@@ -92,25 +107,42 @@ impl MetaOrchestrator {
     }
 
     /// Spawns a specialized agent with a pre-emptive identity.
-    pub fn spawn_agent(&mut self, role: &str, specialization: &str, actuator_type: MetaActuatorType) -> Uuid {
+    pub fn spawn_agent(
+        &mut self,
+        role: &str,
+        specialization: &str,
+        actuator_type: MetaActuatorType,
+    ) -> Uuid {
         let id = Uuid::new_v4();
 
         let profile = AgentProfile {
             id,
             role: role.to_string(),
             specialization: specialization.to_string(),
-            core_heuristics: vec!["Deterministic execution".to_string(), "Zero-redundancy logic".to_string()],
+            core_heuristics: vec![
+                "Deterministic execution".to_string(),
+                "Zero-redundancy logic".to_string(),
+            ],
             optimization_goal: "Maximize unia precision".to_string(),
-            capabilities: vec!["MCP Integration".to_string(), "DU-UUID Synthesis".to_string()],
+            capabilities: vec![
+                "MCP Integration".to_string(),
+                "DU-UUID Synthesis".to_string(),
+            ],
             interaction_protocol: "Strict JSON-RPC / .ure manifest".to_string(),
         };
 
         let worktree_path = format!("/tmp/unia/worktrees/{}", id);
-        if let Err(e) = self.profiler.generate_identity_files(&worktree_path, &profile) {
+        if let Err(e) = self
+            .profiler
+            .generate_identity_files(&worktree_path, &profile)
+        {
             eprintln!("Failed to inject identity: {}", e);
         }
 
-        println!("🚀 Spawned Agent {}: {} - {} (Worktree: {})", id, role, specialization, worktree_path);
+        println!(
+            "🚀 Spawned Agent {}: {} - {} (Worktree: {})",
+            id, role, specialization, worktree_path
+        );
 
         let slot = AgentSlot {
             id,
@@ -126,11 +158,20 @@ impl MetaOrchestrator {
     }
 
     /// Executes a unia pipeline: Intent -> Bridge -> Nucleus.
-    pub fn execute_intent(&mut self, agent_id: &Uuid, intent: &str, user: &str) -> Result<String, String> {
-        let slot = self.slots.get(agent_id)
+    pub fn execute_intent(
+        &mut self,
+        agent_id: &Uuid,
+        intent: &str,
+        user: &str,
+    ) -> Result<String, String> {
+        let slot = self
+            .slots
+            .get(agent_id)
             .ok_or_else(|| "Agent slot not found".to_string())?;
 
-        let resource = slot.linked_wmis_resource.as_ref()
+        let resource = slot
+            .linked_wmis_resource
+            .as_ref()
             .ok_or_else(|| "Agent has no linked WMIS resource for execution".to_string())?;
 
         println!("⚙️  Executing intent '{}' via Agent {}", intent, agent_id);

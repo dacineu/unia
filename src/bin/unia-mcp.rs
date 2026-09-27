@@ -6,6 +6,7 @@
 use rmcp::transport::stdio;
 use rmcp::ServiceExt;
 use std::path::PathBuf;
+use unia::gather;
 use unia::mcp::store::Store;
 use unia::mcp::UniaServer;
 
@@ -27,6 +28,8 @@ USAGE
   unia-mcp get <id>            Print one manifest and exit
 
 ENVIRONMENT
+  topology     Print the measured artifact graph as JSON, for a visualiser.
+
   UNIA_STORE   Directory holding .ure manifests, plus the champions.json and
                traces.jsonl written beside them. Defaults to the working
                directory.
@@ -73,6 +76,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let store = Store::open(&root);
             println!("{}", serde_json::to_string_pretty(&store.stats())?);
         }
+        Some("topology") => {
+            // The measured graph, for a visualiser. Every field here is read
+            // from the corpus; nothing is synthesised, so an empty result is a
+            // real measurement rather than a rendering failure.
+            let store = Store::open(&root);
+            println!("{}", serde_json::to_string_pretty(&topology(&store))?);
+        }
         Some("get") => {
             let id = args.get(1).map(|s| s.as_str()).unwrap_or("");
             let store = Store::open(&root);
@@ -112,6 +122,89 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+/// Builds the measured graph: one node per artifact, one edge per tie a
+/// gathering found.
+///
+/// Node fields are chosen so a renderer can encode evidence as geometry rather
+/// than as a boolean. `spikes` is the primitive count and becomes the spike
+/// count of the node, `readiness` becomes spike height, and `lifecycle` becomes
+/// colour. An artifact with four confirming observations and one with four
+/// hundred are then visibly different objects, which is the point of a
+/// continuous readiness rather than a champion flag.
+///
+/// Empty edges are a legitimate result, not an error: the checked-in corpus
+/// shares no primitive between its two curated artifacts, so the graph is
+/// correctly edgeless.
+fn topology(store: &Store) -> serde_json::Value {
+    let mut nodes = Vec::new();
+    let mut spheres = Vec::new();
+
+    for id in store.ids() {
+        let Some(p) = store.get(&id) else { continue };
+        let actions: Vec<String> = p.actions.iter().map(|a| a.id.clone()).collect();
+        let aliases: Vec<String> = p.actions.iter().flat_map(|a| a.aliases.clone()).collect();
+        // No trace-log readiness exists yet, so this reports the absence rather
+        // than a plausible-looking default. A visualiser must render "unknown"
+        // differently from "no evidence".
+        let readiness = store.readiness(&id);
+        nodes.push(serde_json::json!({
+            "id": p.id,
+            "name": p.id,
+            "category": p.category,
+            "spikes": actions.len(),
+            "actions": actions,
+            "aliases": aliases,
+            "readiness": readiness,
+            "readiness_known": readiness.is_some(),
+            "saves_tokens": p.payload.as_ref().is_some_and(|x| x.is_runnable()),
+            "source": p.source.display().to_string(),
+        }));
+        spheres.push(gather::Sphere::new(
+            p.id.clone(),
+            actions,
+            aliases,
+            readiness.map_or(gather::Readiness::unproven(), gather::Readiness::new),
+        ));
+    }
+
+    let g = gather::gather(&spheres);
+    let edges: Vec<serde_json::Value> = g
+        .ties
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "source": t.from,
+                "target": t.to,
+                "relation": t.relation,
+                "readiness": t.readiness.score(),
+            })
+        })
+        .collect();
+
+    let denominators: Vec<serde_json::Value> = g
+        .denominators
+        .iter()
+        .map(|d| {
+            serde_json::json!({
+                "capability": d.capability.0,
+                "contributors": d.contributors,
+                "aliases": d.aliases,
+                "readiness": d.readiness.score(),
+                "convergence": d.convergence,
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "nodes": nodes,
+        "edges": edges,
+        "denominators": denominators,
+        "measured": true,
+        "malformed_traces": store.malformed_traces(),
+        "note": "Every field is read from the corpus. An empty edge list is a real measurement, not a rendering failure. readiness is null where no trace log exists, which is different from a readiness of zero.",
+    })
 }
 
 /// Mirrors the server's `unia_search` response so CLI and MCP cannot drift.

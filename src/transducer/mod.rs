@@ -1,15 +1,15 @@
-use uuid::Uuid;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
-use sha2::{Sha256, Digest};
 use std::sync::Mutex;
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub enum TransductionLayer {
-    LocalSovereign,     // Ollama / Local SLM
+    LocalSovereign,      // Ollama / Local SLM
     SpecializedProvider, // Nvidia NIM
-    UniversalOmni,      // OpenRouter / Claude / GPT-4
+    UniversalOmni,       // OpenRouter / Claude / GPT-4
 }
 
 #[derive(Debug, Clone)]
@@ -35,7 +35,14 @@ impl SynapticTransducer {
 
     /// Wraps an external resource call to record Input -> Output patterns.
     /// This is the "Shadowing" phase.
-    pub fn shadow_resource(&self, resource_id: &str, input: &str, output: &str, latency: u64, success: bool) {
+    pub fn shadow_resource(
+        &self,
+        resource_id: &str,
+        input: &str,
+        output: &str,
+        latency: u64,
+        success: bool,
+    ) {
         let pair = InteractionPair {
             input: input.to_string(),
             output: output.to_string(),
@@ -44,16 +51,28 @@ impl SynapticTransducer {
         };
         let mut logs = self.shadow_logs.lock().unwrap();
         logs.entry(resource_id.to_string()).or_default().push(pair);
-        println!("Shadowing pattern for {}: [Input: {}, Success: {}]", resource_id, input, success);
+        println!(
+            "Shadowing pattern for {}: [Input: {}, Success: {}]",
+            resource_id, input, success
+        );
     }
 
     /// Converts captured interaction patterns into an internal unia .ure actuator.
-    pub fn transduce(&self, resource_id: &str, provenance: Option<&Value>) -> Result<Uuid, Box<dyn std::error::Error>> {
+    pub fn transduce(
+        &self,
+        resource_id: &str,
+        provenance: Option<&Value>,
+    ) -> Result<Uuid, Box<dyn std::error::Error>> {
         let logs = self.shadow_logs.lock().unwrap();
-        let patterns = logs.get(resource_id)
+        let patterns = logs
+            .get(resource_id)
             .ok_or("No shadow logs available for this resource")?;
 
-        println!("Transducing {} patterns using {:?} layer...", patterns.len(), self.layer_preference);
+        println!(
+            "Transducing {} patterns using {:?} layer...",
+            patterns.len(),
+            self.layer_preference
+        );
 
         // 1. Pattern Extraction (Simulated Router-SLM logic)
         // FIX: Include the resource_id (which contains the prompt) in the guidance to allow registry matching.
@@ -92,12 +111,24 @@ impl SynapticTransducer {
         let file_path = format!("{}.ure", resource_id_uuid);
         fs::write(&file_path, serde_json::to_string_pretty(&manifest)?)?;
 
-        println!("✅ Mirror Actuator synthesized with provenance: {}", resource_id_uuid);
+        println!(
+            "✅ Mirror Actuator synthesized with provenance: {}",
+            resource_id_uuid
+        );
         Ok(resource_id_uuid)
     }
     /// Implements the Mirroring Pattern: compares the synthetic Mirror against the External Source.
-    pub fn verify_mirror(&self, mirror_id: Uuid, external_id: &str, test_input: &str, _external_output: &str) -> bool {
-        println!("Verifying Mirror {} against External {}.", mirror_id, external_id);
+    pub fn verify_mirror(
+        &self,
+        mirror_id: Uuid,
+        external_id: &str,
+        test_input: &str,
+        _external_output: &str,
+    ) -> bool {
+        println!(
+            "Verifying Mirror {} against External {}.",
+            mirror_id, external_id
+        );
 
         // In a real system, we would execute the mirror_id actuator and compare its output.
         // For the prototype, we simulate a "Fidelity Check".
@@ -107,7 +138,10 @@ impl SynapticTransducer {
         let is_faithful = mirror_output_simulated.contains("Simulated");
 
         if is_faithful {
-            println!("Mirror {} passed fidelity check. Promotion recommended.", mirror_id);
+            println!(
+                "Mirror {} passed fidelity check. Promotion recommended.",
+                mirror_id
+            );
             true
         } else {
             println!("Mirror {} failed fidelity check.", mirror_id);

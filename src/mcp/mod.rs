@@ -1,8 +1,8 @@
-use uuid::Uuid;
 use serde_json::{json, Value};
-use std::process::{Child, Command};
 use std::collections::HashMap;
+use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
 pub mod store;
 
@@ -42,7 +42,11 @@ impl McpResourceManager {
     }
 
     /// Hot-swaps or spawns an MCP server based on a .ure config.
-    pub fn activate_connector(&self, id: Uuid, config: McpConfig) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn activate_connector(
+        &self,
+        id: Uuid,
+        config: McpConfig,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut sessions = self.active_sessions.lock().unwrap();
 
         if sessions.len() >= self.max_slots {
@@ -55,13 +59,22 @@ impl McpResourceManager {
             }
         }
 
-        println!("🚀 Spawning MCP Connector {} via {}...", id, config.server_cmd);
+        println!(
+            "🚀 Spawning MCP Connector {} via {}...",
+            id, config.server_cmd
+        );
         let child = Command::new(&config.server_cmd)
             .args(&config.server_args)
             .envs(&config.env_vars)
             .spawn()?;
 
-        sessions.insert(id, McpSession { process: child, config });
+        sessions.insert(
+            id,
+            McpSession {
+                process: child,
+                config,
+            },
+        );
         Ok(())
     }
 
@@ -81,7 +94,12 @@ impl McpResourceManager {
     /// This does not yet speak JSON-RPC: the wire framing and `initialize`
     /// handshake are unimplemented, so it cannot be used to reach a real server.
     /// Callers should treat it as unavailable rather than as a working shim.
-    pub fn call_mcp(&self, id: &Uuid, method: &str, _params: Value) -> Result<Value, Box<dyn std::error::Error>> {
+    pub fn call_mcp(
+        &self,
+        id: &Uuid,
+        method: &str,
+        _params: Value,
+    ) -> Result<Value, Box<dyn std::error::Error>> {
         let sessions = self.active_sessions.lock().unwrap();
         if !sessions.contains_key(id) {
             return Err("Connector is not active".into());

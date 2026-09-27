@@ -1,6 +1,6 @@
 use serde_json::json;
-use unia::identifiers::DuUuid;
 use std::fs;
+use unia::identifiers::DuUuid;
 
 fn main() {
     let manifest = json!({
@@ -35,15 +35,19 @@ fn main() {
     });
 
     let id = DuUuid::generate(&manifest, None).expect("Failed to generate DU-UUID");
-    
+
     let mut final_manifest = manifest.clone();
     if let Some(obj) = final_manifest.as_object_mut() {
         obj.insert("resource_id".to_string(), json!(id.to_string()));
     }
 
     let filename = format!("{}.ure", id);
-    fs::write(&filename, serde_json::to_string_pretty(&final_manifest).unwrap()).expect("Failed to write .ure file");
-    
+    fs::write(
+        &filename,
+        serde_json::to_string_pretty(&final_manifest).unwrap(),
+    )
+    .expect("Failed to write .ure file");
+
     println!("SUCCESS: Delivered Nucleus at {}", filename);
     println!("DU-UUID: {}", id);
 }

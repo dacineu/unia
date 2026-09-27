@@ -22,7 +22,11 @@ impl Learner {
 
     /// Performs unia training for a specific task.
     /// Communicates with LLMs to generate a specialized actuator.
-    pub async fn train_specialization(&self, task_trace: &str, base_actuators: Vec<Uuid>) -> Result<Uuid, Box<dyn std::error::Error>> {
+    pub async fn train_specialization(
+        &self,
+        task_trace: &str,
+        base_actuators: Vec<Uuid>,
+    ) -> Result<Uuid, Box<dyn std::error::Error>> {
         println!("Initiating unia training via {:?}...", self.backend);
 
         // 1. Construct the Training Request
@@ -35,29 +39,45 @@ impl Learner {
         let _synthesized_guidance = self.call_llm_for_tuning(&prompt).await?;
 
         // 3. Create the specialized Actuator (DU-UUID)
-        let new_id = Uuid::new_v4(); 
-        
+        let new_id = Uuid::new_v4();
+
         println!("✅ Specialized Actuator evolved: {}", new_id);
         Ok(new_id)
     }
 
     /// Fine-tunes a Meta-Actuator to improve the unia synthesis process itself.
-    pub async fn tune_meta_actuator(&self, meta_type: MetaActuatorType, _performance_data: &str) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Tuning Meta-Actuator {:?} based on mesh performance...", meta_type);
-        
+    pub async fn tune_meta_actuator(
+        &self,
+        meta_type: MetaActuatorType,
+        _performance_data: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        println!(
+            "Tuning Meta-Actuator {:?} based on mesh performance...",
+            meta_type
+        );
+
         // Logic to send performance logs to the LLM and receive a "Refined Heuristic"
-        
+
         Ok(())
     }
 
-    async fn call_llm_for_tuning(&self, _prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
+    async fn call_llm_for_tuning(
+        &self,
+        _prompt: &str,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         match &self.backend {
             TrainingBackend::Local(engine) => {
-                println!("Using local engine [{}] for fast, private tuning...", engine);
+                println!(
+                    "Using local engine [{}] for fast, private tuning...",
+                    engine
+                );
                 Ok("Specialized guidance for local unia".to_string())
-            },
+            }
             TrainingBackend::External(provider) => {
-                println!("Using external provider [{}] for high-cognition synthesis...", provider);
+                println!(
+                    "Using external provider [{}] for high-cognition synthesis...",
+                    provider
+                );
                 Ok("High-fidelity unia guidance from external LLM".to_string())
             }
         }

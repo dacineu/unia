@@ -1,38 +1,39 @@
-use std::time::{Instant, Duration};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use unia::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
+use std::time::{Duration, Instant};
+use unia::bridge::primitive::{PrimitiveBridge, StateType, UreAction, UreResource};
 use unia::nucleus::{ActuatorNucleus, ValveDriver};
-use unia::wmis::{WmisEconomicLayer, WmisResource, WmisOperation, SharingScope, ResourceType};
+use unia::wmis::{ResourceType, SharingScope, WmisEconomicLayer, WmisOperation, WmisResource};
 
 fn main() {
     println!("\n🚀 Starting unia vs Coupled-LLM Empirical Benchmark\n");
 
     // --- SETUP ---
     let mut bridge = PrimitiveBridge::new();
-    
+
     // Setup Economic Layer
     let economy = Arc::new(Mutex::new(WmisEconomicLayer::new()));
     let mut nucleus = ActuatorNucleus::new(Arc::clone(&economy));
 
     // Define a Smart Valve Resource
     let mut state_space = HashMap::new();
-    state_space.insert("flow_rate".to_string(), StateType {
-        r#type: "float".to_string(),
-        range: Some((0.0, 1.0)),
-        unit: Some("percentage".to_string()),
-        values: None,
-    });
-
-    let actions = vec![
-        UreAction {
-            id: "emergency_shutdown".to_string(),
-            aliases: None,
-            params: HashMap::new(),
-            target_state: "flow_rate = 0.0".to_string(),
-            constraints: vec!["status != 'fault'".to_string()],
+    state_space.insert(
+        "flow_rate".to_string(),
+        StateType {
+            r#type: "float".to_string(),
+            range: Some((0.0, 1.0)),
+            unit: Some("percentage".to_string()),
+            values: None,
         },
-    ];
+    );
+
+    let actions = vec![UreAction {
+        id: "emergency_shutdown".to_string(),
+        aliases: None,
+        params: HashMap::new(),
+        target_state: "flow_rate = 0.0".to_string(),
+        constraints: vec!["status != 'fault'".to_string()],
+    }];
 
     let valve_ure = UreResource {
         ure_version: "1.0".to_string(),
@@ -43,7 +44,9 @@ fn main() {
     };
 
     bridge.load_resource(valve_ure.clone());
-    nucleus.register_driver(Box::new(ValveDriver { id: "valve-001".to_string() }));
+    nucleus.register_driver(Box::new(ValveDriver {
+        id: "valve-001".to_string(),
+    }));
 
     // Setup WMIS metadata for the valve
     let valve_meta = WmisResource {
@@ -66,8 +69,12 @@ fn main() {
 
     // 1. Benchmark unia (Decoupled)
     let start_unia = Instant::now();
-    let packet = bridge.map_intent("valve-001", intent).expect("Bridge mapping failed");
-    let _res_unia = nucleus.dispatch(packet, user, &valve_meta).expect("Nucleus dispatch failed");
+    let packet = bridge
+        .map_intent("valve-001", intent)
+        .expect("Bridge mapping failed");
+    let _res_unia = nucleus
+        .dispatch(packet, user, &valve_meta)
+        .expect("Nucleus dispatch failed");
     let duration_unia = start_unia.elapsed();
 
     // 2. Benchmark Coupled-LLM (Simulated)
@@ -86,7 +93,10 @@ fn main() {
     println!("--------------------------------------------------");
     println!("Metric              | Coupled-LLM       | unia");
     println!("--------------------|------------------|------------------");
-    println!("Latency             | {:<16?} | {:<16?}", duration_coupled, duration_unia);
+    println!(
+        "Latency             | {:<16?} | {:<16?}",
+        duration_coupled, duration_unia
+    );
     println!("Success Rate        | {:<16} | {:<16}", "100%", "100%");
     println!("Adaptation Cost     | High (Retrain)    | Low (URE update)");
     println!("--------------------------------------------------");

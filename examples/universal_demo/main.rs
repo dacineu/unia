@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use unia::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
-use unia::nucleus::{ActuatorNucleus, ValveDriver, FileSystemDriver, TempSensorDriver};
-use unia::wmis::{WmisEconomicLayer, WmisResource, ResourceType, SharingScope};
+use unia::bridge::primitive::{PrimitiveBridge, StateType, UreAction, UreResource};
+use unia::nucleus::{ActuatorNucleus, FileSystemDriver, TempSensorDriver, ValveDriver};
 use unia::orchestrator::MetaOrchestrator;
 use unia::wmis::WmisDiscoveryProvider;
+use unia::wmis::{ResourceType, SharingScope, WmisEconomicLayer, WmisResource};
 
 fn main() {
     println!("\n🌟 Welcome to the unia Universal Demo: Autonomous Infrastructure Flow\n");
@@ -17,7 +17,15 @@ fn main() {
 
     // A. The Smart Valve
     let mut valve_state = HashMap::new();
-    valve_state.insert("flow_rate".to_string(), StateType { r#type: "float".to_string(), range: Some((0.0, 1.0)), unit: Some("percentage".to_string()), values: None });
+    valve_state.insert(
+        "flow_rate".to_string(),
+        StateType {
+            r#type: "float".to_string(),
+            range: Some((0.0, 1.0)),
+            unit: Some("percentage".to_string()),
+            values: None,
+        },
+    );
     let valve_ure = UreResource {
         ure_version: "1.0".to_string(),
         resource_id: "valve-001".to_string(),
@@ -25,16 +33,27 @@ fn main() {
         state_space: valve_state,
         action_primitives: vec![UreAction {
             id: "emergency_shutdown".to_string(),
-            aliases: Some(vec!["stop the valve".to_string(), "close water".to_string()]),
+            aliases: Some(vec![
+                "stop the valve".to_string(),
+                "close water".to_string(),
+            ]),
             params: HashMap::new(),
             target_state: "flow_rate = 0.0".to_string(),
-            constraints: vec![]
+            constraints: vec![],
         }],
     };
 
     // B. The FileSystem
     let mut fs_state = HashMap::new();
-    fs_state.insert("last_write".to_string(), StateType { r#type: "string".to_string(), range: None, unit: Some("path".to_string()), values: None });
+    fs_state.insert(
+        "last_write".to_string(),
+        StateType {
+            r#type: "string".to_string(),
+            range: None,
+            unit: Some("path".to_string()),
+            values: None,
+        },
+    );
     let fs_ure = UreResource {
         ure_version: "1.0".to_string(),
         resource_id: "fs-root-001".to_string(),
@@ -45,13 +64,21 @@ fn main() {
             aliases: Some(vec!["dump logs".to_string(), "save file".to_string()]),
             params: HashMap::new(),
             target_state: "last_write = current_path".to_string(),
-            constraints: vec![]
+            constraints: vec![],
         }],
     };
 
     // C. The Temp Sensor
     let mut temp_state = HashMap::new();
-    temp_state.insert("temp".to_string(), StateType { r#type: "float".to_string(), range: Some((-50.0, 100.0)), unit: Some("C".to_string()), values: None });
+    temp_state.insert(
+        "temp".to_string(),
+        StateType {
+            r#type: "float".to_string(),
+            range: Some((-50.0, 100.0)),
+            unit: Some("C".to_string()),
+            values: None,
+        },
+    );
     let temp_ure = UreResource {
         ure_version: "1.0".to_string(),
         resource_id: "temp-001".to_string(),
@@ -59,10 +86,13 @@ fn main() {
         state_space: temp_state,
         action_primitives: vec![UreAction {
             id: "get_temp".to_string(),
-            aliases: Some(vec!["check temperature".to_string(), "how hot is it".to_string()]),
+            aliases: Some(vec![
+                "check temperature".to_string(),
+                "how hot is it".to_string(),
+            ]),
             params: HashMap::new(),
             target_state: "output = current_temp".to_string(),
-            constraints: vec![]
+            constraints: vec![],
         }],
     };
 
@@ -74,18 +104,29 @@ fn main() {
     let bridge = Arc::new(bridge_setup);
 
     let mut nucleus_setup = ActuatorNucleus::new(Arc::clone(&economy));
-    nucleus_setup.register_driver(Box::new(ValveDriver { id: "valve-001".to_string() }));
-    nucleus_setup.register_driver(Box::new(FileSystemDriver { id: "fs-root-001".to_string() }));
-    nucleus_setup.register_driver(Box::new(TempSensorDriver { id: "temp-001".to_string() }));
+    nucleus_setup.register_driver(Box::new(ValveDriver {
+        id: "valve-001".to_string(),
+    }));
+    nucleus_setup.register_driver(Box::new(FileSystemDriver {
+        id: "fs-root-001".to_string(),
+    }));
+    nucleus_setup.register_driver(Box::new(TempSensorDriver {
+        id: "temp-001".to_string(),
+    }));
     let nucleus = Arc::new(nucleus_setup);
 
-    let mut orchestrator = MetaOrchestrator::new(discovery, Arc::clone(&bridge), Arc::clone(&nucleus));
+    let mut orchestrator =
+        MetaOrchestrator::new(discovery, Arc::clone(&bridge), Arc::clone(&nucleus));
 
     // --- 3. THE UNIVERSAL FLOW ---
     let user = "operator_01";
 
     // We spawn one agent to handle everything
-    let agent_id = orchestrator.spawn_agent("Infrastructure Manager", "Full-Stack Actuation", unia::meta_actuators::MetaActuatorType::Synthesizer);
+    let agent_id = orchestrator.spawn_agent(
+        "Infrastructure Manager",
+        "Full-Stack Actuation",
+        unia::meta_actuators::MetaActuatorType::Synthesizer,
+    );
 
     let tasks = vec![
         ("valve-001", "Emergency shutdown the main water valve"),
@@ -106,19 +147,33 @@ fn main() {
             owner: user.to_string(),
             sharing_scope: SharingScope::Global,
             capabilities: vec![],
-            quality: unia::wmis::QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
+            quality: unia::wmis::QualityMetrics {
+                qor: 1.0,
+                qos: 1.0,
+                qop: 1.0,
+            },
             metadata: serde_json::json!({}),
         };
 
-        let packet = bridge.map_intent(res_id, intent).expect("Bridge mapping failed");
+        let packet = bridge
+            .map_intent(res_id, intent)
+            .expect("Bridge mapping failed");
 
         let mut packet_mut = packet;
         if res_id == "fs-root-001" {
-            packet_mut.payload.arguments.insert("path".to_string(), "/var/log/system.log".to_string());
-            packet_mut.payload.arguments.insert("content".to_string(), "Critical: Overheat detected".to_string());
+            packet_mut
+                .payload
+                .arguments
+                .insert("path".to_string(), "/var/log/system.log".to_string());
+            packet_mut.payload.arguments.insert(
+                "content".to_string(),
+                "Critical: Overheat detected".to_string(),
+            );
         }
 
-        let result = nucleus.dispatch(packet_mut, user, &meta).expect("Nucleus dispatch failed");
+        let result = nucleus
+            .dispatch(packet_mut, user, &meta)
+            .expect("Nucleus dispatch failed");
         println!("✅ Result: {}", result);
     }
 

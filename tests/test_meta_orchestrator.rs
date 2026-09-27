@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use unia::orchestrator::MetaOrchestrator;
     use unia::meta_actuators::MetaActuatorType;
+    use unia::orchestrator::MetaOrchestrator;
 
     /*
     #[test]

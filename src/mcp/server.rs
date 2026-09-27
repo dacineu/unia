@@ -78,15 +78,21 @@ pub struct UniaServer {
 
 impl UniaServer {
     pub fn new(store: Store) -> Self {
-        Self { store: Arc::new(RwLock::new(store)) }
+        Self {
+            store: Arc::new(RwLock::new(store)),
+        }
     }
 
     fn read(&self) -> Result<std::sync::RwLockReadGuard<'_, Store>, McpError> {
-        self.store.read().map_err(|_| McpError::internal_error("store lock poisoned", None))
+        self.store
+            .read()
+            .map_err(|_| McpError::internal_error("store lock poisoned", None))
     }
 
     fn write(&self) -> Result<std::sync::RwLockWriteGuard<'_, Store>, McpError> {
-        self.store.write().map_err(|_| McpError::internal_error("store lock poisoned", None))
+        self.store
+            .write()
+            .map_err(|_| McpError::internal_error("store lock poisoned", None))
     }
 }
 
@@ -95,25 +101,37 @@ impl UniaServer {
     /// Find a stored `.ure` pattern for an intent. Call this before doing work
     /// you have done before. A match with `saves_tokens: true` carries a runnable
     /// payload and can be executed locally with no provider request.
-    #[tool(description = "Find a stored .ure pattern for an intent. Call before repeating a \
+    #[tool(
+        description = "Find a stored .ure pattern for an intent. Call before repeating a \
                           task; a match with saves_tokens=true can be executed locally without \
-                          spending provider tokens.")]
-    fn unia_search(&self, Parameters(args): Parameters<SearchArgs>) -> Result<CallToolResult, McpError> {
+                          spending provider tokens."
+    )]
+    fn unia_search(
+        &self,
+        Parameters(args): Parameters<SearchArgs>,
+    ) -> Result<CallToolResult, McpError> {
         if args.intent.trim().is_empty() {
             return Err(McpError::invalid_params("intent must not be empty", None));
         }
         let store = self.read()?;
         let limit = args.limit.unwrap_or(5).clamp(1, 50);
-        Ok(text_result(render_matches(&store.search(&args.intent, limit))))
+        Ok(text_result(render_matches(
+            &store.search(&args.intent, limit),
+        )))
     }
 
     /// Record how a call was served. `hit` means a pattern avoided a provider
     /// request; `miss` means tokens were spent. This is the only record the
     //  project has of what was learned, and without it no pattern can be
     //  induced from real usage.
-    #[tool(description = "Record whether a call was served by a stored pattern (hit) or by a \
-                          provider (miss), with the tokens spent. Always call this after acting.")]
-    fn unia_record(&self, Parameters(args): Parameters<RecordArgs>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Record whether a call was served by a stored pattern (hit) or by a \
+                          provider (miss), with the tokens spent. Always call this after acting."
+    )]
+    fn unia_record(
+        &self,
+        Parameters(args): Parameters<RecordArgs>,
+    ) -> Result<CallToolResult, McpError> {
         if !matches!(args.outcome.as_str(), "hit" | "miss") {
             return Err(McpError::invalid_params(
                 "outcome must be either \"hit\" or \"miss\"",
@@ -135,8 +153,10 @@ impl UniaServer {
     }
 
     /// Fetch one manifest by id, including its actions and payload.
-    #[tool(description = "Fetch a single .ure manifest by resource id, with its actions, \
-                          aliases, constraints and payload.")]
+    #[tool(
+        description = "Fetch a single .ure manifest by resource id, with its actions, \
+                          aliases, constraints and payload."
+    )]
     fn unia_get(&self, Parameters(args): Parameters<GetArgs>) -> Result<CallToolResult, McpError> {
         let store = self.read()?;
         match store.get(&args.id) {
@@ -158,22 +178,31 @@ impl UniaServer {
 
     /// Mark a pattern the champion for a capability, so it wins future ties.
     /// Only promote a pattern you have verified works.
-    #[tool(description = "Mark a pattern the champion for a capability so it wins ranking ties. \
-                          Only promote patterns you have verified.")]
-    fn unia_promote(&self, Parameters(args): Parameters<PromoteArgs>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Mark a pattern the champion for a capability so it wins ranking ties. \
+                          Only promote patterns you have verified."
+    )]
+    fn unia_promote(
+        &self,
+        Parameters(args): Parameters<PromoteArgs>,
+    ) -> Result<CallToolResult, McpError> {
         let mut store = self.write()?;
         match store.promote(&args.capability, &args.id) {
             Ok(()) => Ok(text_result(serde_json::json!({
                 "promoted": args.id,
                 "capability": args.capability,
             }))),
-            Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(e.to_string())])),
+            Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(
+                e.to_string(),
+            )])),
         }
     }
 
     /// Corpus size, coverage, and the tokens saved so far.
-    #[tool(description = "Corpus size, runnable count, champion count, and tokens saved by \
-                          patterns serving calls instead of a provider.")]
+    #[tool(
+        description = "Corpus size, runnable count, champion count, and tokens saved by \
+                          patterns serving calls instead of a provider."
+    )]
     fn unia_stats(&self) -> Result<CallToolResult, McpError> {
         let store = self.read()?;
         let s: Stats = store.stats();
@@ -192,16 +221,22 @@ impl UniaServer {
 
 // `version` must be a literal: the macro rejects an `env!` expansion here, so
 // this is kept in step with the crate version by hand.
-#[tool_handler(name = "unia", version = "0.1.0", instructions = "Stores .ure \
+#[tool_handler(
+    name = "unia",
+    version = "0.1.0",
+    instructions = "Stores .ure \
     patterns so a repeated task can be served locally instead of costing a provider request. \
     Intended loop: unia_search before repeating work, unia_record after acting, unia_promote \
     only for patterns verified to work. A match with saves_tokens=false still costs tokens to \
-    act on.")]
+    act on."
+)]
 impl ServerHandler for UniaServer {
     fn get_info(&self) -> rmcp::model::ServerConfig {
         // Name and version come from the #[tool_handler] attribute above.
         rmcp::model::ServerConfig::new(
-            rmcp::model::ServerCapabilities::builder().enable_tools().build(),
+            rmcp::model::ServerCapabilities::builder()
+                .enable_tools()
+                .build(),
         )
     }
 }

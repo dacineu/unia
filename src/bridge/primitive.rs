@@ -1,7 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use serde::{Serialize, Deserialize};
 
 /// The Universal Primitive IDs defined in the Primitive Library
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -112,28 +112,36 @@ impl PrimitiveBridge {
             let path = entry.path();
 
             if path.extension().and_then(|s| s.to_str()) == Some("ure") {
-                let content = fs::read_to_string(&path).map_err(|e| format!("Read error: {}", e))?;
+                let content =
+                    fs::read_to_string(&path).map_err(|e| format!("Read error: {}", e))?;
                 let resource: UreResource = serde_yaml::from_str(&content)
                     .map_err(|e| format!("YAML parse error in {:?}: {}", path, e))?;
-                
-                self.resources.insert(resource.resource_id.clone(), resource);
-                println!("[Bridge] Loaded resource: {}", entry.file_name().to_string_lossy());
+
+                self.resources
+                    .insert(resource.resource_id.clone(), resource);
+                println!(
+                    "[Bridge] Loaded resource: {}",
+                    entry.file_name().to_string_lossy()
+                );
             }
         }
         Ok(())
     }
 
     pub fn load_resource(&mut self, resource: UreResource) {
-        self.resources.insert(resource.resource_id.clone(), resource);
+        self.resources
+            .insert(resource.resource_id.clone(), resource);
     }
 
     /// Maps natural language intent to a Universal Primitive Packet
     pub fn map_intent(&self, resource_id: &str, intent: &str) -> Result<PrimitivePacket, String> {
-        let resource = self.resources.get(resource_id)
+        let resource = self
+            .resources
+            .get(resource_id)
             .ok_or_else(|| format!("Resource {} not found", resource_id))?;
 
         let intent_lower = intent.to_lowercase();
-        
+
         // 1. Exact/Containment Match (Fast Path)
         let mut best_action = None;
         let mut max_score = 0.0;
@@ -143,7 +151,7 @@ impl PrimitiveBridge {
             if intent_lower.contains(&normalized_id) {
                 return self.create_packet(resource_id, action);
             }
-            
+
             if let Some(aliases) = &action.aliases {
                 for alias in aliases {
                     if intent_lower.contains(&alias.to_lowercase()) {
@@ -153,7 +161,8 @@ impl PrimitiveBridge {
             }
 
             // 2. Semantic Scoring (Slow Path)
-            let score = crate::bridge::semantic::SemanticMapper::compute_score(&intent_lower, &action.id);
+            let score =
+                crate::bridge::semantic::SemanticMapper::compute_score(&intent_lower, &action.id);
             if score > max_score {
                 max_score = score;
                 best_action = Some(action);
@@ -166,10 +175,17 @@ impl PrimitiveBridge {
             return self.create_packet(resource_id, best_action.unwrap());
         }
 
-        Err(format!("No matching action for intent '{}' in resource {}", intent, resource_id))
+        Err(format!(
+            "No matching action for intent '{}' in resource {}",
+            intent, resource_id
+        ))
     }
 
-    fn create_packet(&self, resource_id: &str, action: &UreAction) -> Result<PrimitivePacket, String> {
+    fn create_packet(
+        &self,
+        resource_id: &str,
+        action: &UreAction,
+    ) -> Result<PrimitivePacket, String> {
         let primitive = self.resolve_primitive(&action.id, &action.target_state);
 
         for constraint in &action.constraints {

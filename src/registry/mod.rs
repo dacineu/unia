@@ -1,9 +1,9 @@
 use crate::identifiers::DuUuid;
 use serde_json::Value;
-use uuid::Uuid;
-use std::path::{Path, PathBuf};
-use std::fs;
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 pub struct ActuatorRegistry {
     _db_connection_string: String,
@@ -43,12 +43,19 @@ impl ActuatorRegistry {
         self.champions.get(capability).cloned()
     }
 
-    pub fn register_ure_file<P: AsRef<Path>>(&self, path: P, encryption_key: Option<&[u8; 32]>) -> Result<Uuid, Box<dyn std::error::Error>> {
+    pub fn register_ure_file<P: AsRef<Path>>(
+        &self,
+        path: P,
+        encryption_key: Option<&[u8; 32]>,
+    ) -> Result<Uuid, Box<dyn std::error::Error>> {
         let content_str = fs::read_to_string(path)?;
         let manifest: Value = serde_json::from_str(&content_str)?;
         let resource_id = DuUuid::generate(&manifest, encryption_key)?;
 
-        println!("Registering Actuator: {} | ID: {}", manifest["resource_type"], resource_id);
+        println!(
+            "Registering Actuator: {} | ID: {}",
+            manifest["resource_type"], resource_id
+        );
         Ok(resource_id)
     }
 
@@ -71,8 +78,9 @@ impl ActuatorRegistry {
                     if let Ok(content) = fs::read_to_string(&path) {
                         if let Ok(manifest) = serde_json::from_str::<Value>(&content) {
                             let guidance = manifest["guidance"].as_str().unwrap_or("");
-                            if guidance.to_lowercase().contains(&prompt.to_lowercase()) ||
-                               prompt.to_lowercase().contains(&guidance.to_lowercase()) {
+                            if guidance.to_lowercase().contains(&prompt.to_lowercase())
+                                || prompt.to_lowercase().contains(&guidance.to_lowercase())
+                            {
                                 if let Some(id_str) = manifest["resource_id"].as_str() {
                                     if let Ok(id) = Uuid::parse_str(id_str) {
                                         matches.push((id, manifest));

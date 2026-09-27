@@ -1,10 +1,10 @@
+pub mod network_driver;
 pub mod upa_dispatcher;
 pub mod wasm_driver;
-pub mod network_driver;
 
 use crate::bridge::primitive::{PrimitivePacket, UniversalPrimitive};
-use crate::bridge::upa::{UpaPacket, UpaOp};
-use crate::wmis::{WmisEconomicLayer, WmisResource, WmisOperation};
+use crate::bridge::upa::{UpaOp, UpaPacket};
+use crate::wmis::{WmisEconomicLayer, WmisOperation, WmisResource};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -23,7 +23,11 @@ pub struct ActuatorNucleus {
 
 /// Interface for a hardware-specific driver
 pub trait ActuatorDriver {
-    fn execute(&self, packet: &PrimitivePacket, state: &mut HashMap<String, HashMap<String, String>>) -> Result<String, String>;
+    fn execute(
+        &self,
+        packet: &PrimitivePacket,
+        state: &mut HashMap<String, HashMap<String, String>>,
+    ) -> Result<String, String>;
     fn get_resource_id(&self) -> String;
 }
 
@@ -31,7 +35,9 @@ impl ActuatorNucleus {
     pub fn new(economy: Arc<Mutex<WmisEconomicLayer>>) -> Self {
         Self {
             drivers: HashMap::new(),
-            upa_dispatcher: Arc::new(Mutex::new(crate::nucleus::upa_dispatcher::UpaDispatcher::new())),
+            upa_dispatcher: Arc::new(Mutex::new(
+                crate::nucleus::upa_dispatcher::UpaDispatcher::new(),
+            )),
             state_store: Arc::new(Mutex::new(HashMap::new())),
             economy,
         }
@@ -42,7 +48,13 @@ impl ActuatorNucleus {
     }
 
     /// Dispatch a UPA-Assembly packet via the UPA Dispatcher for virtualized compute
-    pub fn dispatch_upa(&self, slot: &str, packet: UpaPacket, user: &str, resource_meta: &WmisResource) -> Result<Vec<String>, String> {
+    pub fn dispatch_upa(
+        &self,
+        slot: &str,
+        packet: UpaPacket,
+        user: &str,
+        resource_meta: &WmisResource,
+    ) -> Result<Vec<String>, String> {
         // 1. ECONOMIC GATE
         {
             let mut econ = self.economy.lock().unwrap();
@@ -51,17 +63,19 @@ impl ActuatorNucleus {
 
         // 2. UPA ROUTING
         let targets = self.upa_dispatcher.lock().unwrap().route(slot, &packet);
-        
+
         // 3. MULTI-TARGET EXECUTION
         let mut results = Vec::new();
         let mut state = self.state_store.lock().unwrap();
 
         for target_id in targets {
-            let driver = self.drivers.get(&target_id)
+            let driver = self
+                .drivers
+                .get(&target_id)
                 .ok_or_else(|| format!("No driver registered for UPA target {}", target_id))?;
-            
+
             state.entry(target_id.clone()).or_insert_with(HashMap::new);
-            
+
             // Convert UpaPacket to PrimitivePacket for the driver
             let prim_packet = self.convert_upa_to_primitive(&packet, &target_id);
             let res = driver.execute(&prim_packet, &mut state)?;
@@ -97,9 +111,14 @@ impl ActuatorNucleus {
     }
 
     /// The core execution loop: Packet -> Economy -> Driver -> Hardware
-    pub fn dispatch(&self, packet: PrimitivePacket, user: &str, resource_meta: &WmisResource) -> Result<String, String> {
+    pub fn dispatch(
+        &self,
+        packet: PrimitivePacket,
+        user: &str,
+        resource_meta: &WmisResource,
+    ) -> Result<String, String> {
         let resource_id = &packet.payload.resource_id;
-        
+
         // 1. ECONOMIC GATE: Charge for the actuation
         {
             let mut econ = self.economy.lock().unwrap();
@@ -107,22 +126,26 @@ impl ActuatorNucleus {
         }
 
         // 2. DRIVER LOOKUP
-        let driver = self.drivers.get(resource_id)
+        let driver = self
+            .drivers
+            .get(resource_id)
             .ok_or_else(|| format!("No driver registered for resource {}", resource_id))?;
 
         let mut state = self.state_store.lock().unwrap();
-        
+
         // Ensure the resource has a state entry
-        state.entry(resource_id.clone()).or_insert_with(HashMap::new);
+        state
+            .entry(resource_id.clone())
+            .or_insert_with(HashMap::new);
 
         // 3. EXECUTION
         let result = driver.execute(&packet, &mut state);
-        
+
         match result {
             Ok(msg) => {
                 println!("[Nucleus] SUCCESS: {}", msg);
                 Ok(msg)
-            },
+            }
             Err(e) => {
                 println!("[Nucleus] ERROR: {}", e);
                 Err(e)
@@ -143,22 +166,35 @@ impl ActuatorDriver for ValveDriver {
         self.id.clone()
     }
 
-    fn execute(&self, packet: &PrimitivePacket, state: &mut HashMap<String, HashMap<String, String>>) -> Result<String, String> {
+    fn execute(
+        &self,
+        packet: &PrimitivePacket,
+        state: &mut HashMap<String, HashMap<String, String>>,
+    ) -> Result<String, String> {
         let resource_state = state.get_mut(&self.id).unwrap();
 
         match packet.payload.primitive {
             UniversalPrimitive::Reset => {
                 resource_state.insert("flow_rate".to_string(), "0.0".to_string());
                 resource_state.insert("status".to_string(), "closed".to_string());
-                Ok(format!("Valve {} force-closed via Hardware GPIO Low", self.id))
-            },
+                Ok(format!(
+                    "Valve {} force-closed via Hardware GPIO Low",
+                    self.id
+                ))
+            }
             UniversalPrimitive::SetValue => {
-                let val = packet.payload.arguments.get("value")
+                let val = packet
+                    .payload
+                    .arguments
+                    .get("value")
                     .ok_or("Missing value argument")?;
                 resource_state.insert("flow_rate".to_string(), val.clone());
                 Ok(format!("Valve {} flow adjusted to {}", self.id, val))
-            },
-            _ => Err(format!("Primitive {:?} not supported by ValveDriver", packet.payload.primitive)),
+            }
+            _ => Err(format!(
+                "Primitive {:?} not supported by ValveDriver",
+                packet.payload.primitive
+            )),
         }
     }
 }
@@ -173,12 +209,19 @@ impl ActuatorDriver for TempSensorDriver {
         self.id.clone()
     }
 
-    fn execute(&self, packet: &PrimitivePacket, _state: &mut HashMap<String, HashMap<String, String>>) -> Result<String, String> {
+    fn execute(
+        &self,
+        packet: &PrimitivePacket,
+        _state: &mut HashMap<String, HashMap<String, String>>,
+    ) -> Result<String, String> {
         match packet.payload.primitive {
             UniversalPrimitive::GetValue => {
                 Ok(format!("Sensor {} reading: 22.4C (I2C Read)", self.id))
-            },
-            _ => Err(format!("Primitive {:?} not supported by TempSensorDriver", packet.payload.primitive)),
+            }
+            _ => Err(format!(
+                "Primitive {:?} not supported by TempSensorDriver",
+                packet.payload.primitive
+            )),
         }
     }
 }
@@ -193,28 +236,50 @@ impl ActuatorDriver for FileSystemDriver {
         self.id.clone()
     }
 
-    fn execute(&self, packet: &PrimitivePacket, state: &mut HashMap<String, HashMap<String, String>>) -> Result<String, String> {
+    fn execute(
+        &self,
+        packet: &PrimitivePacket,
+        state: &mut HashMap<String, HashMap<String, String>>,
+    ) -> Result<String, String> {
         let resource_state = state.get_mut(&self.id).unwrap();
 
         match packet.payload.primitive {
             UniversalPrimitive::SetValue => {
-                let content = packet.payload.arguments.get("content")
+                let content = packet
+                    .payload
+                    .arguments
+                    .get("content")
                     .ok_or("Missing 'content' argument for FS write")?;
-                let path = packet.payload.arguments.get("path")
+                let path = packet
+                    .payload
+                    .arguments
+                    .get("path")
                     .ok_or("Missing 'path' argument for FS write")?;
-                
+
                 resource_state.insert("last_write".to_string(), path.clone());
-                Ok(format!("FS Resource {}: wrote to {} (Simulated Syscall)", self.id, path))
-            },
+                Ok(format!(
+                    "FS Resource {}: wrote to {} (Simulated Syscall)",
+                    self.id, path
+                ))
+            }
             UniversalPrimitive::GetValue => {
-                let path = packet.payload.arguments.get("path")
+                let path = packet
+                    .payload
+                    .arguments
+                    .get("path")
                     .ok_or("Missing 'path' argument for FS read")?;
-                Ok(format!("FS Resource {}: read from {} -> 'simulated_data'", self.id, path))
-            },
+                Ok(format!(
+                    "FS Resource {}: read from {} -> 'simulated_data'",
+                    self.id, path
+                ))
+            }
             UniversalPrimitive::Reset => {
                 Ok(format!("FS Resource {}: cleared cache/temp files", self.id))
-            },
-            _ => Err(format!("Primitive {:?} not supported by FileSystemDriver", packet.payload.primitive)),
+            }
+            _ => Err(format!(
+                "Primitive {:?} not supported by FileSystemDriver",
+                packet.payload.primitive
+            )),
         }
     }
 }

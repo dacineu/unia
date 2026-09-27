@@ -1,12 +1,12 @@
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use unia::harvester::ExplorerHarvester;
+    use unia::learner::{Learner, TrainingBackend};
     use unia::pipeline::EvolutionaryPipeline;
     use unia::registry::ActuatorRegistry;
     use unia::router::RouterSlm;
     use unia::transducer::{SynapticTransducer, TransductionLayer};
-    use unia::learner::{Learner, TrainingBackend};
-    use unia::harvester::ExplorerHarvester;
-    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_evolutionary_pipeline_flow() {
@@ -14,14 +14,12 @@ mod tests {
         let router = Arc::new(RouterSlm::new("phi-3-router"));
         let transducer = Arc::new(SynapticTransducer::new(TransductionLayer::LocalSovereign));
         let learner = Arc::new(Learner::new(TrainingBackend::Local("ollama".to_string())));
-        let harvester = Arc::new(ExplorerHarvester::new(ActuatorRegistry::new("simulated_db"), RouterSlm::new("phi-3-router")));
+        let harvester = Arc::new(ExplorerHarvester::new(
+            ActuatorRegistry::new("simulated_db"),
+            RouterSlm::new("phi-3-router"),
+        ));
 
-        let pipeline = EvolutionaryPipeline::new(
-            harvester,
-            learner,
-            transducer,
-            registry,
-        );
+        let pipeline = EvolutionaryPipeline::new(harvester, learner, transducer, registry);
 
         let source = "https://github.com/stablyai/orca";
         let result = pipeline.evolve_external_resource(source).await;

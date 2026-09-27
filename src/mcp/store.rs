@@ -80,8 +80,20 @@ impl Pattern {
 /// nothing to induce an actuator from, and today the project discards them.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Trace {
+    /// When the interaction happened, in seconds since the epoch.
+    ///
+    /// Defaults to zero when absent so that a trace log written by hand, or by
+    /// anything other than `record`, still loads. This field had no default, so
+    /// every such line was silently dropped by `reload` and the artifact it
+    /// described reported no evidence at all.
+    #[serde(default)]
     pub ts: u64,
+    /// The request as phrased. This is the training signal's raw material: the
+    /// observed phrasings become a candidate's aliases, so a trace whose intent
+    /// is blank cannot be inducted from.
+    #[serde(default)]
     pub intent: String,
+    #[serde(default)]
     pub resource_id: Option<String>,
     /// `hit` when a pattern served the call, `miss` when a provider was called.
     ///
@@ -90,8 +102,17 @@ pub struct Trace {
     /// Treating escalation as failure would discard most of the training
     /// signal, since a miss is what an interaction looks like before any
     /// pattern exists to serve it. Actual failure is `succeeded`, below.
+    /// Defaults to `miss`, meaning the call escalated. An absent outcome is
+    /// treated as an escalation rather than as a parse failure, since that is
+    /// what an interaction looks like before any pattern exists to serve it.
+    #[serde(default = "default_miss")]
     pub outcome: String,
+    /// Tokens billed for the request. Zero when unrecorded, which is correct
+    /// rather than unknown: an artifact served from tier 1 or 2 costs none, and
+    /// that is the number escalation rate is computed from.
+    #[serde(default)]
     pub tokens_in: u64,
+    #[serde(default)]
     pub tokens_out: u64,
     /// The universal primitives the intent resolved to, in order.
     ///
@@ -112,6 +133,10 @@ pub struct Trace {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_miss() -> String {
+    "miss".to_string()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -175,6 +200,9 @@ pub struct Store {
     df: HashMap<String, usize>,
     /// Number of resources in the corpus, which is the `N` in the IDF formula.
     total_resources: usize,
+    /// Trace-log lines that failed to parse, so a corrupt evidence trail is
+    /// visible to a caller rather than being indistinguishable from no traffic.
+    malformed_traces: usize,
 }
 
 impl Store {
@@ -192,6 +220,7 @@ impl Store {
             champions: BTreeMap::new(),
             df: HashMap::new(),
             total_resources: 0,
+            malformed_traces: 0,
         };
         store.reload();
         store
@@ -201,6 +230,7 @@ impl Store {
         self.patterns.clear();
         self.df.clear();
         self.total_resources = 0;
+        self.malformed_traces = 0;
         self.champions.clear();
         self.traces.clear();
 
@@ -242,9 +272,16 @@ impl Store {
             }
         }
         if let Ok(text) = std::fs::read_to_string(self.traces_path()) {
+            // A line that fails to parse is counted rather than dropped
+            // silently. A trace log that is unreadable and a trace log that is
+            // empty are different states, and conflating them makes an artifact
+            // with a corrupt evidence trail look like one that was never
+            // observed -- which is precisely the confusion `Reachability`
+            // exists to prevent.
             for line in text.lines().filter(|l| !l.trim().is_empty()) {
-                if let Ok(t) = serde_json::from_str::<Trace>(line) {
-                    self.traces.push(t);
+                match serde_json::from_str::<Trace>(line) {
+                    Ok(t) => self.traces.push(t),
+                    Err(_) => self.malformed_traces += 1,
                 }
             }
         }
@@ -499,6 +536,46 @@ impl Store {
         });
         out.truncate(limit);
         out
+    }
+
+    /// The evidence readiness of an artifact, or `None` when it is unknown.
+    ///
+    /// Readiness is derived from the trace log, so an artifact with no recorded
+    /// interactions has no readiness rather than a readiness of zero. The
+    /// distinction matters to a caller rendering the corpus: "no evidence yet"
+    /// and "evidence of no value" are opposite states, and collapsing them makes
+    /// a young artifact indistinguishable from a discredited one.
+    /// How many trace-log lines failed to parse on the last load.
+    ///
+    /// Nonzero means the evidence trail for at least one artifact is incomplete,
+    /// so any readiness computed from it understates. A caller presenting these
+    /// numbers should say so rather than render them as complete.
+    pub fn malformed_traces(&self) -> usize {
+        self.malformed_traces
+    }
+
+    pub fn readiness(&self, id: &str) -> Option<f64> {
+        let observations: Vec<&Trace> = self
+            .traces
+            .iter()
+            .filter(|t| t.resource_id.as_deref() == Some(id))
+            .collect();
+        if observations.is_empty() {
+            return None;
+        }
+        let hits = observations.iter().filter(|t| t.outcome == "hit").count();
+        let distinct = observations
+            .iter()
+            .map(|t| t.intent.to_lowercase())
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+        let failures = observations.iter().filter(|t| !t.succeeded).count();
+        // Breadth and reliability, log-scaled on breadth so that reaching the
+        // minimum does not saturate the score. See crate::induce for the same
+        // shape, applied where promotion is decided.
+        let breadth = (distinct as f64).ln_1p() / (crate::induce::MIN_OBSERVATIONS as f64).ln_1p();
+        let reliability = 1.0 - (failures as f64 / observations.len() as f64);
+        Some((breadth.min(1.0) * reliability).clamp(0.0, 1.0))
     }
 
     pub fn get(&self, id: &str) -> Option<&Pattern> {
@@ -854,5 +931,195 @@ mod tests {
                 vec!["fs-root-001".to_string(), "valve-001".to_string()]
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::tests_support_readiness::*;
+    use crate::mcp::store::Store;
+
+    #[test]
+    fn reports_no_readiness_for_an_artifact_with_no_traces() {
+        // "No evidence yet" and "evidence of no value" are opposite states, so
+        // the absence is reported as absence rather than as a score of zero.
+        let (_d, s) = store_with_traces("no-traces", &[]);
+        assert_eq!(s.readiness("valve-001"), None);
+    }
+
+    #[test]
+    fn reports_no_readiness_for_an_untraced_artifact_while_others_are_traced() {
+        let (_d, s) = store_with_traces("partial", &[("valve-001", "halt it", true, &["Halt"])]);
+        assert!(s.readiness("valve-001").is_some());
+        assert_eq!(s.readiness("fs-root-001"), None);
+    }
+
+    #[test]
+    fn reports_zero_readiness_when_every_observation_failed() {
+        let (_d, s) = store_with_traces(
+            "all-failed",
+            &[
+                ("valve-001", "halt it", false, &["Halt"]),
+                ("valve-001", "shut it down", false, &["Halt"]),
+            ],
+        );
+        assert_eq!(s.readiness("valve-001"), Some(0.0));
+    }
+
+    #[test]
+    fn rises_with_the_number_of_distinct_observations() {
+        // Readiness is continuous rather than binary: four observations and four
+        // hundred must not render as the same object, which a champion flag
+        // cannot express.
+        let (_d, few) = store_with_traces("few", &[("valve-001", "halt it", true, &["Halt"])]);
+        let (_d, many) = store_with_traces(
+            "many",
+            &[
+                ("valve-001", "halt it", true, &["Halt"]),
+                ("valve-001", "shut down", true, &["Halt"]),
+                ("valve-001", "stop the valve", true, &["Halt"]),
+                ("valve-001", "emergency shutdown", true, &["Halt"]),
+            ],
+        );
+        let a = few.readiness("valve-001").unwrap();
+        let b = many.readiness("valve-001").unwrap();
+        assert!(
+            b > a,
+            "more distinct observations must score higher: {b} vs {a}"
+        );
+    }
+
+    #[test]
+    fn counts_repeated_identical_intents_as_one_observation() {
+        // Repeating one sentence is one observation, not several.
+        let (_d, s) = store_with_traces(
+            "repeat",
+            &[
+                ("valve-001", "halt it", true, &["Halt"]),
+                ("valve-001", "halt it", true, &["Halt"]),
+                ("valve-001", "HALT IT", true, &["Halt"]),
+            ],
+        );
+        let (_d, one) =
+            store_with_traces("repeat-one", &[("valve-001", "halt it", true, &["Halt"])]);
+        assert_eq!(s.readiness("valve-001"), one.readiness("valve-001"));
+    }
+
+    #[test]
+    fn penalises_failed_observations() {
+        let (_d, clean) = store_with_traces(
+            "clean",
+            &[
+                ("valve-001", "halt it", true, &["Halt"]),
+                ("valve-001", "shut down", true, &["Halt"]),
+            ],
+        );
+        let (_d, mixed) = store_with_traces(
+            "mixed",
+            &[
+                ("valve-001", "halt it", true, &["Halt"]),
+                ("valve-001", "shut down", false, &["Halt"]),
+            ],
+        );
+        assert!(mixed.readiness("valve-001") < clean.readiness("valve-001"));
+    }
+
+    #[test]
+    fn counts_a_malformed_trace_line_instead_of_dropping_it_silently() {
+        // A trace log that is unreadable and a trace log that is empty are
+        // different states. Dropping the bad line made an artifact with a
+        // corrupt evidence trail indistinguishable from one never observed,
+        // which is the exact confusion Reachability exists to prevent.
+        let dir = Scratch::new("malformed-line");
+        let manifest = r#"{"ure_version":"1.0","resource_id":"valve-001","category":"actuator","action_primitives":[]}"#;
+        std::fs::write(dir.path().join("valve-001.ure"), manifest).unwrap();
+        std::fs::write(
+            dir.path().join("traces.jsonl"),
+            "{\"this is not json\"\n{\"intent\":\"halt it\",\"resource_id\":\"valve-001\"}\n",
+        )
+        .unwrap();
+        let s = Store::open(dir.path());
+        assert_eq!(s.malformed_traces(), 1);
+        // The well-formed line still loaded, and defaults filled its absent
+        // fields rather than the line being discarded wholesale.
+        assert!(s.readiness("valve-001").is_some());
+    }
+
+    #[test]
+    fn loads_a_trace_whose_optional_fields_are_absent() {
+        // ts, outcome, tokens and resource_id all default, so a minimal
+        // hand-written line is usable evidence.
+        let (_d, s) = store_with_traces("minimal", &[("valve-001", "halt it", true, &["Halt"])]);
+        assert_eq!(s.malformed_traces(), 0);
+        assert!(s.readiness("valve-001").is_some());
+    }
+
+    #[test]
+    fn keeps_readiness_within_the_unit_interval() {
+        let (_d, s) = store_with_traces(
+            "bounded",
+            &[
+                ("valve-001", "halt it", true, &["Halt"]),
+                ("valve-001", "shut down", true, &["Halt"]),
+                ("valve-001", "stop", true, &["Halt"]),
+            ],
+        );
+        let r = s.readiness("valve-001").unwrap();
+        assert!((0.0..=1.0).contains(&r), "readiness {r} out of range");
+    }
+}
+
+#[cfg(test)]
+mod tests_support_readiness {
+    use super::*;
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    pub(super) struct Scratch(pub PathBuf);
+
+    impl Scratch {
+        pub fn new(tag: &str) -> Self {
+            static N: AtomicU32 = AtomicU32::new(0);
+            let p = std::env::temp_dir().join(format!(
+                "unia-readiness-{tag}-{}-{}",
+                std::process::id(),
+                N.fetch_add(1, Ordering::SeqCst)
+            ));
+            std::fs::create_dir_all(&p).expect("scratch dir");
+            Scratch(p)
+        }
+        pub fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// One recorded interaction: which artifact served it, how it was phrased,
+    /// whether it worked, and which primitives it resolved to.
+    pub(super) type Observation<'a> = (&'a str, &'a str, bool, &'a [&'a str]);
+
+    /// A store holding one artifact and a trace log built from `traces`.
+    pub(super) fn store_with_traces(tag: &str, traces: &[Observation]) -> (Scratch, Store) {
+        let dir = Scratch::new(tag);
+        let manifest = r#"{"ure_version":"1.0","resource_id":"valve-001","category":"actuator","action_primitives":[{"id":"emergency_shutdown","aliases":["emergency shutdown","halt"],"params":{},"target_state":"","constraints":[]}]}"#;
+        std::fs::write(dir.path().join("valve-001.ure"), manifest).expect("write manifest");
+        let mut body = String::new();
+        for (id, intent, succeeded, prims) in traces {
+            let prims: Vec<String> = prims.iter().map(|s| format!("\"{s}\"")).collect();
+            body.push_str(&format!(
+                "{{\"intent\":\"{intent}\",\"resource_id\":\"{id}\",\"outcome\":\"hit\",\"primitives\":[{}],\"succeeded\":{succeeded}}}\n",
+                prims.join(",")
+            ));
+        }
+        let mut f = std::fs::File::create(dir.path().join("traces.jsonl")).expect("trace log");
+        f.write_all(body.as_bytes()).expect("write traces");
+        let store = Store::open(dir.path());
+        (dir, store)
     }
 }

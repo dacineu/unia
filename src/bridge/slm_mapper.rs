@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,7 +31,10 @@ pub struct SemanticSLM {
 
 impl SemanticSLM {
     pub fn new(endpoint: String, model_name: String) -> Self {
-        Self { endpoint, model_name }
+        Self {
+            endpoint,
+            model_name,
+        }
     }
 
     /// Generates the unia prompt for the SLM.
@@ -45,16 +48,21 @@ impl SemanticSLM {
 
     /// For native execution, this would use reqwest. For browser, it uses web_sys::fetch.
     /// To keep the prototype clean, we provide the logic to be called by the runtime.
-    pub async fn map_intent_semantic<F>(&self, intent: &str, available_actions: &[String], fetch_fn: F) -> Result<String, String> 
-    where 
-        F: Fn(String, String) -> Result<String, String> 
+    pub async fn map_intent_semantic<F>(
+        &self,
+        intent: &str,
+        available_actions: &[String],
+        fetch_fn: F,
+    ) -> Result<String, String>
+    where
+        F: Fn(String, String) -> Result<String, String>,
     {
         let prompt = self.build_prompt(intent, available_actions);
-        
-        // In a real system, we'd send the SlmRequest JSON. 
+
+        // In a real system, we'd send the SlmRequest JSON.
         // Here we call the provided fetch_fn to remain environment-agnostic.
         let response = fetch_fn(self.endpoint.clone(), prompt)?;
-        
+
         // Extract the action ID from the response (simulated JSON parsing)
         Ok(response.trim().to_string())
     }

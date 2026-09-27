@@ -1,23 +1,18 @@
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use unia::bridge::IntelligenceBridge;
     use unia::registry::ActuatorRegistry;
     use unia::router::RouterSlm;
     use unia::transducer::{SynapticTransducer, TransductionLayer};
-    use std::fs;
 
     #[test]
     fn test_intelligence_bridge_evolution_loop() {
         let registry = ActuatorRegistry::new("simulated_db");
         let router = RouterSlm::new("phi-3-router");
         let transducer = SynapticTransducer::new(TransductionLayer::LocalSovereign);
-        
-        let mut bridge = IntelligenceBridge::new(
-            registry, 
-            router, 
-            transducer, 
-            "NVIDIA-NIM"
-        );
+
+        let mut bridge = IntelligenceBridge::new(registry, router, transducer, "NVIDIA-NIM");
 
         let prompt = "Rust Object Oriented Modeling".to_string();
 
