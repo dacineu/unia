@@ -5,9 +5,9 @@
 
 use rmcp::transport::stdio;
 use rmcp::ServiceExt;
+use std::path::PathBuf;
 use unia::mcp::store::Store;
 use unia::mcp::UniaServer;
-use std::path::PathBuf;
 
 /// Corpus location. `UNIA_STORE` lets one server be pointed at a different
 /// pattern library per project without changing the client configuration.
@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let fixture_path = args
                 .get(1)
                 .map(|p| std::path::PathBuf::from(p))
-                .unwrap_or_else(|| root.join("../tests/fixtures/queries.json"));
+                .unwrap_or_else(|| root.join("tests/fixtures/queries.json"));
             let fixture = match unia::mcp::eval::load(&fixture_path) {
                 Ok(f) => f,
                 Err(e) => {

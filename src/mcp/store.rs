@@ -144,12 +144,23 @@ pub struct Stats {
 }
 
 fn now_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
+/// Splits text into comparable terms.
+///
+/// An underscore is a separator, not part of a term. `write_file` and
+/// `write file` name the same action, so keeping the underscore produced a
+/// single opaque token that no natural-language intent could ever contain:
+/// `write output to results.txt` shares no term with `write_file` and the
+/// containment fast path missed it too, because it compares against a
+/// space-normalised phrase. This is divergence D4 in `docs/SPEC.md`.
 fn tokenize(s: &str) -> Vec<String> {
     s.to_lowercase()
-        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty() && t.len() > 1)
         .map(|t| t.to_string())
         .collect()
@@ -160,9 +171,10 @@ pub struct Store {
     patterns: Vec<Pattern>,
     traces: Vec<Trace>,
     champions: BTreeMap<String, String>,
-    /// term -> number of phrases containing it, for inverse-document-frequency.
+    /// Term -> number of resources declaring it, for inverse-document-frequency.
     df: HashMap<String, usize>,
-    total_phrases: usize,
+    /// Number of resources in the corpus, which is the `N` in the IDF formula.
+    total_resources: usize,
 }
 
 impl Store {
@@ -179,7 +191,7 @@ impl Store {
             traces: Vec::new(),
             champions: BTreeMap::new(),
             df: HashMap::new(),
-            total_phrases: 0,
+            total_resources: 0,
         };
         store.reload();
         store
@@ -188,7 +200,7 @@ impl Store {
     pub fn reload(&mut self) {
         self.patterns.clear();
         self.df.clear();
-        self.total_phrases = 0;
+        self.total_resources = 0;
         self.champions.clear();
         self.traces.clear();
 
@@ -206,12 +218,21 @@ impl Store {
             }
         }
 
+        // Document frequency is counted per resource, not per phrase. A resource
+        // that lists a term across many of its own aliases has not made that
+        // term common in the corpus; it has described itself thoroughly. Counting
+        // phrases let a self-referential resource down-weight its own strongest
+        // term, so a rare term belonging to a different resource outranked it.
         for p in &self.patterns {
+            let mut seen: HashSet<String> = HashSet::new();
             for phrase in p.phrases() {
-                self.total_phrases += 1;
                 for term in tokenize(&phrase) {
-                    *self.df.entry(term).or_insert(0) += 1;
+                    seen.insert(term);
                 }
+            }
+            self.total_resources += 1;
+            for term in seen {
+                *self.df.entry(term).or_insert(0) += 1;
             }
         }
 
@@ -271,7 +292,9 @@ impl Store {
             .and_then(|x| x.as_str())
             .map(|s| s.to_string())
             .or_else(|| {
-                path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
             })?;
 
         let actions = v
@@ -314,18 +337,34 @@ impl Store {
         let payload = v.get("payload").and_then(|p| {
             Some(Payload {
                 kind: p.get("kind")?.as_str()?.to_string(),
-                module: p.get("module").and_then(|m| m.as_str()).map(|s| s.to_string()),
-                entry: p.get("entry").and_then(|m| m.as_str()).map(|s| s.to_string()),
+                module: p
+                    .get("module")
+                    .and_then(|m| m.as_str())
+                    .map(|s| s.to_string()),
+                entry: p
+                    .get("entry")
+                    .and_then(|m| m.as_str())
+                    .map(|s| s.to_string()),
                 command: p.get("command").and_then(|c| c.as_array()).map(|a| {
-                    a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect()
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                        .collect()
                 }),
             })
         });
 
         Some(Pattern {
             id,
-            category: v.get("category").and_then(|x| x.as_str()).unwrap_or("unknown").to_string(),
-            guidance: v.get("guidance").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+            category: v
+                .get("category")
+                .and_then(|x| x.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
+            guidance: v
+                .get("guidance")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string(),
             actions,
             payload,
             source: path.to_path_buf(),
@@ -335,7 +374,7 @@ impl Store {
     /// Weight a term by how rare it is in the corpus, so a distinctive word
     /// dominates a match and a boilerplate one does not.
     fn idf(&self, term: &str) -> f64 {
-        let n = self.total_phrases.max(1) as f64;
+        let n = self.total_resources.max(1) as f64;
         let df = *self.df.get(term).unwrap_or(&0) as f64;
         ((n - df + 0.5) / (df + 0.5) + 1.0).ln()
     }
@@ -347,6 +386,8 @@ impl Store {
 
         // An exact or near-exact phrase is a decisive match. This is the fast
         // path the Bridge uses for alias containment, and it should dominate.
+        // Containment already implies coverage, so these returns are not scaled
+        // by the coverage factor applied below.
         if p_norm == i_norm {
             return 1.0;
         }
@@ -386,7 +427,19 @@ impl Store {
             let matched = p_tokens.iter().filter(|t| intent_set.contains(*t)).count();
             matched as f64 / p_tokens.len() as f64
         };
-        0.75 * recall + 0.25 * precision
+        let base = 0.75 * recall + 0.25 * precision;
+
+        // Both terms above measure how much of the *phrase* the intent covers.
+        // Neither measures how much of the *intent* the phrase accounts for, so a
+        // two-word alias sharing one common word scored as highly as a real
+        // match: `create document` claimed `summarise this document for me`
+        // because both mention a document, and `open file` claimed `open the
+        // valve`. Scaling by intent coverage makes a phrase that explains only a
+        // fraction of the request rank below one that explains the request, which
+        // is what scoping an alias to the action it actually names requires.
+        let covered = p_tokens.iter().filter(|t| intent_set.contains(*t)).count();
+        let coverage = covered as f64 / intent.len() as f64;
+        base * coverage.sqrt()
     }
 
     /// Ranks corpus patterns against an intent. Champions get a small boost so a
@@ -417,7 +470,11 @@ impl Store {
                     return None;
                 }
                 let is_champion = champion_ids.contains(&p.id);
-                let score = if is_champion { (best * 1.1).min(1.0) } else { best };
+                let score = if is_champion {
+                    (best * 1.1).min(1.0)
+                } else {
+                    best
+                };
                 let runnable = p.payload.as_ref().is_some_and(|pl| pl.is_runnable());
                 Some(Match {
                     id: p.id.clone(),
@@ -464,7 +521,10 @@ impl Store {
         use std::io::Write;
         std::fs::create_dir_all(&self.root)?;
         let line = serde_json::to_string(&trace).map_err(std::io::Error::other)?;
-        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(self.traces_path())?;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.traces_path())?;
         writeln!(f, "{}", line)?;
         self.traces.push(trace);
         Ok(())
@@ -477,7 +537,8 @@ impl Store {
                 format!("no pattern with id {} in {}", id, self.root.display()),
             ));
         }
-        self.champions.insert(capability.to_string(), id.to_string());
+        self.champions
+            .insert(capability.to_string(), id.to_string());
         std::fs::write(
             self.champions_path(),
             serde_json::to_string_pretty(&self.champions).map_err(std::io::Error::other)?,
@@ -516,7 +577,13 @@ impl Store {
 }
 
 /// A trace with timestamps filled in, for callers that should not have to.
-pub fn new_trace(intent: String, resource_id: Option<String>, outcome: &str, tin: u64, tout: u64) -> Trace {
+pub fn new_trace(
+    intent: String,
+    resource_id: Option<String>,
+    outcome: &str,
+    tin: u64,
+    tout: u64,
+) -> Trace {
     Trace {
         ts: now_secs(),
         intent,
@@ -528,5 +595,264 @@ pub fn new_trace(intent: String, resource_id: Option<String>, outcome: &str, tin
         // cannot be inducted from.
         primitives: Vec::new(),
         succeeded: true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// A self-cleaning scratch directory. The crate has no dev-dependencies and
+    /// these tests only need somewhere to write manifests.
+    pub(super) struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Self {
+            static N: AtomicU32 = AtomicU32::new(0);
+            let p = std::env::temp_dir().join(format!(
+                "unia-store-{tag}-{}-{}",
+                std::process::id(),
+                N.fetch_add(1, Ordering::SeqCst)
+            ));
+            std::fs::create_dir_all(&p).expect("scratch dir");
+            Self(p)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Writes a minimal manifest, so retrieval tests assert against a corpus they
+    /// define rather than against whatever happens to be checked in.
+    pub(super) fn manifest(dir: &Path, id: &str, actions: &[(&str, &[&str])]) {
+        let mut s = format!(
+            r#"{{"ure_version":"1.0","resource_id":"{id}","category":"actuator","action_primitives":["#
+        );
+        for (i, (aid, aliases)) in actions.iter().enumerate() {
+            if i > 0 {
+                s.push(',');
+            }
+            s.push_str(&format!(
+                    r#"{{"id":"{aid}","aliases":[{}],"params":{{}},"target_state":"","constraints":[]}}"#,
+                    aliases.iter().map(|a| format!("\"{a}\"")).collect::<Vec<_>>().join(",")
+                ));
+        }
+        s.push_str("]}");
+        std::fs::write(dir.join(format!("{id}.ure")), s).expect("write manifest");
+    }
+
+    /// The two-resource corpus the fixture's failures were diagnosed against.
+    pub(super) fn corpus() -> (Scratch, Store) {
+        let dir = Scratch::new("corpus");
+        manifest(
+            dir.path(),
+            "valve-001",
+            &[
+                (
+                    "emergency_shutdown",
+                    &["emergency_shutdown", "emergency shutdown", "halt"],
+                ),
+                ("adjust_flow", &["adjust_flow", "adjust flow", "set flow"]),
+            ],
+        );
+        manifest(
+            dir.path(),
+            "fs-root-001",
+            &[
+                ("write_file", &["save file", "create document", "dump logs"]),
+                ("read_file", &["open file", "get content", "fetch data"]),
+                ("clear_cache", &["reset storage", "purge temp", "cleanup"]),
+            ],
+        );
+        let store = Store::open(dir.path());
+        (dir, store)
+    }
+
+    pub(super) fn top(store: &Store, intent: &str) -> Option<String> {
+        store.search(intent, 1).first().map(|m| m.id.clone())
+    }
+
+    pub(super) fn score_of(store: &Store, intent: &str, id: &str) -> Option<f64> {
+        store
+            .search(intent, 10)
+            .into_iter()
+            .find(|m| m.id == id)
+            .map(|m| m.score)
+    }
+
+    mod tokenize {
+        use super::*;
+
+        #[test]
+        fn splits_an_underscored_identifier_into_its_words() {
+            // An underscore used to be part of the term, so `write_file` was a single
+            // opaque token that no natural-language intent could ever contain, and
+            // the intent `write output to results.txt` matched nothing at all.
+            // https://github.com/dacineu/unia/issues/1
+            assert_eq!(tokenize("write_file"), vec!["write", "file"]);
+        }
+
+        #[test]
+        fn treats_an_underscored_and_a_spaced_phrase_identically() {
+            assert_eq!(tokenize("write_file"), tokenize("write file"));
+        }
+
+        #[test]
+        fn discards_single_characters_and_punctuation() {
+            // A one-character term carries no retrieval signal, and punctuation must
+            // not survive as a term. `to` is two characters and is kept, so
+            // stopword filtering is a separate concern from splitting.
+            assert_eq!(tokenize("a write, to x!"), vec!["write", "to"]);
+        }
+
+        #[test]
+        fn lowercases_before_splitting() {
+            assert_eq!(tokenize("READ_FILE"), vec!["read", "file"]);
+        }
+    }
+
+    mod idf {
+        use super::*;
+
+        #[test]
+        fn ranks_a_term_absent_from_the_corpus_above_a_shared_one() {
+            let (_d, s) = corpus();
+            assert!(s.idf("chromodynamics") > s.idf("file"));
+        }
+
+        #[test]
+        fn counts_resources_rather_than_phrases() {
+            // Counting document frequency per phrase let a resource down-weight its
+            // own strongest term for listing that term across many of its aliases.
+            // `file` occurs in three fs-root-001 phrases but only one resource, so it
+            // must be rarer than a term two different resources share.
+            // https://github.com/dacineu/unia/issues/1
+            let (_d, s) = corpus();
+            assert_eq!(s.total_resources, 2);
+            assert_eq!(s.df.get("file"), Some(&1));
+            // `001` is a term of both resources' identifiers.
+            assert_eq!(s.df.get("001"), Some(&2));
+        }
+    }
+
+    mod search {
+        use super::*;
+
+        #[test]
+        fn routes_an_intent_naming_a_resource_to_that_resource() {
+            let (_d, s) = corpus();
+            assert_eq!(top(&s, "open the valve").as_deref(), Some("valve-001"));
+        }
+
+        #[test]
+        fn routes_an_intent_naming_an_underscored_action() {
+            // `write output to results.txt` was a false negative: the action id
+            // `write_file` tokenised to one opaque term, and the containment fast
+            // path compared against a space-normalised phrase, so neither path
+            // could match. https://github.com/dacineu/unia/issues/1
+            let (_d, s) = corpus();
+            assert_eq!(
+                top(&s, "write output to results.txt").as_deref(),
+                Some("fs-root-001")
+            );
+        }
+
+        #[test]
+        fn prefers_the_resource_named_over_a_third_party_alias() {
+            // `open file` is an fs-root-001 alias and scored exactly level with
+            // valve-001 on the words `open the valve`, so the alphabetical tiebreak
+            // returned the wrong resource. https://github.com/dacineu/unia/issues/1
+            let (_d, s) = corpus();
+            let valve = score_of(&s, "open the valve", "valve-001").unwrap();
+            let fs = score_of(&s, "open the valve", "fs-root-001").unwrap();
+            assert!(valve > fs, "valve {valve} should beat fs-root-001 {fs}");
+        }
+
+        #[test]
+        fn scores_an_alias_matching_only_one_common_word_below_a_real_match() {
+            // `summarise this document for me` and the alias `create document` both
+            // mention a document. Both overlap terms measure how much of the phrase
+            // the intent covers; neither measured how much of the intent the phrase
+            // accounts for. Intent coverage now separates the two.
+            //
+            // This is a ranking fix, not a rejection. The residual score still
+            // clears the acceptance gate, and no threshold can remove it: the
+            // false positive outscores the weakest true positive. Rejecting it
+            // needs a capability check against the manifest's declared state
+            // space, which is divergence D5.
+            // https://github.com/dacineu/unia/issues/1
+            let (_d, s) = corpus();
+            let partial = score_of(&s, "summarise this document for me", "fs-root-001");
+            let real = score_of(&s, "create a new document called notes", "fs-root-001");
+            assert!(partial.unwrap_or(0.0) < real.unwrap_or(0.0));
+        }
+
+        #[test]
+        fn accepts_a_phrase_fully_contained_in_the_intent() {
+            // Containment is a stronger signal than partial overlap, so scaling by
+            // intent coverage must not demote a phrase the intent spells out.
+            let (_d, s) = corpus();
+            assert_eq!(
+                top(&s, "please create document now").as_deref(),
+                Some("fs-root-001")
+            );
+        }
+
+        #[test]
+        fn returns_nothing_when_no_vocabulary_is_shared() {
+            let (_d, s) = corpus();
+            assert!(top(&s, "quantum chromodynamics lattice gauge").is_none());
+        }
+
+        #[test]
+        fn returns_nothing_for_an_empty_intent() {
+            let (_d, s) = corpus();
+            assert!(s.search("", 5).is_empty());
+        }
+
+        #[test]
+        fn scores_a_partial_explanation_below_a_complete_one() {
+            // The ordering property the coverage factor exists to establish, stated
+            // directly so a future scoring change cannot silently invert it.
+            let (_d, s) = corpus();
+            let partial = score_of(&s, "summarise this document for me", "fs-root-001");
+            let complete = score_of(&s, "create a new document called notes", "fs-root-001");
+            assert!(partial.unwrap_or(0.0) < complete.unwrap_or(0.0));
+        }
+    }
+
+    mod store_open {
+        use super::*;
+
+        #[test]
+        fn skips_a_malformed_manifest_rather_than_failing() {
+            // A corpus is expected to contain experiments, and one bad file must not
+            // make the server unstartable for every agent connected to it.
+            let dir = Scratch::new("malformed");
+            std::fs::write(dir.path().join("broken.ure"), "{ not json").unwrap();
+            manifest(dir.path(), "valve-001", &[("halt", &["halt"])]);
+            let store = Store::open(dir.path());
+            assert_eq!(store.ids(), vec!["valve-001".to_string()]);
+        }
+
+        #[test]
+        fn indexes_every_valid_manifest() {
+            let (_d, s) = corpus();
+            let mut ids = s.ids();
+            ids.sort();
+            assert_eq!(
+                ids,
+                vec!["fs-root-001".to_string(), "valve-001".to_string()]
+            );
+        }
     }
 }
