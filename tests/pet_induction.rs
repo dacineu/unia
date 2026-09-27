@@ -226,3 +226,49 @@ fn a_trace_from_the_browser_format_parses_without_loss() {
     assert_eq!(t.tokens_in, 0, "tiers 1 and 2 cost no tokens");
     assert!(t.succeeded);
 }
+
+#[test]
+fn two_players_reaching_one_address_answer_the_motto_with_neither() {
+    // The end of the whole line: a player's care becomes a rule, two lineages
+    // reach the same content address, and the question the game asks dissolves
+    // rather than being decided. This is the argument for treating ancestry as a
+    // relation rather than a chain, expressed as a test.
+    use unia::camaduci::{Firstness, firstness};
+    use std::collections::BTreeMap;
+
+    let mut by_player: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for who in ["ca-001", "ca-002"] {
+        let dir = Scratch::new();
+        write_log(
+            dir.path(),
+            &[
+                ("give it dinner", FEED),
+                ("pour some kibble", FEED),
+                ("serve the food", FEED),
+            ],
+        );
+        let store = Store::open(dir.path());
+        let c = induce_all(store.traces()).unwrap();
+        assert_eq!(c.len(), 1);
+        by_player.insert(who.to_string(), vec![c[0].du_uuid.to_string()]);
+    }
+
+    assert_eq!(
+        firstness(&by_player),
+        Firstness::Converged {
+            shared: by_player["ca-001"][0].clone(),
+            lineages: 2,
+        }
+    );
+}
+
+#[test]
+fn two_players_staying_apart_leave_the_motto_undetermined() {
+    use unia::camaduci::{Firstness, firstness};
+    use std::collections::BTreeMap;
+
+    let mut by_player: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    by_player.insert("ca-001".to_string(), vec!["address-a".to_string()]);
+    by_player.insert("ca-002".to_string(), vec!["address-b".to_string()]);
+    assert_eq!(firstness(&by_player), Firstness::Undetermined);
+}
