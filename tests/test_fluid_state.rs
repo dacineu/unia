@@ -5,31 +5,36 @@ mod tests {
     use unia::router::RouterSlm;
     use uuid::Uuid;
     use std::collections::HashMap;
+    use std::path::Path;
     use std::sync::Arc;
     use serde_json::json;
     use std::fs;
 
-    fn create_mock_ure(id: Uuid, guidance: &str) {
+    fn create_mock_ure(dir: &Path, id: Uuid, guidance: &str) {
         let manifest = json!({
             "resource_id": id.to_string(),
             "guidance": guidance,
             "complexity_score": 0.5
         });
-        fs::write(format!("{}.ure", id), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
+        fs::write(dir.join(format!("{}.ure", id)), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
     }
 
     #[test]
     fn test_fluid_state_flux_swap() {
-        let registry = Arc::new(ActuatorRegistry::new("simulated_db"));
+        // Manifests are written into a temporary directory and the registry is
+        // pointed at it explicitly. Writing to the process working directory
+        // littered the repository root with .ure files on every test run.
+        let dir = tempfile::tempdir().unwrap();
+        let registry = Arc::new(ActuatorRegistry::with_base_dir("simulated_db", dir.path()));
         let router = Arc::new(RouterSlm::new("phi-3-router"));
         
         let logic_id = Uuid::new_v4();
         let presenter_a = Uuid::new_v4();
         let presenter_b = Uuid::new_v4();
 
-        create_mock_ure(logic_id, "Core Logic: Calculate Pi");
-        create_mock_ure(presenter_a, "Interface: Detailed Table");
-        create_mock_ure(presenter_b, "Interface: Minimalist Bar");
+        create_mock_ure(dir.path(), logic_id, "Core Logic: Calculate Pi");
+        create_mock_ure(dir.path(), presenter_a, "Interface: Detailed Table");
+        create_mock_ure(dir.path(), presenter_b, "Interface: Minimalist Bar");
 
         let mut slots = HashMap::new();
         slots.insert(SlotType::Logic, logic_id);

@@ -1,9 +1,0 @@
-{
-  "complexity_score": 0.7,
-  "compressed_data": "simulated_pattern_weights_base64",
-  "guidance": "Pattern [evolve:6e042464-7e0b-4d59-b71d-54c55a195803]: Behavioral pattern derived from 1 successful interactions. Priority: High-Fidelity Mirroring.",
-  "resource_id": "a07ccdd0-1477-4904-83fa-28cd531fbaa7",
-  "resource_type": "mirror_actuator",
-  "source_external_id": "evolve:6e042464-7e0b-4d59-b71d-54c55a195803",
-  "status": "UNSTABLE"
-}

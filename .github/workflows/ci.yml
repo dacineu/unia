@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  # Warnings are not yet denied. The crate currently emits 48 of them from
+  # unrelated backlog work; adding `RUSTFLAGS: -D warnings` here before that is
+  # cleared would make this workflow red on its first run and nobody would trust
+  # it. Clear the warnings first, then tighten this.
+  # RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Cache dependencies
+        run: cargo fetch --locked
+
+      # --all-targets covers the library, every test binary and every example.
+      # The repository previously failed this step, so it is the gate that
+      # matters most.
+      - name: cargo check --all-targets
+        run: cargo check --all-targets --locked
+
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo test
+        run: cargo test --locked
+
+  examples:
+    name: Examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # The examples are the demonstration surface, so they must build even
+      # where the tests do not exercise them.
+      - name: cargo build --examples
+        run: cargo build --examples --locked
+
+      - name: Run the end-to-end example
+        run: cargo run --example full_system_demo
+
+      - name: Verify the filesystem pipeline example
+        run: cargo run --example verify_fs_pipeline
+
+  wasm:
+    name: Wasm build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add wasm32-unknown-unknown
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo check for wasm32
+        run: cargo check --target wasm32-unknown-unknown --locked
+
+  dco:
+    name: DCO sign-off
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify every commit is signed off
+        run: |
+          commits=$(git rev-list ${GITHUB_SHA} ^$(git merge-base HEAD origin/main || echo HEAD~20))
+          if [ -z "$commits" ]; then
+            echo "No new commits to check."
+            exit 0
+          fi
+          missing=0
+          for sha in $commits; do
+            if ! git log -1 --format='%B' "$sha" | grep -q '^Signed-off-by:'; then
+              echo "Missing DCO sign-off: $sha $(git log -1 --format='%s' "$sha")"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "See CONTRIBUTING.md for the Developer Certificate of Origin."
+            exit 1
+          fi

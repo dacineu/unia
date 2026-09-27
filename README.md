@@ -1,48 +1,186 @@
-# unia (Universal Nucleus Interface Architecture)
+<div align="center">
 
-**unia** is a high-performance orchestration system that decouples agent intent from implementation. Using the **.ure** universal resource format and a **Primitive Bridge**, it evolves from OS-dependence to an actuator-driven nucleus, ensuring total hardware independence and evolutionary capability growth.
+# unia
 
-It serves as the core implementation of the **amater** agent manager design, designed for universal resource exchange, hardware independence, and evolutionary capability growth.
+**Universal Nucleus Interface Architecture**
 
-## 🚀 Core Vision
+An orchestration system that decouples an agent's *intent* from its
+*implementation*.
 
-The goal of `unia` is to decouple the *Intent* of an agent's action from its *Implementation*. By moving away from hardcoded OS paths and binary dependencies, `unia` creates a "Punctuation Layer" that allows the system to evolve from being OS-dependent to being **Actuator-driven**.
+[![CI](https://github.com/dacineu/unia/actions/workflows/ci.yml/badge.svg)](https://github.com/dacineu/unia/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/unia.svg)](https://crates.io/crates/unia)
+[![docs.rs](https://img.shields.io/docsrs/unia.svg)](https://docs.rs/unia)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-## 🛠 Key Architectural Pillars
+[`.ure` specification](./docs/SPEC.md) ·
+[Whitepaper (PDF)](./docs/whitepaper_unia.pdf) ·
+[Commercial and support](./LICENSE-COMMERCIAL.md) ·
+[Contributing](./CONTRIBUTING.md) ·
+[Security](./SECURITY.md)
 
-### 1. Universal Resource Exchange (`.ure`)
-The system uses the `.ure` format for universal resource identification, moving beyond simple file paths to a structured identity scheme:
-- **Identifier Scheme**: `ure_RES_CAT_LOC_UNIQ` (using UUID v4).
-- **7 Resource Types**: `identity`, `skill`, `config`, `job`, `hardware`, `tool`, `doc`.
-- **Quality Metrics (A-E)**: Tracks product quality, service performance (execution time, success rate), resource requirements, and access policies.
-- **Correlation Mechanism**: Maps relationships between resources (e.g., a `skill` requiring a specific `identity`) to optimize agent selection.
+</div>
 
-### 2. Hardware & OS Independence
-`unia` ensures the nucleus remains universal through:
-- **Primitive Bridge**: Maps universal primitive IDs (e.g., `PRIMITIVE_SEARCH`) to OS-specific implementations.
-- **Weight Manager**: Abstracts hardware specifics (GPU/CPU memory, precision) to handle LoRA loading and memory allocation across different architectures (CUDA, ROCm, Metal).
-- **Actuator Mesh**: Allows the system to replace bootstrap OS primitives with specialized, evolved `.ure` actuators.
+## The problem
 
-### 3. Agent Profiling & Orchestration
-Based on the **amater** design, `unia` dynamically profiles subagents using a comprehensive identity set:
-- **Identity Files**: `SOUL.md`, `USER.md`, `AGENTS.md`, `TOOLS.md`, `HEARTBEAT.md`, `MEMORY.md`, `SKILL.md`.
-- **Profiling-Driven Selection**: Uses a combination of `.ure` metrics and correlation strengths to assign the optimal agent identity to a specific task.
+An agent that can do one useful thing is usually hardcoded to the machine that
+thing lives on. It shells out to `/usr/bin/grep`, it expects a CUDA device, it
+assumes a POSIX filesystem. Moving it to a browser, a different GPU, or a
+different OS means rewriting the integration, so the capability and the
+environment stay welded together and neither can evolve.
 
-## 📂 Project Structure
+## The idea
 
-- `src/`: Core Rust implementation.
-  - `orchestrator/`: Logic for task decomposition and agent assignment.
-  - `registry/`: Management of `.ure` resources and identities.
-  - `bridge/`: The OS decoupling layer.
-  - `wmis/`: Integration with Universal Management Interface Standards.
-- `docs/`: Detailed design specifications for `.ure` and decoupling strategies.
-- `database/`: SQLite schemas for agents, identities, and correlations.
-- `tests/`: Integration and end-to-end demo tests.
+Separate *what* an agent wants done from *how* it gets done.
 
-## 📈 Evolution Path
+A **Primitive Bridge** maps natural-language intent onto a small, stable
+vocabulary of universal primitives. An **Actuator Nucleus** then satisfies those
+primitives against a real resource. Neither knows much about the other, and
+neither knows about the operating system.
 
-`unia` is designed to evolve autonomously:
-**OS-Dependent** $\rightarrow$ **Primitive Bridge** $\rightarrow$ **Actuator-Driven** $\rightarrow$ **Universal Nucleus**
+The middle layer is a **Punctuation Layer**: capabilities are declared as
+`.ure` resources rather than as paths to binaries, so the same declaration can be
+satisfied by a shell command, a Wasm module, or a GPU kernel.
 
-## ⚖️ License
-This project is licensed under the terms specified in the `LICENSE` file.
+```json
+{
+  "resource_id": "valve-001",
+  "category": "actuator",
+  "state_space": {
+    "flow_rate": { "type": "float", "range": [0.0, 1.0], "unit": "percentage" }
+  },
+  "action_primitives": [
+    {
+      "id": "emergency_shutdown",
+      "aliases": ["emergency_shutdown", "emergency shutdown"],
+      "params": {},
+      "target_state": "flow_rate = 0.0",
+      "constraints": ["status != 'fault'"]
+    }
+  ]
+}
+```
+
+```
+"Emergency shutdown the valve"
+        │
+        ▼
+  PrimitiveBridge ──► PrimitivePacket ──► ActuatorNucleus ──► driver
+  (intent → primitive)                   (packet → hardware)
+```
+
+## Evolution path
+
+```
+OS-dependent  →  Primitive Bridge  →  Actuator-driven  →  Universal Nucleus
+```
+
+OS primitives are treated as bootstrap resources. Over time an optimised `.ure`
+actuator replaces them, and the system stops depending on the host OS's tooling.
+
+## What is implemented today
+
+Twenty-two modules, in five layers. This is a working prototype, not a product,
+and the [specification](./docs/SPEC.md) records where the code and the prose
+still disagree.
+
+| Layer | Modules | Role |
+| --- | --- | --- |
+| **Declaration** | `identifiers`, `registry` | DU-UUID content addressing, manifest resolution, champion selection |
+| **Resolution** | `bridge`, `primitives`, `router`, `slm` | Intent to primitive mapping, semantic scoring, SLM routing |
+| **Execution** | `nucleus`, `os`, `weights`, `profiler` | Packet dispatch, virtual kernel and VFS, hardware abstraction, LoRA memory |
+| **Economics** | `wmis` | Token metering, permissions, resource quality |
+| **Evolution** | `orchestrator`, `pipeline`, `harvester`, `learner`, `transducer`, `evolution`, `fluid`, `meta_actuators` | Harvest, learn, transduce, project, mutate |
+
+Cross-cutting: `mcp` for Model Context Protocol connectors, `release_manager` for
+champion promotion, `node` and `transducer` for the distributed fabric, and a
+`wasm32` build via `wasm_core`.
+
+## Quick start
+
+```sh
+git clone https://github.com/dacineu/unia
+cd unia
+cargo test
+cargo run --example full_system_demo
+```
+
+Requires a stable Rust toolchain, 1.75 or later.
+
+```sh
+cargo check --all-targets     # library, tests and examples
+cargo test                    # 17 tests
+cargo run --example verify_fs_pipeline
+cargo build --target wasm32-unknown-unknown
+```
+
+### Examples
+
+| Example | Shows |
+| --- | --- |
+| `full_system_demo` | Provisioning, orchestration, SLM execution and learning, end to end |
+| `verify_fs_pipeline` | Bridge to nucleus with economic accounting on each actuation |
+| `formal_verification_demo` | Property-based verification of the actuation contract |
+| `benchmark_unia` | Decoupled intent mapping against a coupled baseline |
+| `universal_demo` | Several resource categories through one pipeline |
+
+## Status
+
+**Pre-1.0. Experimental.** Known limitations are listed as divergences D1–D7 in
+the [specification](./docs/SPEC.md), including two identifier schemes that are
+documented but not yet reconciled, and action constraints that are declared but
+not yet evaluated. Read those before building on this.
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [`docs/SPEC.md`](./docs/SPEC.md) | The normative `.ure` format, version 0.1.0 |
+| [`docs/whitepaper_unia.pdf`](./docs/whitepaper_unia.pdf) | The full design argument |
+| [`docs/arch_decoupling_strategy.md`](./docs/arch_decoupling_strategy.md) | Why the decoupling layer exists |
+| [`amater-agent-manager-design.md`](./amater-agent-manager-design.md) | Agent manager design |
+| [`docs/PROVENANCE.md`](./docs/PROVENANCE.md) | Publication dates, authorship, prior art |
+| [`COGNITION_LOG.md`](./COGNITION_LOG.md) | Design rationale, including the Patten/Mattern distinction |
+
+## Using unia
+
+The reference implementation is **MIT licensed**. You may use it commercially,
+modify it, and sell products built on it, with only the requirement of
+preserving the copyright notice.
+
+MIT does **not** cover the names. `unia`, `unia-OS`, `UPA`, `DU-UUID` and
+`.ure` are trademarks and are not licensed. See
+[`TRADEMARK.md`](./TRADEMARK.md).
+
+If you want supported, warranted, or bespoke work, a negotiated licence where
+MIT does not fit, or permission to use the marks, contact
+**<dacineu@proton.me>**. The terms are in
+[`LICENSE-COMMERCIAL.md`](./LICENSE-COMMERCIAL.md).
+
+If you are implementing `.ure` independently: no licence is required, provided
+you avoid the marks. Tell us and it will be listed here.
+
+## Contributing
+
+Contributions are welcome, and the project is deliberately easy to start in.
+Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) first, in particular the
+[Developer Certificate of Origin](./DCO) sign-off, which is what keeps the
+option of relicensing or selling the project open later. Participation is
+governed by the [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md).
+
+## Author and attribution
+
+unia is the work of a single author, published under the pseudonym
+**iulian dacineu**. The pseudonym appears in the commit history and in
+[`LICENSE`](./LICENSE); the MIT licence requires that attribution be preserved.
+
+The pseudonym is deliberate. Please use it in correspondence, and treat
+unsolicited approaches involving a legal identity as a security matter under
+[`SECURITY.md`](./SECURITY.md).
+
+<p align="center">
+  <a href="https://ko-fi.com/A7O02756VY">☕ Support via Ko-fi</a>
+</p>
+
+## Licence
+
+MIT. See [`LICENSE`](./LICENSE).

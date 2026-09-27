@@ -26,3 +26,12 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# `.ure` manifests at the repository root are written at runtime by the
+# transducer, the orchestrator and the examples, which resolve relative to the
+# process working directory. Running the test suite therefore drops files here.
+# The curated manifests are force-added with `git add -f`; see docs/SPEC.md
+# section 6 for why working-directory-relative resolution is a known hazard.
+
+/*.ure
+/orchestrator_*.ure
