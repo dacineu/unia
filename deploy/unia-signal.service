@@ -1,0 +1,34 @@
+[Unit]
+Description=unia-signal — WebSocket signalling relay for ca(R)maduci peers
+Documentation=https://github.com/dacineu/unia
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/home/dacineu/.local/bin/unia-signal --port 8787 --room-token-file %h/.config/unia/room.token
+Restart=on-failure
+RestartSec=3
+
+# The relay is a dumb forwarder: it reads a room token, relays SDP and ICE, and
+# never sees a peer's payload. It therefore needs no home directory, no
+# capabilities, and no write access beyond its own logs.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+# Room token is the only secret it holds, and it is read once at startup.
+ReadOnlyPaths=%h/.config/unia/room.token
+
+[Install]
+WantedBy=default.target
