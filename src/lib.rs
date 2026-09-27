@@ -39,6 +39,11 @@ pub mod gc;
 /// all agree on how time passes. See `docs/camaduci.md`.
 pub mod camaduci;
 
+/// Turning a session with a language model into evidence a creature can learn
+/// from. Extracts corrections and confirmations; does not emit traces, because
+/// the primitive vocabulary a trace needs is not yet defined. See D5 and D6.
+pub mod session;
+
 /// Gathering: continuous multidimensional interpenetration between knowledge
 /// spheres, converging on common denominators. Ancestry is a relation on
 /// content addresses, not a hash chain, so independent derivation of the same

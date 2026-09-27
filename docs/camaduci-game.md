@@ -166,6 +166,12 @@ you were raising the same creature, and you can show each other the proof.
   is running, and the introduction half works. The conversation half is not built,
   and it should not be until a creature can be *understood* by something other
   than a human reading a log.
+- **Not yet:** learning from watching. `src/session.rs` reads a session with a
+  language model and extracts the parts worth learning from — corrections and
+  confirmations, each carrying the person's own wording. It deliberately does not
+  emit traces yet, because a trace's value is its primitive sequence and the
+  vocabulary a session would resolve against is not defined. A lesson is the
+  evidence a trace will be built from the moment that is.
 - **Not yet, and most important:** a creature learning a new *power*. It can be
   kept and it can be taught its own routines, but it cannot yet be taught to reach
   anything — not a file, not a socket, not another creature. The limbs are missing.
