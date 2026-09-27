@@ -118,7 +118,10 @@ not intentions.
 
 ## ca™maduci — the digital pet
 
-Design only; nothing implemented. See `docs/camaduci.md`. The pet is the smallest
+A runnable core exists (`cargo run --example camaduci`, 15 tests): the care loop,
+the declared state space, sleep-gated stages, the trace log, and death as a
+lifecycle transition. Not a game yet — no renderer, no input, no score. See
+`docs/camaduci.md`. The pet is the smallest
 thing that exercises the whole loop: it is an actuator whose vitals are a
 declared state space, whose care operations are primitives, and whose neglect is
 an escalation.
@@ -155,6 +158,12 @@ an escalation.
 - [ ] **Make death a lifecycle transition, not a deletion.** The artifact moves to
   `Quarantined` in `crate::gc` terms and is retained, so a pet that died stays
   inspectable and the traces that killed it stay as evidence.
+- [ ] **Decide the hardware target.** The research points at ESP32-S3 (TamaFi's
+  platform) and the M5Stack ecosystem. `wasm32-unknown-unknown` already builds in
+  this repo, so a browser or micro-frontend target is available today; bare metal
+  is not. Nothing here has been run on hardware.
+- [ ] **Decide the network shape.** Whether two pets ever meet is still open, and
+  the answer determines whether this is one crate or two plus a transport.
 - [ ] **Give it its own repository.** It is a game and will want its own assets
   and release cycle; unia is a research prototype. It can depend on unia as a
   library.

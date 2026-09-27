@@ -1,6 +1,9 @@
 # ca™maduci — overview
 
-**Status:** design only. Nothing is implemented.
+**Status:** a runnable core exists as `cargo run --example camaduci`. The care
+loop, the declared state space, the sleep-gated stages, the trace log and the
+lifecycle transition are all implemented and tested. Rendering, assets, audio, a
+score, and any notion of a player are not.
 **Mark:** `ca™maduci` is a **placeholder**. See [Trademark](#trademark) before
 using it in anything public.
 
@@ -64,6 +67,20 @@ advances once the pet has slept, and that a pet which never sleeps never reaches
 the next stage. Age is gated on a completed cycle rather than accumulating on a
 timer. That is a better model than a clock, and it maps directly onto `unia`:
 progress is gated on a *completed interaction*, not on elapsed time.
+
+## What exists today
+
+`examples/camaduci.rs` runs the care loop and is covered by 15 tests. It compares
+two creatures over the same number of ticks: one tended, reaching adulthood with
+a trace log of `feed×12, play×8, sleep×6`; one neglected, staying an egg, dying,
+and moving to `quarantined` rather than being deleted.
+
+The example deliberately does not attempt to be a game. There is no renderer, no
+input handling, and no score. What it establishes is that the loop closes: an
+intent becomes a primitive, the primitive moves declared state, the interaction
+becomes a trace, and the traces are what induction would read. The neglected
+pet produces no traces at all, which is the same condition the induction loop is
+currently blocked on.
 
 ## Design
 

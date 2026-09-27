@@ -101,14 +101,14 @@ champion promotion, `node` and `transducer` for the distributed fabric, and a
 git clone https://github.com/dacineu/unia
 cd unia
 cargo test
-cargo run --example full_system_demo
+cargo run --example camaduci
 ```
 
 Requires a stable Rust toolchain, 1.75 or later.
 
 ```sh
 cargo check --all-targets     # library, tests and examples
-cargo test                    # 17 tests
+cargo test                    # 112 tests
 cargo run --example verify_fs_pipeline
 cargo build --target wasm32-unknown-unknown
 ```
@@ -117,11 +117,56 @@ cargo build --target wasm32-unknown-unknown
 
 | Example | Shows |
 | --- | --- |
+| `camaduci` | A digital pet whose vitals are a declared state space and whose care is recorded as traces. Start here. |
 | `full_system_demo` | Provisioning, orchestration, SLM execution and learning, end to end |
 | `verify_fs_pipeline` | Bridge to nucleus with economic accounting on each actuation |
 | `formal_verification_demo` | Property-based verification of the actuation contract |
 | `benchmark_unia` | Decoupled intent mapping against a coupled baseline |
 | `universal_demo` | Several resource categories through one pipeline |
+
+#### ca™maduci — the first example
+
+```sh
+cargo run --example camaduci
+```
+
+A creature whose vitals are a declared state space, whose care operations are
+primitives, and whose neglect is the *absence* of a call. It is the smallest
+thing that exercises the whole loop, and it is first because everything else in
+this crate is harder to see working.
+
+```
+tended:                             neglected:
+  stage       adult                   stage       egg
+  age ticks   6                      age ticks   0
+  vitals      hunger 0.05            vitals      hunger 1.00
+              happiness 1.00                     happiness 0.00
+              health 1.00                        health 0.00
+  mood        content                 mood        gone
+  lifecycle   served                 lifecycle   quarantined
+```
+
+Both creatures received the same number of ticks. One reached adulthood and has
+a trace log; the other stayed an egg, died, and was **quarantined rather than
+deleted**, because death is a lifecycle transition and the traces that caused it
+are still evidence.
+
+Three properties carry over from the research, and they are the reason the
+example is worth reading:
+
+- **Age advances on a completed sleep cycle, not on a clock.** A pet that is never
+  put to sleep never leaves the egg. Progress is gated on a finished interaction
+  rather than on elapsed time.
+- **Neglect is not a punishment.** It is what happens when no intent arrives and
+  no primitive is dispatched. The game cannot levy it at will, which is what
+  makes the obligation real.
+- **The clock is injected.** `now` is a parameter, not a call to the system
+  clock, so the whole example is deterministic and testable.
+
+What it does **not** show: escalation rate at any interesting corpus size,
+cross-model execution, or convergence between nodes. One pet is one artifact with
+no peer to converge with. See [`docs/camaduci.md`](./docs/camaduci.md) for the
+design and the prior art it draws on.
 
 ## Status
 
