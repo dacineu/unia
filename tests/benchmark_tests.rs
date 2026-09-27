@@ -1,7 +1,9 @@
 use askillify::bridge::primitive::{PrimitiveBridge, UreResource, UreAction, StateType};
 use askillify::nucleus::{ActuatorNucleus, ValveDriver};
+use askillify::wmis::{QualityMetrics, ResourceType, SharingScope, WmisEconomicLayer, WmisResource};
 use std::time::{Instant, Duration};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 #[test]
 fn run_empirical_benchmark() {
@@ -9,7 +11,8 @@ fn run_empirical_benchmark() {
 
     // --- SETUP ---
     let mut bridge = PrimitiveBridge::new();
-    let mut nucleus = ActuatorNucleus::new();
+    let economy = Arc::new(Mutex::new(WmisEconomicLayer::new()));
+    let mut nucleus = ActuatorNucleus::new(Arc::clone(&economy));
 
     // Define a Smart Valve Resource
     let mut state_space = HashMap::new();
@@ -23,6 +26,7 @@ fn run_empirical_benchmark() {
     let actions = vec![
         UreAction {
             id: "emergency_shutdown".to_string(),
+            aliases: None,
             params: HashMap::new(),
             target_state: "flow_rate = 0.0".to_string(),
             constraints: vec!["status != 'fault'".to_string()],
@@ -46,7 +50,18 @@ fn run_empirical_benchmark() {
     // 1. Benchmark unia (Decoupled)
     let start_unia = Instant::now();
     let packet = bridge.map_intent("valve-001", intent).expect("Bridge mapping failed");
-    let _res_unia = nucleus.dispatch(packet).expect("Nucleus dispatch failed");
+    let resource_meta = WmisResource {
+        id: "valve-001".to_string(),
+        resource_type: ResourceType::Application,
+        owner: "benchmark".to_string(),
+        sharing_scope: SharingScope::Global,
+        capabilities: vec![],
+        quality: QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
+        metadata: serde_json::json!({}),
+    };
+    let _res_unia = nucleus
+        .dispatch(packet, "benchmark", &resource_meta)
+        .expect("Nucleus dispatch failed");
     let duration_unia = start_unia.elapsed();
 
     // 2. Benchmark Coupled-LLM (Simulated)

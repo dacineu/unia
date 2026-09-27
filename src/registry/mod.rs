@@ -1,13 +1,17 @@
 use crate::identifiers::DuUuid;
 use serde_json::Value;
 use uuid::Uuid;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
 use std::collections::HashMap;
 
 pub struct ActuatorRegistry {
     _db_connection_string: String,
     champions: HashMap<String, Uuid>,
+    /// Directory that `.ure` manifests are resolved from and scanned in.
+    /// Defaults to the process working directory so existing callers keep the
+    /// previous behaviour; `with_base_dir` makes resolution explicit instead.
+    base_dir: PathBuf,
 }
 
 impl ActuatorRegistry {
@@ -15,6 +19,18 @@ impl ActuatorRegistry {
         Self {
             _db_connection_string: conn_str.to_string(),
             champions: HashMap::new(),
+            base_dir: PathBuf::from("."),
+        }
+    }
+
+    /// Points the registry at an explicit `.ure` root instead of the process
+    /// working directory, so resolution does not depend on where the process
+    /// happens to be launched from.
+    pub fn with_base_dir<P: AsRef<Path>>(conn_str: &str, base_dir: P) -> Self {
+        Self {
+            _db_connection_string: conn_str.to_string(),
+            champions: HashMap::new(),
+            base_dir: base_dir.as_ref().to_path_buf(),
         }
     }
 
@@ -37,7 +53,7 @@ impl ActuatorRegistry {
     }
 
     pub fn resolve_actuator(&self, id: Uuid) -> Result<Value, Box<dyn std::error::Error>> {
-        let path = format!("{}.ure", id);
+        let path = self.base_dir.join(format!("{}.ure", id));
         let content = fs::read_to_string(path)?;
         let manifest: Value = serde_json::from_str(&content)?;
         Ok(manifest)
@@ -48,7 +64,7 @@ impl ActuatorRegistry {
         println!("Scanning mesh for patterns matching: '{}'...", prompt);
         let mut matches = Vec::new();
 
-        if let Ok(entries) = fs::read_dir(".") {
+        if let Ok(entries) = fs::read_dir(&self.base_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("ure") {

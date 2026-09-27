@@ -24,7 +24,7 @@ mod integration_tests {
         fs::write(&file_path, serde_json::to_string(&manifest).unwrap()).unwrap();
 
         // 2. Initialize components
-        let registry = ActuatorRegistry::new("mock_db");
+        let registry = ActuatorRegistry::with_base_dir("mock_db", dir.path());
         let orchestrator = Orchestrator::new(registry);
         let slm = MockSlm::new();
 

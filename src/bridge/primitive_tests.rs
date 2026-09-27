@@ -19,12 +19,20 @@ mod tests {
         let actions = vec![
             UreAction {
                 id: "emergency_shutdown".to_string(),
+                aliases: Some(vec![
+                    "emergency_shutdown".to_string(),
+                    "emergency shutdown".to_string(),
+                ]),
                 params: HashMap::new(),
                 target_state: "flow_rate = 0.0".to_string(),
                 constraints: vec!["status != 'fault'".to_string()],
             },
             UreAction {
                 id: "adjust_flow".to_string(),
+                aliases: Some(vec![
+                    "adjust_flow".to_string(),
+                    "adjust flow".to_string(),
+                ]),
                 params: {
                     let mut p = HashMap::new();
                     p.insert("target".to_string(), "float".to_string());

@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // 1. SETUP: Create the "Vocabulary" (Actuators in the Mesh)
     println!("--- Step 1: Provisioning the Actuator Mesh ---");
-    let reg = ActuatorRegistry::new("mock_db");
+    let reg = ActuatorRegistry::with_base_dir("mock_db", dir.path());
     
     let res1_id = Uuid::new_v4();
     let res1_path = dir.path().join(format!("{}.ure", res1_id));

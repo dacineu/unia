@@ -27,6 +27,7 @@ fn main() {
     let actions = vec![
         UreAction {
             id: "emergency_shutdown".to_string(),
+            aliases: None,
             params: HashMap::new(),
             target_state: "flow_rate = 0.0".to_string(),
             constraints: vec!["status != 'fault'".to_string()],

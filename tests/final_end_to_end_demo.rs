@@ -13,11 +13,11 @@ mod tests {
 
     #[test]
     fn test_the_complete_fluid_factory_loop() {
-        println!("\n=== 🌟 STARTING LA-PIECE-DE-RÉSISTANCE FULL SYSTEM DEMO 🌟 ===\n");
+        println!("\n=== 🌟 STARTING UNIA FULL SYSTEM DEMO 🌟 ===\n");
         let dir = tempdir().unwrap();
 
         // 1. PROVISIONING: Create a few base actuators (The "Vocabulary")
-        let reg = ActuatorRegistry::new("mock_db");
+        let reg = ActuatorRegistry::with_base_dir("mock_db", dir.path());
         let res_id = Uuid::new_v4();
         let path = dir.path().join(format!("{}.ure", res_id));
         fs::write(&path, serde_json::to_string(&json!({
