@@ -116,6 +116,54 @@ not intentions.
   Already in `SECURITY.md`; it must also appear wherever identifiers are
   exchanged.
 
+## ca™maduci — the digital pet
+
+Design only; nothing implemented. See `docs/camaduci.md`. The pet is the smallest
+thing that exercises the whole loop: it is an actuator whose vitals are a
+declared state space, whose care operations are primitives, and whose neglect is
+an escalation.
+
+### Blocking decisions
+
+- [ ] **Decide whether ca™maduci is a game or a test fixture.** It is currently
+  both, and they pull opposite ways: a fixture must be deterministic and
+  clock-injectable, a game must be fun. Building before this is settled produces
+  something that is neither.
+- [ ] **Decide `.ure` artifact or Rust struct for the pet's state space.** The
+  `.ure` route keeps the state space declarative and lets the existing loader
+  and matcher handle it, which is what makes the pet a demonstration rather than
+  a toy. A struct is easier to test.
+- [ ] **Run a trademark clearance search for the name**, then file before
+  publishing `(R)`. `TRADEMARK.md` records that MIT protects no names, so the
+  mark is only worth anything once registered. Use `™` until then: 15 U.S.C.
+  §1125 makes false designation as registered a civil cause of action.
+
+### Implementation, once the above is settled
+
+- [ ] **Read TamaFi before designing anything.** ESP32-S3, MIT, ~400 stars, and
+  the closest existing implementation: WiFi-driven mood, `BABY → TEEN → ADULT →
+  ELDER` on wall-clock age. Also `tama96`, which is Rust and already speaks MCP.
+- [ ] **Declare the state space as four typed variables** — hunger, happiness,
+  health, all `0.0..1.0`, plus a monotonic `age_ticks` — so the constraint
+  machinery has something to check.
+- [ ] **Gate stage advancement on a completed sleep cycle**, not on elapsed time.
+  A pet that never sleeps never advances. Borrowed from tama96, and it maps onto
+  unia: progress gated on a completed interaction rather than on a clock.
+- [ ] **Record care as traces and induce the later form from them**, rather than
+  picking a branch of a hand-written evolution matrix. This is the part that
+  makes it a demonstration of the paper's claim rather than a game.
+- [ ] **Make death a lifecycle transition, not a deletion.** The artifact moves to
+  `Quarantined` in `crate::gc` terms and is retained, so a pet that died stays
+  inspectable and the traces that killed it stay as evidence.
+- [ ] **Give it its own repository.** It is a game and will want its own assets
+  and release cycle; unia is a research prototype. It can depend on unia as a
+  library.
+- [ ] **Decide whether two pets ever meet.** Digimon's linked interaction and the
+  mesh architecture both point at it, and it is the most interesting version and
+  the most scope. Nothing in the single-pet design requires it.
+
+---
+
 ## Codebase hygiene
 
 - [ ] **Resolve `implementation/`.** It is a newer, richer draft of `src/`
