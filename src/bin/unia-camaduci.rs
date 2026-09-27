@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
-use unia::camaduci::{Care, Firstness, Pet, firstness, MOTTO};
+use unia::camaduci::{Care, Firstness, LearnedRule, Pet, firstness, MOTTO};
 use unia::mcp::store::{Store, Trace};
 
 /// Seconds of real time per in-game tick.
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pet_id = arg_value(&args, "--pet").unwrap_or_else(|| "ca-001".to_string());
 
     let mut store = Store::open(&store_dir);
-    let mut pet = Pet::new(pet_id);
+    let mut pet = load_pet(&store_dir, &pet_id);
     let mut now = now_secs();
     let mut started = false;
 
@@ -49,13 +49,94 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  one tick = {TICK_SECONDS}s of neglect, starting with your first action");
     println!("  open http://127.0.0.1:{port} and press Feed to begin");
 
+    // The accept loop is blocking, which is what a `std::net::TcpListener` gives.
+    // That is deliberate: the relay is a long-lived foreground service under
+    // systemd, and a blocking loop with a thread per connection has nothing to
+    // gain from a reactor here.
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else { continue };
-        if let Err(e) = handle(&mut stream, &mut pet, &mut store, &mut now, &mut started) {
+        if let Err(e) = handle(&mut stream, &mut pet, &mut store, &mut now, &mut started, &store_dir) {
             eprintln!("unia-camaduci: {e}");
         }
     }
     Ok(())
+}
+
+/// Persists a creature and its education. Called after every interaction, so a
+/// crash costs one turn rather than the whole session.
+fn persist(store_dir: &str, pet: &mut Pet, store: &Store) {
+    pet.learn(learned_rules(store));
+    save_pet(store_dir, pet);
+}
+
+/// Reads what the creature has worked out from its own trace log.
+fn learned_rules(store: &Store) -> Vec<LearnedRule> {
+    let mut rules: Vec<LearnedRule> = match unia::induce::induce_all(store.traces()) {
+        Ok(c) => c
+            .into_iter()
+            .map(|c| LearnedRule {
+                address: c.du_uuid.to_string(),
+                signature: c.signature,
+                aliases: c.learned_aliases,
+                confidence: c.confidence,
+                observations: c.observations,
+            })
+            .collect(),
+        Err(e) => {
+            eprintln!("unia-camaduci: induction failed: {e}");
+            Vec::new()
+        }
+    };
+    // Most confident first, so the strongest rule is the one a renderer puts at
+    // the front and a player reads as the creature's headline.
+    rules.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    rules
+}
+
+/// Where a creature's memory is kept, beside the traces it learned from.
+fn pet_path(dir: &str, id: &str) -> String {
+    format!("{dir}/pet-{id}.json")
+}
+
+/// Loads a creature's memory, or starts a new one.
+///
+/// A missing file is a new creature, which is the ordinary case. A file that
+/// exists but cannot be read is *not* silently replaced: substituting a live egg
+/// for a creature that died would erase the one part of it that cannot be
+/// regenerated, and the player would never learn their pet had been swapped.
+fn load_pet(dir: &str, id: &str) -> Pet {
+    let path = pet_path(dir, id);
+    match std::fs::read_to_string(&path) {
+        Ok(text) => match Pet::from_json(id, &text) {
+            Some(p) => {
+                println!("  restored {id}: {} sleep cycles, care {}", p.vitals.age_ticks, p.summary());
+                p
+            }
+            None => {
+                eprintln!("unia-camaduci: {path} is unreadable; refusing to overwrite it");
+                eprintln!("unia-camaduci: move it aside to start a new creature");
+                std::process::exit(1);
+            }
+        },
+        Err(_) => {
+            println!("  {id} is new");
+            Pet::new(id)
+        }
+    }
+}
+
+/// Writes a creature's memory.
+///
+/// Best effort: a failure to save loses progress the player can see is still
+/// there, and aborting the process over it would be worse than the loss.
+fn save_pet(dir: &str, pet: &Pet) {
+    if let Err(e) = std::fs::write(pet_path(dir, &pet.id), pet.to_json()) {
+        eprintln!("unia-camaduci: could not save {}: {e}", pet.id);
+    }
 }
 
 /// Reads `--name value` from the command line.
@@ -78,6 +159,7 @@ fn handle(
     store: &mut Store,
     now: &mut u64,
     started: &mut bool,
+    store_dir: &str,
 ) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut request_line = String::new();
@@ -124,7 +206,12 @@ fn handle(
 
     let response = match (method.as_str(), path.as_str()) {
         ("GET", "/") => html_response(),
-        ("GET", "/api/pet") => json_response(200, &state(pet)),
+        ("GET", "/api/pet") => {
+            // Re-derive on read so the creature always shows the most current
+            // picture of what it has learned, without waiting for an action.
+            pet.learn(learned_rules(store));
+            json_response(200, &state(pet))
+        }
         ("GET", "/api/motto") => {
             // The question is answered from what the log actually contains, not
             // from a stored verdict, so it changes as more players contribute.
@@ -161,7 +248,11 @@ fn handle(
                         // training signal did not get it, and saying otherwise
                         // would overstate the evidence.
                         match store.record(t) {
-                            Ok(()) => json_response(200, &state(pet)),
+                            Ok(()) => {
+                                pet.learn(learned_rules(store));
+                                save_pet(store_dir, pet);
+                                json_response(200, &state(pet))
+                            }
                             Err(e) => json_response(
                                 500,
                                 &format!(r#"{{"error":"could not record trace: {e}"}}"#),
@@ -250,7 +341,7 @@ fn trace_for(
 /// would say the pet had been shown to be worthless.
 fn state(pet: &Pet) -> String {
     format!(
-        r#"{{"id":{},"stage":{},"age_ticks":{},"hunger":{:.3},"happiness":{:.3},"health":{:.3},"mood":{},"quarantined":{},"primitives":{},"summary":{}}}"#,
+        r#"{{"id":{},"stage":{},"age_ticks":{},"hunger":{:.3},"happiness":{:.3},"health":{:.3},"mood":{},"quarantined":{},"primitives":{},"learned":{},"summary":{}}}"#,
         json_str(&pet.id),
         json_str(pet.stage.label()),
         pet.vitals.age_ticks,
@@ -259,9 +350,32 @@ fn state(pet: &Pet) -> String {
         pet.vitals.health,
         json_str(pet.vitals.mood()),
         pet.quarantined,
-        pet.history.len(),
+        // The spike count is what the creature has *learned*, not what it was
+        // fed. Those used to be the same number, which meant the most expressive
+        // channel on the creature saturated after four distinct actions.
+        pet.learned.len(),
+        learned_json(&pet.learned),
         json_str(&pet.summary()),
     )
+}
+
+/// Serialises the creature's learned rules, strongest first.
+fn learned_json(rules: &[LearnedRule]) -> String {
+    let body: Vec<String> = rules
+        .iter()
+        .map(|r| {
+            let aliases: Vec<String> = r.aliases.iter().map(|a| json_str(a)).collect();
+            format!(
+                "{{\"address\":{},\"signature\":{},\"aliases\":[{}],\"confidence\":{:.4},\"observations\":{}}}",
+                json_str(&r.address),
+                json_str(&r.signature),
+                aliases.join(","),
+                r.confidence,
+                r.observations
+            )
+        })
+        .collect();
+    format!("[{}]", body.join(","))
 }
 
 /// Escapes a string for a JSON document.

@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 /// type and the same range. Keeping them in a struct rather than a manifest is
 /// the one place this diverges from the design: the manifest form is exercised by
 /// the corpus, and a struct keeps the arithmetic readable.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Vitals {
     /// 1.0 is starving. Rises on every tick the pet is not fed.
     pub hunger: f64,
@@ -204,8 +204,29 @@ impl Care {
     }
 }
 
+/// A rule the creature has worked out for itself.
+///
+/// This is the creature's actual education. `history` records what it was *fed*,
+/// which is a record of the player's actions and tells the creature nothing; a
+/// learned rule is what it derived from those actions, and until one exists
+/// somewhere the creature cannot be said to have evolved at all.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LearnedRule {
+    /// Content address of the induced artifact. Two creatures that learned the
+    /// same act share this, which is what makes them related rather than similar.
+    pub address: String,
+    /// The primitive sequence the act reduced to.
+    pub signature: String,
+    /// The phrasings it can be recognised by.
+    pub aliases: Vec<String>,
+    /// How well evidenced the rule is, in `0.0..=1.0`.
+    pub confidence: f64,
+    /// Distinct observations behind it.
+    pub observations: usize,
+}
+
 /// The pet, its lifecycle, and how it is kept.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Pet {
     /// Content address or human id this pet is recorded under.
     pub id: String,
@@ -219,6 +240,12 @@ pub struct Pet {
     /// How many times each operation has been performed, which is what induction
     /// groups by.
     pub history: BTreeMap<Care, u32>,
+    /// What the creature has worked out for itself, most confident first.
+    ///
+    /// Empty for a creature that has not been taught, and *that* is the honest
+    /// starting state: a kept creature with no learned rules has been played with
+    /// and has learned nothing, which the two must not be confused for.
+    pub learned: Vec<LearnedRule>,
 }
 
 impl Pet {
@@ -230,7 +257,17 @@ impl Pet {
             stage: Stage::Egg,
             quarantined: false,
             history: BTreeMap::new(),
+            learned: Vec::new(),
         }
+    }
+
+    /// Records what induction derived from the creature's own trace log.
+    ///
+    /// This is the feedback path. Without it the creature writes traces that
+    /// something else reads and the creature never learns that it learned, so its
+    /// evolution is invisible to it and the same on every restart.
+    pub fn learn(&mut self, rules: Vec<LearnedRule>) {
+        self.learned = rules;
     }
 
     /// Restores a pet from recorded state, for resuming a session.
@@ -241,9 +278,32 @@ impl Pet {
             stage: Stage::Egg,
             quarantined,
             history,
+            learned: Vec::new(),
         };
+        // The stage is earned, not stored: it is a function of completed sleep
+        // cycles, so recomputing it is correct even if a saved stage disagreed.
         p.stage = p.earned_stage();
         p
+    }
+
+    /// Serialises the creature for storage.
+    ///
+    /// The saved form is the whole memory. There is no export, and a handed-over
+    /// creature arrives carrying its mistakes along with its progress.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
+    }
+
+    /// Restores a creature from its saved form.
+    ///
+    /// Returns `None` for anything unreadable rather than substituting a fresh
+    /// creature, because silently replacing a pet that died with a live egg would
+    /// erase the one part of it that cannot be regenerated.
+    pub fn from_json(id: &str, text: &str) -> Option<Pet> {
+        let mut p: Pet = serde_json::from_str(text).ok()?;
+        p.id = id.to_string();
+        p.stage = p.earned_stage();
+        Some(p)
     }
 
     /// Performs one care operation, returning the primitives it reduced to.
@@ -482,6 +542,79 @@ mod tests {
         }
         assert_eq!(Care::parse("FEED"), Some(Care::Feed), "parsing is case-insensitive");
         assert_eq!(Care::parse("burn"), None);
+    }
+
+    fn rule(address: &str, confidence: f64) -> LearnedRule {
+        LearnedRule {
+            address: address.into(),
+            signature: "SetValue_CheckSense".into(),
+            aliases: vec!["pour some kibble".into()],
+            confidence,
+            observations: 3,
+        }
+    }
+
+    #[test]
+    fn a_new_pet_knows_nothing() {
+        // Kept is not the same as taught. A creature played with but never taught
+        // has an empty education, and the two must not be confused.
+        let p = Pet::new("ca-001");
+        assert!(p.learned.is_empty());
+    }
+
+    #[test]
+    fn learns_the_rules_it_is_given() {
+        let mut p = Pet::new("ca-001");
+        p.learn(vec![rule("addr-a", 0.8)]);
+        assert_eq!(p.learned.len(), 1);
+        assert_eq!(p.learned[0].address, "addr-a");
+    }
+
+    #[test]
+    fn relearning_replaces_rather_than_accumulates() {
+        // Induction is a function of the whole log, so re-deriving must not stack
+        // duplicates of the same rule.
+        let mut p = Pet::new("ca-001");
+        p.learn(vec![rule("addr-a", 0.8)]);
+        p.learn(vec![rule("addr-a", 0.9)]);
+        assert_eq!(p.learned.len(), 1);
+        assert_eq!(p.learned[0].confidence, 0.9);
+    }
+
+    #[test]
+    fn survives_a_save_and_restore_with_what_it_learned() {
+        let mut original = Pet::new("ca-001");
+        original.tend(Care::Feed);
+        original.tend(Care::Sleep);
+        original.learn(vec![rule("addr-a", 0.7)]);
+
+        let restored = Pet::from_json("ca-001", &original.to_json()).expect("round trips");
+        assert_eq!(restored.id, "ca-001");
+        assert_eq!(restored.vitals, original.vitals);
+        assert_eq!(restored.learned, original.learned);
+        assert_eq!(restored.stage, original.stage);
+    }
+
+    #[test]
+    fn refuses_to_restore_a_corrupt_memory_rather_than_starting_afresh() {
+        // Substituting a live egg for a creature that died would erase the one
+        // part of it that cannot be regenerated, and the player would never learn
+        // their pet had been swapped.
+        assert!(Pet::from_json("ca-001", "{ not json").is_none());
+        assert!(Pet::from_json("ca-001", "").is_none());
+    }
+
+    #[test]
+    fn recomputes_an_earned_stage_on_restore() {
+        // The stage is a function of sleep cycles, so a stored one that disagrees
+        // is not trusted over the recomputed value.
+        let mut p = Pet::new("ca-001");
+        for _ in 0..3 {
+            p.tend(Care::Sleep);
+        }
+        let json = p.to_json().replace("\"stage\": \"egg\"", "\"stage\": \"hatchling\"");
+        let restored = Pet::from_json("ca-001", &json).expect("round trips");
+        assert_eq!(restored.stage, Stage::Juvenile, "recomputed, not read from the file");
     }
 
     #[test]
