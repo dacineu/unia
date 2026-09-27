@@ -50,6 +50,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let matches = store.search(intent, 5);
             println!("{}", serde_json::to_string_pretty(&render(&matches))?);
         }
+        Some("eval") => {
+            let fixture_path = args
+                .get(1)
+                .map(|p| std::path::PathBuf::from(p))
+                .unwrap_or_else(|| root.join("../tests/fixtures/queries.json"));
+            let fixture = match unia::mcp::eval::load(&fixture_path) {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("unia-mcp: {e}");
+                    std::process::exit(1);
+                }
+            };
+            let store = Store::open(&root);
+            let ids = store.ids();
+            let report = unia::mcp::eval::run(&fixture, |q| store.search(q, 3), &ids);
+            println!("{}", report.render());
+            println!("{}", report.render_cases(&report.cases));
+            println!("  corpus: {} patterns from {}", ids.len(), root.display());
+        }
         Some("stats") => {
             let store = Store::open(&root);
             println!("{}", serde_json::to_string_pretty(&store.stats())?);

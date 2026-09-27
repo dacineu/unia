@@ -6,6 +6,10 @@ use std::sync::{Arc, Mutex};
 
 pub mod store;
 
+/// Retrieval-quality harness. Measures whether routing is *correct*, which
+/// latency and token counts cannot.
+pub mod eval;
+
 #[cfg(feature = "mcp-server")]
 pub mod server;
 

@@ -448,6 +448,16 @@ impl Store {
         self.patterns.iter().find(|p| p.id == id)
     }
 
+    /// Every pattern id in the corpus.
+    ///
+    /// The eval harness needs this to tell an unsatisfiable expectation apart
+    /// from a genuine routing failure: a query expecting a pattern the corpus
+    /// does not contain cannot be routed by any matcher, and counting it as a
+    /// miss would understate the real hit rate.
+    pub fn ids(&self) -> Vec<String> {
+        self.patterns.iter().map(|p| p.id.clone()).collect()
+    }
+
     /// Appends a trace. Traces are append-only and are the raw material for
     /// induction; a corpus with no traces cannot learn anything.
     pub fn record(&mut self, trace: Trace) -> Result<(), std::io::Error> {
