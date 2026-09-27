@@ -1,4 +1,4 @@
-//! ca™maduci: a digital pet whose care is recorded as traces.
+//! ca(R)maduci: a digital pet whose care is recorded as traces.
 //!
 //! This module holds the pet as pure logic. It has no clock, no I/O, and no
 //! renderer, which is what lets the same code drive a terminal example, a

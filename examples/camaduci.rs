@@ -1,4 +1,4 @@
-//! ca™maduci: a digital pet, and the smallest thing that exercises the whole loop.
+//! ca(R)maduci: a digital pet, and the smallest thing that exercises the whole loop.
 //!
 //! This is not a game yet. It is the part of one that touches the architecture:
 //! a creature whose vitals are a declared state space, whose care operations are
@@ -292,7 +292,7 @@ fn main() {
     let _ = std::fs::remove_dir_all(&root);
     let mut store = Store::open(&root);
 
-    println!("ca™maduci — the same creature under two ways of being kept.\n");
+    println!("ca(R)maduci — the same creature under two ways of being kept.\n");
 
     // A tended pet, tended on a schedule the demo drives.
     let mut kept = Pet::new("ca-001");

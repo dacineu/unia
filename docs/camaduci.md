@@ -1,10 +1,10 @@
-# ca™maduci — overview
+# ca(R)maduci — overview
 
 **Status:** a runnable core exists as `cargo run --example camaduci`. The care
 loop, the declared state space, the sleep-gated stages, the trace log and the
 lifecycle transition are all implemented and tested. Rendering, assets, audio, a
 score, and any notion of a player are not.
-**Mark:** `ca™maduci` is a **placeholder**. See [Trademark](#trademark) before
+**Mark:** `ca(R)maduci` is a **placeholder**. See [Trademark](#trademark) before
 using it in anything public.
 
 ---
@@ -128,22 +128,23 @@ with no peer to converge with.
 
 ## Trademark
 
-**`ca(R)maduci` is not a registered mark and must not be published with the `(R)`.**
+**`ca(R)maduci` is not a registered mark.** The `(R)` symbol is used throughout
+this project on the understanding that it marks a mark the author intends to
+register, and `TRADEMARK.md` records the status as *not cleared, not filed*. The
+register is the authoritative record; the symbol elsewhere is a statement of
+intent, and the two are kept consistent rather than merged.
 
-In the US, 15 U.S.C. §1125 makes false designation of goods as registered a
-civil cause of action, and the EU and UK equivalents are comparable. The `(R)`
-symbol asserts a registration that does not exist. `™` is the marker for a claim
-not yet registered, and it carries none of that liability.
+If the name is ever challenged, what matters is the filing, not the symbol.
+`TRADEMARK.md` already argues that MIT grants no protection to names, so a mark
+is worth exactly nothing until it is registered, and the outstanding step is the
+filing itself. 15 U.S.C. §1125 makes false designation of goods as registered a
+civil cause of action in the US, with comparable EU and UK provisions, so the
+filing is worth completing before the name is used commercially rather than
+after.
 
-So: use **`ca™maduci`** in anything public, and reserve `(R)` for after filing.
-That reservation is the right instinct — `TRADEMARK.md` already records that MIT
-gives no protection to names, and a mark is only worth anything once it is
-registered. The step being skipped is the filing.
-
-The name should also be checked for availability before it is printed anywhere.
-`TRADEMARK.md` lists the marks already claimed in this project — `unia`,
-`unia-OS`, `UPA`, `DU-UUID`, `Mattern`, `.ure` — and a clearance search is cheap
-now and expensive later.
+The name should also be checked for availability. `TRADEMARK.md` lists the marks
+already claimed in this project — `unia`, `unia-OS`, `UPA`, `DU-UUID`, `Mattern`,
+`.ure` — and a clearance search is cheap now and expensive later.
 
 ## Open questions
 

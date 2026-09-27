@@ -116,7 +116,7 @@ not intentions.
   Already in `SECURITY.md`; it must also appear wherever identifiers are
   exchanged.
 
-## ca™maduci — the digital pet
+## ca(R)maduci — the digital pet
 
 A runnable core exists (`cargo run --example camaduci`, 15 tests): the care loop,
 the declared state space, sleep-gated stages, the trace log, and death as a
@@ -128,7 +128,7 @@ an escalation.
 
 ### Blocking decisions
 
-- [ ] **Decide whether ca™maduci is a game or a test fixture.** It is currently
+- [ ] **Decide whether ca(R)maduci is a game or a test fixture.** It is currently
   both, and they pull opposite ways: a fixture must be deterministic and
   clock-injectable, a game must be fun. Building before this is settled produces
   something that is neither.
@@ -136,10 +136,12 @@ an escalation.
   `.ure` route keeps the state space declarative and lets the existing loader
   and matcher handle it, which is what makes the pet a demonstration rather than
   a toy. A struct is easier to test.
-- [ ] **Run a trademark clearance search for the name**, then file before
-  publishing `(R)`. `TRADEMARK.md` records that MIT protects no names, so the
-  mark is only worth anything once registered. Use `™` until then: 15 U.S.C.
-  §1125 makes false designation as registered a civil cause of action.
+- [ ] **Run a trademark clearance search for the name, then file.** The `(R)` is
+  already used project-wide on the understanding that it marks an intended mark;
+  `TRADEMARK.md` records the status as not cleared and not filed. MIT protects no
+  names, so the mark is worth nothing until registered, and 15 U.S.C. §1125 makes
+  false designation as registered a civil cause of action. Filing is what closes
+  the gap between the symbol and the status.
 
 ### Implementation, once the above is settled
 

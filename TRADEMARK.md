@@ -42,26 +42,37 @@ emailing **<dacineu@proton.me>**.
 | `unia` | EU (EUIPO) | To be filed |
 | `.ure` | EU (EUIPO) | To be filed |
 | `Mattern` | EU (EUIPO) | To be filed |
-| `ca™maduci` | EU (EUIPO) | Name not cleared. Not filed. |
+| `ca(R)maduci` | EU (EUIPO) | Name not cleared. Not filed. |
 
 This table is the authoritative record. If it says something is unfiled, assume
 it is unfiled, and do not describe the project as trademarked.
 
-## Why the symbol matters, and why it is not a detail
+## The symbol used in the project, and what it commits to
 
-The name is written `ca™maduci` above rather than `ca(R)maduci`, and the
-distinction is not cosmetic.
+`(R)` appears throughout the project — in the source, the client, the
+documentation, and the table above. That is a deliberate choice to mark a mark
+the author intends to register, and this file is where the intent and the status
+are held separately so they cannot quietly diverge.
 
-`(R)` asserts that a mark **is registered**. Publishing it before filing is false
-designation: 15 U.S.C. §1125 makes it a civil cause of action in the US, and the
-EU and UK equivalents are comparable. `™` asserts only a claim, carries none of
-that liability, and is the correct marker for an intended mark.
+The distinction being tracked:
+
+- **The symbol is a statement of intent.** It says a mark is claimed for this
+  name and is expected to be registered.
+- **This table is the statement of fact.** `ca(R)maduci` is not cleared and not
+  filed. Anyone relying on the mark commercially should read the row, not the
+  symbol.
+
+They are not the same claim, and the gap between them is the outstanding work
+rather than an inconsistency. 15 U.S.C. §1125 makes false designation of goods as
+registered a civil cause of action in the US, with comparable EU and UK
+provisions, so the filing is what closes the gap — and it is worth completing
+before the name is used commercially rather than after.
 
 The project already leans on this file: MIT grants no protection to names, so a
-mark is worth exactly nothing until it is registered. Writing `(R)` on an
-unregistered name would contradict the argument this document exists to make.
+mark is worth exactly nothing until it is registered. Whatever the symbol says,
+the filing is what confers the right.
 
-`ca™maduci` additionally has not been clearance-checked at all, which is a
+`ca(R)maduci` additionally has not been clearance-checked at all, which is a
 separate and earlier step than filing. Search the name before printing it
 anywhere public.
 

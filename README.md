@@ -124,7 +124,7 @@ cargo build --target wasm32-unknown-unknown
 | `benchmark_unia` | Decoupled intent mapping against a coupled baseline |
 | `universal_demo` | Several resource categories through one pipeline |
 
-#### ca™maduci — the first example
+#### ca(R)maduci — the first example
 
 ```sh
 cargo run --example camaduci

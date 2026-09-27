@@ -1,6 +1,6 @@
 //! Does a player's care actually reach induction?
 //!
-//! This is the claim the ca™maduci browser client rests on: a click becomes a
+//! This is the claim the ca(R)maduci browser client rests on: a click becomes a
 //! primitive sequence, the sequence becomes a trace, the trace becomes a
 //! candidate artifact, and the phrasings the player used become that candidate's
 //! aliases. Nothing in the crate closed this loop before, so the test drives the
@@ -44,7 +44,7 @@ impl Drop for Scratch {
     }
 }
 
-/// Writes a trace log the way the ca™maduci server does.
+/// Writes a trace log the way the ca(R)maduci server does.
 fn write_log(dir: &Path, lines: &[(&str, &[&str])]) {
     let body: String = lines
         .iter()
@@ -217,7 +217,7 @@ fn the_store_exposes_its_traces_for_induction() {
 
 #[test]
 fn a_trace_from_the_browser_format_parses_without_loss() {
-    // Exactly the line the ca™maduci server writes, including the fields it fills
+    // Exactly the line the ca(R)maduci server writes, including the fields it fills
     // in from the player's own wording.
     let line = r#"{"ts":1790541480,"intent":"give it dinner","resource_id":"ca-001","outcome":"hit","tokens_in":0,"tokens_out":0,"primitives":["SetValue","CheckSense"],"succeeded":true}"#;
     let t: Trace = serde_json::from_str(line).expect("parses");

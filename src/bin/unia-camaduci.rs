@@ -1,4 +1,4 @@
-//! Serves ca™maduci in a browser and records every care action as a trace.
+//! Serves ca(R)maduci in a browser and records every care action as a trace.
 //!
 //! The point of this binary is the trace log, not the game. A player's clicks
 //! become intents, each intent becomes a primitive sequence, and each sequence
@@ -41,15 +41,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut store = Store::open(&store_dir);
     let mut pet = Pet::new(pet_id);
     let mut now = now_secs();
+    let mut started = false;
 
     let listener = TcpListener::bind(("127.0.0.1", port))?;
-    println!("ca™maduci on http://127.0.0.1:{port}");
+    println!("ca(R)maduci on http://127.0.0.1:{port}");
     println!("  traces -> {store_dir}/traces.jsonl");
-    println!("  one tick = {TICK_SECONDS}s of neglect; Ctrl-C to stop");
+    println!("  one tick = {TICK_SECONDS}s of neglect, starting with your first action");
+    println!("  open http://127.0.0.1:{port} and press Feed to begin");
 
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else { continue };
-        if let Err(e) = handle(&mut stream, &mut pet, &mut store, &mut now) {
+        if let Err(e) = handle(&mut stream, &mut pet, &mut store, &mut now, &mut started) {
             eprintln!("unia-camaduci: {e}");
         }
     }
@@ -75,6 +77,7 @@ fn handle(
     pet: &mut Pet,
     store: &mut Store,
     now: &mut u64,
+    started: &mut bool,
 ) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut request_line = String::new();
@@ -104,12 +107,19 @@ fn handle(
 
     // Time passes between requests, so a player who walks away watches the pet
     // worsen without anything having to poll.
-    let elapsed = now_secs().saturating_sub(*now);
-    if elapsed >= TICK_SECONDS {
-        for _ in 0..(elapsed / TICK_SECONDS) {
-            pet.neglect();
+    //
+    // Nothing decays until the first care action. A pet that began ageing the
+    // moment the process started would already be dead by the time anyone had
+    // read the URL, and "neglect" has to mean a player choosing not to care for
+    // a creature they have not yet met. The clock starts when they arrive.
+    if *started {
+        let elapsed = now_secs().saturating_sub(*now);
+        if elapsed >= TICK_SECONDS {
+            for _ in 0..(elapsed / TICK_SECONDS) {
+                pet.neglect();
+            }
+            *now += (elapsed / TICK_SECONDS) * TICK_SECONDS;
         }
-        *now += (elapsed / TICK_SECONDS) * TICK_SECONDS;
     }
 
     let response = match (method.as_str(), path.as_str()) {
@@ -136,6 +146,8 @@ fn handle(
                 let result = pet.tend(care);
                 match result {
                     Some(primitives) => {
+                        // The first arrival starts the clock.
+                        *started = true;
                         *now = now_secs();
                         // The player's own wording is recorded when they supply
                         // it, because the evidence gate counts distinct

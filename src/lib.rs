@@ -34,7 +34,7 @@ pub mod induce;
 /// field, never by deleting them.
 pub mod gc;
 
-/// ca™maduci: a digital pet whose care is recorded as traces. Pure logic, with
+/// ca(R)maduci: a digital pet whose care is recorded as traces. Pure logic, with
 /// no clock and no I/O, so a terminal example, a browser client, and the tests
 /// all agree on how time passes. See `docs/camaduci.md`.
 pub mod camaduci;
