@@ -27,6 +27,9 @@ pub mod wmis;
 pub mod nucleus;
 pub mod node;
 
+/// Induction of candidate actuators from recorded LLM interactions.
+pub mod induce;
+
 // Wasm Entry Point
 #[cfg(target_arch = "wasm32")]
 pub mod wasm_core;

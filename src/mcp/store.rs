@@ -78,15 +78,40 @@ impl Pattern {
 
 /// One recorded execution. These are the training signal: without them there is
 /// nothing to induce an actuator from, and today the project discards them.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Trace {
     pub ts: u64,
     pub intent: String,
     pub resource_id: Option<String>,
     /// `hit` when a pattern served the call, `miss` when a provider was called.
+    ///
+    /// A miss is not a failure. It means the system escalated and the caller
+    /// still got an answer, which is a successful interaction that cost tokens.
+    /// Treating escalation as failure would discard most of the training
+    /// signal, since a miss is what an interaction looks like before any
+    /// pattern exists to serve it. Actual failure is `succeeded`, below.
     pub outcome: String,
     pub tokens_in: u64,
     pub tokens_out: u64,
+    /// The universal primitives the intent resolved to, in order.
+    ///
+    /// This is the generalisable part of the interaction and the grouping key
+    /// for induction: two different sentences that reduced to the same sequence
+    /// are evidence for one rule, and the sentences become the learned aliases.
+    /// Empty means the sequence was not recorded, and such a trace cannot be
+    /// inducted from.
+    #[serde(default)]
+    pub primitives: Vec<String>,
+    /// Whether the interaction actually produced a usable result. This, not
+    /// `outcome`, is what tells induction whether the sequence worked. Defaults
+    /// to true so an older trace log without the field is not read as a wall of
+    /// failures.
+    #[serde(default = "default_true")]
+    pub succeeded: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -489,5 +514,9 @@ pub fn new_trace(intent: String, resource_id: Option<String>, outcome: &str, tin
         outcome: outcome.to_string(),
         tokens_in: tin,
         tokens_out: tout,
+        // Callers that know the sequence set this; a trace with no sequence
+        // cannot be inducted from.
+        primitives: Vec::new(),
+        succeeded: true,
     }
 }
