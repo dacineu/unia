@@ -199,6 +199,14 @@ the next piece of work, not a footnote.
 - **Constraints are declared and not evaluated.** `constraints` is an array of
   free strings. This is the second pillar of the safety argument and it is
   currently a comment.
+- **The wasm32 target does not build, and the CI job that checks it is red.** The
+  crate depends on `tokio` with `features = ["full"]`, which pulls `mio`, and
+  `mio` does not support `wasm32-unknown-unknown`. `src/wasm_core.rs` is behind
+  `#[cfg(target_arch = "wasm32")]` and has therefore never been compiled. Fixing
+  it means gating `tokio` and the signalling relay's `tokio-tungstenite`,
+  `tokio-rustls` and `rustls-pemfile` out of the wasm target, so the library
+  would build and the two network binaries would not. The wasm build was removed
+  from the quick start rather than left as a command that fails.
 
 ## What is implemented
 
@@ -235,7 +243,6 @@ Requires a stable Rust toolchain, 1.75 or later.
 
 ```sh
 cargo check --all-targets
-cargo build --target wasm32-unknown-unknown
 
 # the corpus, over MCP
 cargo run --features mcp-server --bin unia-mcp -- search "purge the temp storage"
