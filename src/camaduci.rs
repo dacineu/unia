@@ -501,3 +501,178 @@ mod tests {
         assert_eq!(restored.summary(), original.summary());
     }
 }
+
+/// The question the pet asks, and the one its lineage is an answer to.
+///
+/// Not decoration. "Which came first" is a question about the root of a
+/// derivation, and this crate has three honest answers to it rather than one,
+/// which is a direct consequence of treating ancestry as a relation on content
+/// addresses instead of a chain.
+pub const MOTTO: &str =
+    "Let's find together the answer to the ever question: what came first, the egg or the chicken?";
+
+/// What the trace log can say about firstness.
+///
+/// The three cases are not degrees of confidence in one answer. They are three
+/// different states of the evidence, and only the middle one is usually
+/// interesting.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "case", rename_all = "snake_case")]
+pub enum Firstness {
+    /// Only one lineage exists, so the egg precedes the chicken trivially.
+    ///
+    /// True but uninteresting: a single pet always starts as an egg, so this says
+    /// nothing that the stage counter does not already say.
+    SingleLineage,
+    /// Two or more lineages reached the same content address.
+    ///
+    /// The answer is *neither*, and the shared address is the egg of both. This
+    /// is what convergent derivation means: two players who word their care the
+    /// same way induce one artifact, so the chicken and the egg are the same
+    /// thing and the ordering question dissolves rather than being decided.
+    Converged {
+        /// The address both lineages reached.
+        shared: String,
+        /// How many lineages reached it.
+        lineages: usize,
+    },
+    /// The lineages share no address, so the log does not contain the answer.
+    ///
+    /// Reported rather than guessed. A shared *primitive* is not a shared
+    /// ancestor, and treating the two as equivalent would invent a descent that
+    /// never happened.
+    Undetermined,
+}
+
+/// Decides what the induced candidates say about firstness.
+///
+/// @param addresses_by_player - The content addresses each lineage induced, in
+///   the form `player -> [address, ...]`. Two players converging on one address
+///   is the only evidence of a shared ancestor this function will accept.
+pub fn firstness(addresses_by_player: &BTreeMap<String, Vec<String>>) -> Firstness {
+    // Count how many distinct players reached each address. Counting players
+    // rather than artifacts is the point: one player inducing the same rule
+    // twice is repetition, not corroboration.
+    let mut lineages_per_address: BTreeMap<&str, usize> = BTreeMap::new();
+    for addresses in addresses_by_player.values() {
+        let mut seen_by_this_player: BTreeMap<&str, ()> = BTreeMap::new();
+        for a in addresses {
+            seen_by_this_player.insert(a.as_str(), ());
+        }
+        for a in seen_by_this_player.keys() {
+            *lineages_per_address.entry(a).or_insert(0) += 1;
+        }
+    }
+
+    let converged = lineages_per_address
+        .iter()
+        .filter(|(_, n)| **n > 1)
+        .max_by_key(|(a, n)| (**n, a.to_string()));
+
+    match converged {
+        Some((address, n)) => Firstness::Converged {
+            shared: (*address).to_string(),
+            lineages: *n,
+        },
+        // Exactly one lineage is the trivial case, and it is worth separating
+        // from having no lineages at all: a single pet does precede its own
+        // adulthood, whereas an empty log has no ordering to speak of.
+        None if addresses_by_player.len() == 1 => Firstness::SingleLineage,
+        None => Firstness::Undetermined,
+    }
+}
+
+#[cfg(test)]
+mod firstness_tests {
+    use super::*;
+
+    fn players(entries: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
+        entries
+            .iter()
+            .map(|(p, addrs)| {
+                (
+                    (*p).to_string(),
+                    addrs.iter().map(|a| (*a).to_string()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_single_player_is_trivially_the_egg_first() {
+        let f = firstness(&players(&[("ca-001", &["addr-a"])]));
+        assert_eq!(f, Firstness::SingleLineage);
+    }
+
+    #[test]
+    fn two_players_reaching_one_address_have_no_first() {
+        // The interesting case. Content addressing collapses them, so the
+        // chicken and the egg are the same artifact and the ordering question
+        // has no answer rather than a preferred one.
+        let f = firstness(&players(&[("ca-001", &["shared"]), ("ca-002", &["shared"])]));
+        assert_eq!(
+            f,
+            Firstness::Converged {
+                shared: "shared".to_string(),
+                lineages: 2
+            }
+        );
+    }
+
+    #[test]
+    fn three_players_reaching_one_address_report_three_lineages() {
+        let f = firstness(&players(&[
+            ("ca-001", &["shared"]),
+            ("ca-002", &["shared"]),
+            ("ca-003", &["shared"]),
+        ]));
+        assert_eq!(
+            f,
+            Firstness::Converged {
+                shared: "shared".to_string(),
+                lineages: 3
+            }
+        );
+    }
+
+    #[test]
+    fn one_player_repeating_a_rule_is_not_corroboration() {
+        // Repetition is not a second lineage, and counting it as one would make
+        // a single player's habits look like independent agreement.
+        let f = firstness(&players(&[("ca-001", &["same", "same", "same"])]));
+        assert_eq!(f, Firstness::SingleLineage);
+    }
+
+    #[test]
+    fn two_players_reaching_different_addresses_leave_it_undetermined() {
+        let f = firstness(&players(&[("ca-001", &["a"]), ("ca-002", &["b"])]));
+        assert_eq!(f, Firstness::Undetermined);
+    }
+
+    #[test]
+    fn a_shared_address_wins_over_unrelated_ones() {
+        // The most corroborated address is the one that answers the question.
+        let f = firstness(&players(&[
+            ("ca-001", &["unique-a", "shared"]),
+            ("ca-002", &["unique-b", "shared"]),
+        ]));
+        assert_eq!(
+            f,
+            Firstness::Converged {
+                shared: "shared".to_string(),
+                lineages: 2
+            }
+        );
+    }
+
+    #[test]
+    fn no_players_at_all_is_undetermined() {
+        assert_eq!(firstness(&BTreeMap::new()), Firstness::Undetermined);
+    }
+
+    #[test]
+    fn the_motto_asks_the_question_it_can_answer() {
+        assert!(MOTTO.contains("egg"));
+        assert!(MOTTO.contains("chicken"));
+    }
+}

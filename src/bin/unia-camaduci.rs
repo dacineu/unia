@@ -16,10 +16,11 @@
 //! cargo run --bin unia-camaduci -- --port 9000 --store ./patterns
 //! ```
 
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
-use unia::camaduci::{Care, Pet};
+use unia::camaduci::{Care, Firstness, Pet, firstness, MOTTO};
 use unia::mcp::store::{Store, Trace};
 
 /// Seconds of real time per in-game tick.
@@ -114,6 +115,18 @@ fn handle(
     let response = match (method.as_str(), path.as_str()) {
         ("GET", "/") => html_response(),
         ("GET", "/api/pet") => json_response(200, &state(pet)),
+        ("GET", "/api/motto") => {
+            // The question is answered from what the log actually contains, not
+            // from a stored verdict, so it changes as more players contribute.
+            let induced: Vec<String> = unia::induce::induce_all(store.traces())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|c| c.du_uuid.to_string())
+                .collect();
+            let mut by_player: BTreeMap<String, Vec<String>> = BTreeMap::new();
+            by_player.insert(pet.id.clone(), induced);
+            json_response(200, &motto_state(&firstness(&by_player)))
+        }
         ("GET", "/api/traces") => {
             let n = store.stats().traces;
             json_response(200, &format!(r#"{{"traces":{n}}}"#))
@@ -256,6 +269,33 @@ fn json_str(s: &str) -> String {
     }
     out.push('"');
     out
+}
+
+/// Renders the motto and what the log currently says about it.
+fn motto_state(f: &Firstness) -> String {
+    let answer = match f {
+        Firstness::SingleLineage => {
+            "One lineage, so the egg comes first. That is true and uninteresting: \
+             every pet starts as an egg. A second player is what makes it a question."
+                .to_string()
+        }
+        Firstness::Converged { shared, lineages } => format!(
+            "Neither. {lineages} lineages reached the same content address, so the \
+             chicken and the egg are one artifact. The question dissolves rather \
+             than being decided. Address {shared}."
+        ),
+        Firstness::Undetermined => {
+            "Undetermined. No two lineages have reached the same address yet, and a \
+             shared primitive is not a shared ancestor. The log does not contain the \
+             answer, so it is not guessed at."
+                .to_string()
+        }
+    };
+    format!(
+        "{{\"motto\":{},\"answer\":{}}}",
+        json_str(MOTTO),
+        json_str(&answer)
+    )
 }
 
 fn json_response(status: u16, body: &str) -> String {
