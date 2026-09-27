@@ -408,13 +408,21 @@ Recorded because the wrong turns are more instructive than the right ones.
 
 ## 15. Open questions, ranked
 
-1. **Canonical skeleton hashing.** The interior must stop moving when the surface
-   moves. Unblocks every multilingual and vocabulary-free claim. Small.
+1. ~~**Canonical skeleton hashing**~~ **DONE.** Identity is now computed over the
+   skeleton, so the same capability has one address in any language and learning a
+   phrase leaves the address alone. Cost: a narrow and a broad rule exposing the
+   same primitives are now one artifact.
 2. **Primitive-level addressing.** Induced signatures must be queryable. Without
-   it the protocol dead-ends.
-3. **D6** — `resolve_primitive` reaches **3 of 20** variants and silently returns
-   `SetValue`. Now the hardest blocker in the project: a primitive protocol
-   cannot work while the primitive resolver cannot address primitives.
+   it the protocol dead-ends. `SetValue_CheckSense` still matches nothing.
+3. ~~**D6**~~ **CLOSED.** `resolve_primitive` returned `SetValue` for anything it
+   did not recognise, so 13 of 16 primitives were declared and dead, and a request
+   to broadcast was silently dispatched as a plain set. It now covers the whole
+   vocabulary and **returns `Err`** for anything else. Two subtler bugs surfaced on
+   the way: substring matching fired on ordinary words (`widget` contains `get`,
+   `offset` contains `off`), so it matches whole tokens; and a naive tokeniser
+   split `SET_VALUE` into eight letters. Residual: a manifest's action id is free
+   text, so the table still guesses less badly rather than not at all. A grammar
+   for action ids is the same specification work as the constraint grammar.
 4. **D5** — the constraint grammar. Undefined; the safety argument rests on the
    evidence gate alone.
 5. **Typed correspondence relations** — `Opposes`, `Homonymous`, `Regional`.
@@ -426,3 +434,26 @@ Recorded because the wrong turns are more instructive than the right ones.
 9. **Trademark** — clearance search, then filing. `TRADEMARK.md` records
    `ca(R)maduci` as not cleared and not filed while the symbol is used
    project-wide.
+
+---
+
+## 16. What changed since this record was written
+
+Three blockers closed, in the order the discussion reached them:
+
+| Closed | What it was |
+|---|---|
+| Skeleton hashing | identity included the aliases, so the same capability in two languages was two artifacts and learning a phrase created a sibling |
+| Lexicon + four output forms | a creature could be found but only answered in prose; now it renders as prose, pseudocode, Rust, or opaque data from one address |
+| D6 | `resolve_primitive` silently returned `SetValue` for 13 of 16 primitives, and for every unresolvable action |
+
+**Two defects found while closing D6** that are worth more than the fix:
+
+- Substring matching fired on ordinary words. `widget` contains `get` and
+  `offset` contains `off`, so a request to read a widget became a value read and a
+  request to set an offset became a shutdown. Matching is whole-token now.
+- The first tokeniser split `SET_VALUE` into eight letters, because it split on
+  every capital rather than at case *boundaries*.
+
+Neither was visible from reading the code. Both were visible from asserting
+behaviour.
