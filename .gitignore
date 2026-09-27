@@ -49,3 +49,8 @@ venv/
 #     --virtual-time-budget=20000 --print-to-pdf=docs/proof/devpost-eunia-2020.pdf \
 #     "https://devpost.com/software/eunia-european-union-national-informal-assistance-oz4kcp"
 docs/proof/*.pdf
+
+# LaTeX build intermediates (the .pdf is tracked, the byproducts are not)
+docs/whitepaper/*.aux
+docs/whitepaper/*.log
+docs/whitepaper/*.out
