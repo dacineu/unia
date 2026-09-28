@@ -16,6 +16,7 @@
 //! cargo run --bin unia-camaduci -- --port 9000 --store ./patterns
 //! ```
 
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -224,6 +225,98 @@ fn handle(
             pet.learn(learned_rules(store));
             json_response(200, &state(pet))
         }
+        // What the creature wants for itself, and what it can perceive. The
+        // policy and the sensor layer are the two things that are new, and a
+        // player cannot see either without being told.
+        // The creature acting on its own reading of itself. This is the whole of
+        // what "hunger is not just a number" means operationally: the drive names
+        // the act, the acts are the same acts a player can perform, and the
+        // recording is an ordinary trace so the same induction that learns from a
+        // player also learns from this. Nothing about the trace distinguishes the
+        // two, which is the point — a creature feeding itself produces evidence
+        // exactly as feeding it does.
+        ("POST", "/api/tend") => {
+            let Some((care, drawn_by)) = pet.want() else {
+                return Ok(stream.write_all(
+                    json_response(
+                        409,
+                        &json!({
+                            "acted": false,
+                            "why": "Nothing is pulling me right now. Feed me, play with me, \
+                                    or put me to sleep, and I will want what I need.",
+                        })
+                        .to_string(),
+                    )
+                    .as_bytes(),
+                )?);
+            };
+            let Some(primitives) = pet.tend(care) else {
+                return Ok(stream.write_all(
+                    json_response(
+                        409,
+                        &json!({ "acted": false, "why": "I am gone" }).to_string(),
+                    )
+                    .as_bytes(),
+                )?);
+            };
+            *started = true;
+            *now = now_secs();
+            let t = trace_for(&pet.id, care, &primitives, *now, None);
+            match store.record(t) {
+                Ok(()) => {
+                    pet.learn(learned_rules(store));
+                    save_pet(store_dir, pet);
+                    json_response(
+                        200,
+                        &json!({
+                            "acted": true,
+                            "care": care.label(),
+                            "drawn_by": drawn_by,
+                            "primitives": primitives,
+                            // `state(pet)` is already serialised, so nesting it
+                            // in `json!` would double-encode it and a client would
+                            // find a string where an object belongs.
+                            "state": serde_json::from_str(&state(pet))
+                                .unwrap_or(serde_json::Value::Null),
+                        })
+                        .to_string(),
+                    )
+                }
+                Err(e) => json_response(500, &format!(r#"{{"error":"{e}"}}"#)),
+            }
+        }
+        ("GET", "/api/wants") => {
+            let want = pet
+                .want()
+                .map(|(care, field)| json!({ "care": care.label(), "drawn_by": field }));
+            let draws: Vec<Value> = pet
+                .drives()
+                .into_iter()
+                .map(|d| json!({ "care": d.care.label(), "when": d.when }))
+                .collect();
+            let readings: Vec<Value> = pet
+                .vitals
+                .readings()
+                .into_iter()
+                .map(|(name, reading)| json!({ "sensor": name, "reads": reading }))
+                .collect();
+            json_response(
+                200,
+                &json!({
+                    "wants": want,
+                    "draws": draws,
+                    "readings": readings,
+                    "sensors": unia::camaduci::Vitals::sensors()
+                        .into_iter()
+                        .map(|s| json!({
+                            "name": s.name, "when": s.when, "reads": s.reads,
+                            "sense": s.sense.label(),
+                        }))
+                        .collect::<Vec<Value>>(),
+                })
+                .to_string(),
+            )
+        }
         ("GET", "/api/motto") => {
             // The question is answered from what the log actually contains, not
             // from a stored verdict, so it changes as more players contribute.
@@ -386,7 +479,7 @@ fn state(pet: &Pet) -> String {
         pet.vitals.hunger,
         pet.vitals.happiness,
         pet.vitals.health,
-        json_str(pet.vitals.mood()),
+        json_str(&pet.vitals.mood()),
         pet.quarantined,
         // The spike count is what the creature has *learned*, not what it was
         // fed. Those used to be the same number, which meant the most expressive

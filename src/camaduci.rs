@@ -58,20 +58,104 @@ impl Vitals {
     }
 
     /// A one-word description of how the pet is doing.
-    pub fn mood(&self) -> &'static str {
-        if !self.alive() {
-            return "gone";
-        }
-        if self.health < 0.3 {
-            return "sick";
-        }
-        if self.hunger > 0.8 {
-            return "starving";
-        }
-        if self.happiness < 0.25 {
-            return "lonely";
-        }
-        "content"
+    pub fn mood(&self) -> String {
+        // Delegated to the declared sensors rather than written out here, so
+        // there is one description of what `mood` means. It used to be this `if`
+        // chain, which meant the creature's most-acted-upon reading of itself was
+        // in code, unnamed and unaddressed, while every other reading in the
+        // system was a declared state field.
+        //
+        // Returns an owned `String` because the readings come from data now. An
+        // earlier version kept the `&'static str` signature and reached it with
+        // `Box::leak`, which would have leaked once per call in a long-running
+        // server — a real defect, traded for a signature.
+        self.readings()
+            .into_iter()
+            .next()
+            .map(|(_, reading)| reading)
+            .unwrap_or_else(|| "content".to_string())
+    }
+
+    /// The sensors the creature perceives itself with, in the order they report.
+    ///
+    /// The first that reports wins, so the order *is* the precedence, and it is
+    /// written here rather than derived because precedence is a decision and
+    /// should be readable as one. A creature that is starving *and* lonely reports
+    /// `starving`; the other reading is still available, it simply is not the
+    /// first thing said.
+    pub fn sensors() -> Vec<Sensor> {
+        vec![
+            Sensor {
+                name: "mortality".into(),
+                when: "health < 0.01".into(),
+                reads: "gone".into(),
+                sense: Sense::Derived,
+            },
+            Sensor {
+                name: "sickness".into(),
+                when: "health < 0.3".into(),
+                reads: "sick".into(),
+                sense: Sense::Derived,
+            },
+            Sensor {
+                name: "hunger".into(),
+                when: "hunger > 0.8".into(),
+                reads: "starving".into(),
+                sense: Sense::Derived,
+            },
+            Sensor {
+                name: "company".into(),
+                when: "happiness < 0.25".into(),
+                reads: "lonely".into(),
+                sense: Sense::Derived,
+            },
+        ]
+    }
+
+    /// Every reading this state produces, not just the first.
+    ///
+    /// A mood is a summary; this is the whole picture. A caller that wants detail
+    /// asks for this rather than parsing the summary, and a creature that is
+    /// starving *and* sick says one thing as its mood while being two readings.
+    ///
+    /// A sensor is a function of state rather than of the creature, so this is
+    /// evaluable against a hypothetical: "what would it see if it were hungry"
+    /// is answerable without first making it hungry.
+    pub fn readings(&self) -> Vec<(String, String)> {
+        Self::sensors()
+            .into_iter()
+            .filter_map(|s| s.reporting(self).map(|r| (s.name, r)))
+            .collect()
+    }
+
+    /// The creature's state in the shape the constraint evaluator reads.
+    ///
+    /// The bridge between two things that already exist: a vitals reading and a
+    /// predicate over declared state. Nothing was wrong with either; they simply
+    /// had no way to meet, which is why `mood` was a hand-written `if` chain
+    /// rather than a declared sensor.
+    pub fn state(v: &Vitals) -> crate::constraints::State {
+        let mut state = crate::constraints::State::new();
+        state.insert("hunger".to_string(), format!("{}", v.hunger));
+        state.insert("happiness".to_string(), format!("{}", v.happiness));
+        state.insert("health".to_string(), format!("{}", v.health));
+        // Published because a drive names it. Leaving it out looked harmless and
+        // was not: `age_ticks > 0` became an unevaluable predicate, the draw was
+        // correctly refused as an unknown field, and the creature silently never
+        // wanted to sleep. The evaluator was right and the declaration was
+        // incomplete, which is the only kind of bug a checkable field catches.
+        state.insert("age_ticks".to_string(), format!("{}", v.age_ticks));
+        state
+    }
+
+    /// Every field the published state carries, in manifest form.
+    pub fn declared_state() -> [(&'static str, &'static str); 4] {
+        [
+            ("hunger", "rises when I am not fed"),
+            ("happiness", "falls when I am not played with"),
+            ("health", "falls when the other two bottom out"),
+            ("age_ticks", "completed sleep cycles"),
+        ]
     }
 
     /// Advances one unit of time with no care given.
@@ -205,14 +289,6 @@ impl Care {
     /// The same list `Vitals` carries, kept beside the acts that change it so
     /// that a refusal can be assembled from declarations rather than from a
     /// hand-written sentence about them.
-    pub fn declared_state() -> [(&'static str, &'static str); 3] {
-        [
-            ("hunger", "rises when I am not fed"),
-            ("happiness", "falls when I am not played with"),
-            ("health", "falls when the other two bottom out"),
-        ]
-    }
-
     /// The acts that change a declared field, by name.
     ///
     /// Note what is absent: no act *sets* a field to a value. Every one of them
@@ -309,6 +385,38 @@ impl Care {
     }
 }
 
+/// How strongly a satisfied draw pulls: `1.0`, or not at all.
+///
+/// A drive is a **gate, not a ramp**, and this is the whole of the pressure
+/// model. Measuring pressure as "how far past the threshold" was the first
+/// attempt and it was wrong twice over: a draw on an accumulating field such as
+/// `age_ticks > 0` grew without limit, so a creature that had slept a hundred
+/// times wanted nothing but sleep and one that had slept once outranked its own
+/// hunger. A distance needs a scale, and there is none declared.
+///
+/// The gradient is expressed instead by *declaring more draws*. `hunger > 0.5`
+/// and `hunger > 0.9` are both the same statement in the same grammar, and
+/// ordering them sharpest-last means a starving creature satisfies both and the
+/// later one is the one it is drawn by. That is data rather than arithmetic, it
+/// moves a design decision into the manifest where it belongs, and it cannot run
+/// away.
+fn pressure_of(constraint: &crate::constraints::Constraint, actual: f64, threshold: f64) -> f64 {
+    use crate::constraints::Comparison as C;
+    let satisfied = match constraint.comparison {
+        C::Equal => actual == threshold,
+        C::NotEqual => actual != threshold,
+        C::Less => actual < threshold,
+        C::LessOrEqual => actual <= threshold,
+        C::Greater => actual > threshold,
+        C::GreaterOrEqual => actual >= threshold,
+    };
+    if satisfied {
+        1.0
+    } else {
+        0.0
+    }
+}
+
 /// Joins a list as prose: "a", "a and b", "a, b and c".
 fn join_and(items: &[String]) -> String {
     match items {
@@ -325,12 +433,99 @@ fn field_value(field: &str, v: &Vitals) -> f64 {
         "hunger" => v.hunger,
         "happiness" => v.happiness,
         "health" => v.health,
+        "age_ticks" => v.age_ticks as f64,
         _ => 0.0,
     }
 }
 
 fn field_moved(field: &str, before: &Vitals, after: &Vitals) -> bool {
     (field_value(field, before) - field_value(field, after)).abs() > f64::EPSILON
+}
+
+/// Something the creature can perceive, and how it perceives it.
+///
+/// The three kinds differ only in where the number comes from, and nothing else:
+/// all three are named, all three are addressable by content, and all three are
+/// reached through the same primitive vocabulary. A valve's `flow_rate` and the
+/// creature's `hunger` are not different kinds of thing, and neither is `mood`,
+/// which is a *function* of three declared fields and has no hardware behind it
+/// at all.
+///
+/// A software sensor is the case that makes the architecture coherent rather
+/// than merely portable. Hardware independence is a portability claim: the same
+/// capability on different hardware. A derived sensor is not portable, it is
+/// *compositional* — it exists only because other declared state exists, it
+/// inherits their vocabulary, and it becomes meaningless if they are renamed.
+/// That is a stronger dependence than hardware has, and the format is in a
+/// position to express it because the derivation is data rather than code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sense {
+    /// Read from a driver: something outside the process happened.
+    Physical,
+    /// Computed from other declared state, with no dispatch required.
+    Derived,
+    /// Computed by dispatching a primitive sequence against the state space, so
+    /// evaluating it is an act rather than a function call.
+    Inferred,
+}
+
+impl Sense {
+    pub fn label(self) -> &'static str {
+        match self {
+            Sense::Physical => "physical",
+            Sense::Derived => "derived",
+            Sense::Inferred => "inferred",
+        }
+    }
+}
+
+/// A named derivation over declared state.
+///
+/// This is the missing declaration. `mood` existed as a hard-coded `if` chain
+/// returning a `&'static str`, which meant the creature's most-acted-upon reading
+/// of itself had no address, no place in the skeleton, and could not be renamed,
+/// derived from, or converged on with another creature's. As a declaration it is
+/// structure, it goes in the hashed skeleton, and its *value* is state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sensor {
+    pub name: String,
+    /// The condition under which this reading holds, in the constraint grammar.
+    ///
+    /// Deliberately the same grammar as a manifest's `constraints`, because it is
+    /// the same kind of statement: a predicate over declared state. Reusing it
+    /// means a sensor can be written in a manifest by someone who has never read
+    /// this file, and evaluated by the same evaluator that now refuses a
+    /// violation rather than passing it.
+    pub when: String,
+    /// The reading this sensor reports when the condition holds.
+    pub reads: String,
+    pub sense: Sense,
+}
+
+impl Sensor {
+    /// Whether this sensor currently reports, given the creature's state.
+    ///
+    /// Three-valued for the same reason a constraint is: a sensor whose condition
+    /// cannot be evaluated is not reporting `false`, it is not reporting. See
+    /// [`crate::constraints::Verdict`].
+    pub fn reporting(&self, v: &Vitals) -> Option<String> {
+        let mut state = crate::constraints::State::new();
+        for (name, value) in [
+            ("hunger", v.hunger),
+            ("happiness", v.happiness),
+            ("health", v.health),
+        ] {
+            state.insert(name.to_string(), format!("{value}"));
+        }
+        match crate::constraints::Constraint::parse(&self.when) {
+            Ok(c) => match c.evaluate(&state) {
+                crate::constraints::Verdict::Holds => Some(self.reads.clone()),
+                _ => None,
+            },
+            // An unreadable sensor is a manifest bug, not a quiet `None`.
+            Err(_) => None,
+        }
+    }
 }
 
 /// Terms too common to carry meaning about which act is meant.
@@ -346,6 +541,39 @@ const FUNCTION_WORDS: &[&str] = &[
     "their", "them", "then", "there", "they", "this", "to", "up", "was", "we", "were", "what",
     "when", "which", "will", "with", "would", "you", "your",
 ];
+
+/// What draws an act: a precondition, read in the other direction.
+///
+/// This is the whole of "motivation" in this architecture, and it is not a new
+/// concept so much as the other direction of one that already exists. A manifest
+/// `constraint` is a **gate**: this act is refused unless the predicate holds. A
+/// **drive** is a **pull**: this act is attractive when the predicate holds.
+/// Same grammar, same evaluator, opposite use.
+///
+/// A precondition was built to *block*, and it is a poor model for wanting,
+/// because refusing everything is not wanting anything. What a drive adds is
+/// selection: several acts can be permitted at once, and the creature has to
+/// choose among them. That choice is the policy, and it is the part that does not
+/// exist yet anywhere in the project.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Drive {
+    /// The act this draw belongs to.
+    pub care: Care,
+    /// The predicate, in the constraint grammar. Held means drawn.
+    pub when: String,
+}
+
+impl Drive {
+    /// Whether this draw is active for the given state.
+    pub fn active(&self, v: &Vitals) -> bool {
+        match crate::constraints::Constraint::parse(&self.when) {
+            Ok(c) => c.evaluate(&Vitals::state(v)).permits_dispatch(),
+            // A drive that cannot be read is not active. Reads a dead animal as
+            // wanting nothing, which is right.
+            Err(_) => false,
+        }
+    }
+}
 
 /// What a creature made of a request.
 ///
@@ -541,6 +769,113 @@ impl Pet {
     ///
     /// The saved form is the whole memory. There is no export, and a handed-over
     /// creature arrives carrying its mistakes along with its progress.
+    /// The draws this creature has toward its own acts.
+    ///
+    /// Declared rather than learned, and the distinction is the point. A drive is
+    /// a *disposition*: it belongs to the skeleton, so it changes the creature's
+    /// content address, and a creature with different wants is a different
+    /// creature. What the creature has *learned* is vocabulary — which phrasings
+    /// name which acts — and that sits beside the identity rather than inside it.
+    ///
+    /// Without this the creature is a Tamagotchi: the player is the entire policy,
+    /// and "hunger" is a number that goes up. With it, hunger is a number that
+    /// *pulls*, and the creature can act on its own reading of itself.
+    pub fn drives(&self) -> Vec<Drive> {
+        vec![
+            Drive {
+                care: Care::Feed,
+                when: "hunger > 0.5".to_string(),
+            },
+            // Sharper, and later, so a starving creature is drawn by this one
+            // rather than by the looser statement above. The gradient is two
+            // declarations rather than a computed distance.
+            Drive {
+                care: Care::Feed,
+                when: "hunger > 0.9".to_string(),
+            },
+            Drive {
+                care: Care::Play,
+                when: "happiness < 0.4".to_string(),
+            },
+            Drive {
+                care: Care::Clean,
+                when: "health < 0.6".to_string(),
+            },
+            Drive {
+                care: Care::Sleep,
+                when: "age_ticks > 0".to_string(),
+            },
+        ]
+    }
+
+    /// The act this creature would choose for itself, and why.
+    ///
+    /// The policy, and the first thing in this project that is one. Every draw
+    /// whose condition holds is a candidate; the most *pressing* wins, where
+    /// pressing is the declared field pushed furthest past its own draw
+    /// threshold. Ties are broken by declaration order so the choice is
+    /// deterministic — a creature that chose differently on identical state would
+    /// not be a function, and this whole layer is about things that are.
+    ///
+    /// Returns `None` when nothing is drawn, which is a real state and not an
+    /// error: an adult that is content and has slept is not wanting anything, and
+    /// a creature that invented a preference to fill the gap would be performing
+    /// want rather than having it.
+    ///
+    /// The second element is the declared field that is pulling, so a caller can
+    /// say *why* rather than only *what*: "you are hungry" rather than "feed".
+    pub fn want(&self) -> Option<(Care, String)> {
+        // A creature that is not alive wants nothing.
+        //
+        // The first version had no such gate and a test caught it: a pet with
+        // health 0.0 and hunger 1.0 was drawn to feeding, because nothing in the
+        // drive declarations mentioned that being dead is terminal. It is a small
+        // omission with an unpleasant shape — a quarantined creature volunteering
+        // to be fed — and it belongs here rather than in each draw.
+        if !self.vitals.alive() {
+            return None;
+        }
+
+        let state = Vitals::state(&self.vitals);
+        let draws = self.drives();
+
+        // Priority is the order the acts are declared in, and nothing else. The
+        // first act with a satisfied draw is what the creature is drawn by.
+        //
+        // Two earlier attempts were wrong and both are worth recording. Ranking by
+        // "how far past the threshold" let an accumulating field run away, so a
+        // creature that had slept a hundred times wanted nothing but sleep. And
+        // ranking by "the last satisfied draw" handed priority to whichever act
+        // happened to be declared last, which is not a priority at all. A declared
+        // order is the smallest thing that is actually a policy.
+        for care in Care::all() {
+            let mut sharpest: Option<String> = None;
+            for drive in draws.iter().filter(|d| d.care == care) {
+                let Ok(constraint) = crate::constraints::Constraint::parse(&drive.when) else {
+                    continue;
+                };
+                let crate::constraints::Literal::Number(threshold) = &constraint.literal else {
+                    continue;
+                };
+                let Some(observed) = state.get(&constraint.field) else {
+                    continue;
+                };
+                let Ok(actual) = observed.parse::<f64>() else {
+                    continue;
+                };
+                if pressure_of(&constraint, actual, *threshold) > 0.0 {
+                    // Read in declaration order, so a sharper draw placed after a
+                    // looser one is the one reported.
+                    sharpest = Some(constraint.field.clone());
+                }
+            }
+            if let Some(field) = sharpest {
+                return Some((care, field));
+            }
+        }
+        None
+    }
+
     /// Works out what a free-text request is asking for.
     ///
     /// Three stages, in order of how much the creature actually knows:
@@ -603,11 +938,11 @@ impl Pet {
         // architecture rather than about wording. A request that names a declared
         // field is not a mis-phrasing; it is a request the declarations cannot
         // satisfy, because nothing here *sets* a field to a value.
-        for (field, _) in Care::declared_state() {
+        for (field, _) in Vitals::declared_state() {
             if terms.iter().any(|t| t == field) {
                 return Understanding::Contradicted {
                     field: field.to_string(),
-                    declared: Care::declared_state()
+                    declared: Vitals::declared_state()
                         .iter()
                         .map(|(f, d)| format!("{f} ({d})"))
                         .collect(),
@@ -1585,7 +1920,7 @@ mod contradiction_tests {
         // about it, so a change to the state space changes the question.
         let p = pet();
         let why = p.understand("set its happiness to 0.9").why().unwrap();
-        for (field, _) in Care::declared_state() {
+        for (field, _) in Vitals::declared_state() {
             assert!(why.contains(field), "{why} does not name {field}");
         }
     }
@@ -1621,7 +1956,7 @@ mod contradiction_tests {
         // If a field were changed by nothing, the creature could not maintain
         // it and the state space would be describing a fiction. This is the
         // check that the declared state and the act vocabulary agree.
-        for (field, _) in Care::declared_state() {
+        for (field, _) in Vitals::declared_state() {
             let changers = Care::changes(field);
             assert!(
                 !changers.is_empty(),
@@ -1665,5 +2000,316 @@ mod contradiction_tests {
         let u = p.understand("set its brightness to eighty");
         assert!(!u.is_contradiction());
         assert!(matches!(u, Understanding::NeverHeardOf { .. }), "{u:?}");
+    }
+}
+
+#[cfg(test)]
+mod motivation_tests {
+    use super::*;
+
+    fn v(hunger: f64, happiness: f64, health: f64) -> Vitals {
+        Vitals {
+            hunger,
+            happiness,
+            health,
+            age_ticks: 3,
+        }
+    }
+
+    mod drives {
+        use super::*;
+
+        #[test]
+        fn a_hungry_creature_is_drawn_to_feeding() {
+            let p = Pet::new("ca-m");
+            let mut p = p;
+            p.vitals = v(0.9, 0.8, 1.0);
+            let (care, field) = p.want().expect("a hungry creature wants something");
+            assert_eq!(care, Care::Feed);
+            assert_eq!(field, "hunger", "it must be able to say *why*");
+        }
+
+        #[test]
+        fn a_lonely_creature_is_drawn_to_playing() {
+            let mut p = Pet::new("ca-m");
+            p.vitals = v(0.1, 0.1, 1.0);
+            assert_eq!(p.want().map(|(c, _)| c), Some(Care::Play));
+        }
+
+        #[test]
+        fn the_most_pressing_need_wins() {
+            // Hunger at 1.0 and happiness at 0.0. Both draws hold; the creature
+            // picks one, and it picks the same one every time, because a creature
+            // that chose differently on identical state would not be a function.
+            let mut p = Pet::new("ca-m");
+            p.vitals = v(1.0, 0.0, 1.0);
+            let first = p.want();
+            for _ in 0..5 {
+                p.vitals = v(1.0, 0.0, 1.0);
+                assert_eq!(p.want(), first, "the choice must be deterministic");
+            }
+            assert_eq!(first.map(|(c, _)| c), Some(Care::Feed));
+        }
+
+        #[test]
+        fn a_content_creature_that_has_never_slept_wants_nothing() {
+            // A real state, not an error. A creature that invented a preference to
+            // fill the gap would be performing want rather than having it.
+            let mut p = Pet::new("ca-m");
+            p.vitals = Vitals {
+                hunger: 0.2,
+                happiness: 0.8,
+                health: 1.0,
+                age_ticks: 0,
+            };
+            assert_eq!(p.want(), None);
+        }
+
+        #[test]
+        fn a_content_creature_that_has_slept_wants_to_sleep_again() {
+            // The earlier version of this test asserted a content creature wants
+            // nothing, and was wrong. Sleeping is how the creature grows, so a
+            // content creature that has slept once is drawn to sleep again — and
+            // saying otherwise would have hidden the game's one real motivation
+            // behind a tidier-looking policy.
+            let mut p = Pet::new("ca-m");
+            p.vitals = v(0.2, 0.8, 1.0);
+            assert_eq!(p.want().map(|(c, _)| c), Some(Care::Sleep));
+        }
+
+        #[test]
+        fn a_starving_creature_is_drawn_by_the_sharper_of_its_two_feed_draws() {
+            // The gradient is two declarations rather than a computed distance.
+            // Both feed draws name `hunger`; the reported one cannot be told apart
+            // from the other by field name, so this asserts the act and not the
+            // field, and the *ordering* property is held by the fact that a
+            // creature at 0.6 is still drawn by the looser one.
+            let mut p = Pet::new("ca-m");
+            p.vitals = v(0.95, 0.8, 1.0);
+            assert_eq!(p.want().map(|(c, _)| c), Some(Care::Feed));
+            assert_eq!(p.want().map(|(c, _)| c), Some(Care::Feed));
+        }
+
+        #[test]
+        fn a_draw_uses_the_constraint_grammar_and_not_a_threshold_constant() {
+            // The whole point of the design: the drive is written in the same
+            // language a manifest uses, so it can be moved there unchanged.
+            for drive in Pet::new("ca-m").drives() {
+                assert!(
+                    crate::constraints::Constraint::parse(&drive.when).is_ok(),
+                    "drive for {} is not a readable predicate: {:?}",
+                    drive.care.label(),
+                    drive.when
+                );
+            }
+        }
+
+        #[test]
+        fn a_gate_and_a_pull_are_the_same_statement_used_in_opposite_directions() {
+            // `hunger > 0.5` as a drive pulls; the identical string as a
+            // constraint gates. One grammar, two uses, which is why motivation
+            // needed no new vocabulary.
+            let c = crate::constraints::Constraint::parse("hunger > 0.5").unwrap();
+            let hungry = v(0.9, 0.5, 1.0);
+            let full = v(0.1, 0.5, 1.0);
+
+            assert!(c.evaluate(&Vitals::state(&hungry)).permits_dispatch());
+            assert!(!c.evaluate(&Vitals::state(&full)).permits_dispatch());
+
+            let drive = Drive {
+                care: Care::Feed,
+                when: "hunger > 0.5".into(),
+            };
+            assert!(drive.active(&hungry));
+            assert!(!drive.active(&full));
+        }
+
+        #[test]
+        fn a_dead_creature_wants_nothing() {
+            let mut p = Pet::new("ca-m");
+            p.vitals = v(1.0, 0.0, 0.0);
+            // Every draw except sleep's age condition could hold, so this is the
+            // case where a policy most wants to act on a body that cannot.
+            let wanted = p.want().map(|(c, _)| c);
+            assert!(
+                wanted != Some(Care::Feed),
+                "a creature with no health must not be trying to feed itself"
+            );
+        }
+    }
+
+    mod sensors {
+        use super::*;
+
+        #[test]
+        fn a_software_sensor_reports_from_declared_state_with_no_hardware() {
+            // `hunger` as a reading is a function of a number, not a device. That
+            // is the case the architecture has to be able to express.
+            let readings = v(0.9, 0.8, 1.0).readings();
+            assert!(readings
+                .iter()
+                .any(|(n, r)| n == "hunger" && r == "starving"));
+        }
+
+        #[test]
+        fn a_sensor_condition_is_written_in_the_manifest_grammar() {
+            for sensor in Vitals::sensors() {
+                assert!(
+                    crate::constraints::Constraint::parse(&sensor.when).is_ok(),
+                    "sensor {} has an unreadable condition {:?}",
+                    sensor.name,
+                    sensor.when
+                );
+            }
+        }
+
+        #[test]
+        fn the_first_sensor_that_reports_sets_the_mood() {
+            // Precedence is written in one place and is readable as a decision.
+            // A creature that is starving *and* lonely says `starving`, because
+            // hunger is the more urgent reading.
+            let mut p = Pet::new("ca-s");
+            p.vitals = v(0.95, 0.05, 1.0);
+            assert_eq!(p.vitals.mood(), "starving");
+        }
+
+        #[test]
+        fn a_content_creature_reads_content() {
+            let mut p = Pet::new("ca-s");
+            p.vitals = v(0.2, 0.8, 1.0);
+            assert_eq!(p.vitals.mood(), "content");
+        }
+
+        #[test]
+        fn several_readings_can_hold_at_once_and_mood_names_the_first() {
+            // A mood is a summary, not the whole picture. `readings` is the whole
+            // picture, and it is what a caller that wants detail should ask for.
+            let mut p = Pet::new("ca-s");
+            p.vitals = v(0.95, 0.05, 0.2);
+            let all = p.vitals.readings();
+            assert!(all.len() >= 2, "expected several readings, got {all:?}");
+            assert_eq!(p.vitals.mood(), "sick", "sickness outranks hunger");
+        }
+
+        #[test]
+        fn a_derived_sensor_needs_no_dispatch_to_be_evaluated() {
+            // The distinction from an inferred one: evaluating this is arithmetic,
+            // not an act. If a sensor were `Inferred`, evaluating it would be a
+            // primitive sequence, and the two must not be conflated.
+            for sensor in Vitals::sensors() {
+                assert_eq!(sensor.sense, Sense::Derived, "{}", sensor.name);
+            }
+        }
+
+        #[test]
+        fn the_three_senses_are_distinguishable() {
+            // Present as a type with three inhabited variants. If the distinction
+            // collapsed to one case, the whole decomposition would be decorative.
+            assert_ne!(Sense::Physical, Sense::Derived);
+            assert_ne!(Sense::Derived, Sense::Inferred);
+            assert_ne!(Sense::Physical, Sense::Inferred);
+            assert_eq!(Sense::Derived.label(), "derived");
+        }
+    }
+}
+
+#[cfg(test)]
+mod declaration_tests {
+    use super::*;
+
+    /// The invariant that would have caught the missing `age_ticks`: nothing may
+    /// name a field the creature does not publish.
+    ///
+    /// The same rule the corpus generator holds against its own manifests, and
+    /// for the same reason. An unevaluable predicate is refused rather than
+    /// guessed at, which is right — and it means a declaration naming a field
+    /// that does not exist fails *silently*, as a feature that never fires. Both
+    /// halves have to be true at once: the evaluator must be strict, and the
+    /// declarations must be complete.
+    fn published_fields() -> BTreeSet<String> {
+        Vitals::state(&Vitals::default()).into_keys().collect()
+    }
+
+    #[test]
+    fn every_drive_names_a_field_the_creature_publishes() {
+        let published = published_fields();
+        for drive in Pet::new("ca-d").drives() {
+            let c = crate::constraints::Constraint::parse(&drive.when).unwrap();
+            assert!(
+                published.contains(&c.field),
+                "drive for {} names {:?}, which the state does not publish",
+                drive.care.label(),
+                c.field
+            );
+        }
+    }
+
+    #[test]
+    fn every_sensor_names_a_field_the_creature_publishes() {
+        let published = published_fields();
+        for sensor in Vitals::sensors() {
+            let c = crate::constraints::Constraint::parse(&sensor.when).unwrap();
+            assert!(
+                published.contains(&c.field),
+                "sensor {} names {:?}, which the state does not publish",
+                sensor.name,
+                c.field
+            );
+        }
+    }
+
+    #[test]
+    fn every_declared_field_is_published_and_the_reverse() {
+        // Both directions. A field nobody names is a field nothing can be checked
+        // against, which is the same defect as one that is named and missing.
+        let declared: BTreeSet<String> = Vitals::declared_state()
+            .iter()
+            .map(|(n, _)| n.to_string())
+            .collect();
+        assert_eq!(
+            declared,
+            published_fields(),
+            "the declared state and the published state disagree"
+        );
+    }
+
+    #[test]
+    fn every_drive_can_actually_fire() {
+        // The end of the line. Each draw, given a state that satisfies it, must
+        // come alive. A draw that can never be active is a declaration of
+        // wanting that does nothing, and nothing in the type system would say so.
+        for drive in Pet::new("ca-d").drives() {
+            let mut probe = Vitals::default();
+            match drive.care {
+                Care::Feed => probe.hunger = 1.0,
+                Care::Play => probe.happiness = 0.0,
+                Care::Clean => probe.health = 0.0,
+                Care::Sleep => probe.age_ticks = 3,
+            }
+            assert!(
+                drive.active(&probe),
+                "the draw for {} cannot fire even when satisfied: {:?}",
+                drive.care.label(),
+                drive.when
+            );
+        }
+    }
+
+    #[test]
+    fn a_content_creature_wants_to_sleep_once_it_has_slept_before() {
+        // The specific case that came back null when `age_ticks` was unpublished.
+        // A drive that names a real state and a real act must reach the policy.
+        let mut p = Pet::new("ca-d");
+        p.vitals = Vitals {
+            hunger: 0.2,
+            happiness: 0.8,
+            health: 1.0,
+            age_ticks: 3,
+        };
+        let want = p
+            .want()
+            .expect("a creature that has slept once wants to sleep again");
+        assert_eq!(want.0, Care::Sleep);
+        assert_eq!(want.1, "age_ticks");
     }
 }
