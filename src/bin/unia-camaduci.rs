@@ -225,6 +225,10 @@ fn handle(
         // capabilities, signatures and promotions, read from the store, with no
         // vitals and no play state on it.
         ("GET", "/api/graph") => graph_response(store, pet),
+        // The software architecture, derived from the source tree. Separate from
+        // /api/graph because they are different questions: that one is what the
+        // system can do, this one is what it is made of.
+        ("GET", "/api/arch") => json_response(200, &arch_response()),
         ("GET", "/graph") => graph_page_response(),
         ("GET", "/api/pet") => {
             // Re-derive on read so the creature always shows the most current
@@ -691,6 +695,141 @@ const CLIENT_HTML: &str = include_str!("../../web/camaduci.html");
 /// than served from a directory, so it travels with the binary and cannot drift
 /// from the version that renders it.
 const GRAPH_HTML: &str = include_str!("../../web/graph.html");
+
+/// The software architecture, read from the source tree.
+///
+/// **This is the layer that was missing, and it is derived rather than drawn.**
+/// The previous graph showed capabilities declared in manifests, which is what
+/// the system *can do*; the user asked for the architecture itself -- nuclei,
+/// actuators, drivers, transducers, transpilers -- and for which of it the running
+/// system is actually using.
+///
+/// So: nodes are the real modules, taken from the files under `src/`, and edges
+/// are the real `use crate::` imports between them. Every one of those edges is in
+/// the source, which is why this can be built at all where a drawn hierarchy could
+/// not: nothing here is invented, only read.
+///
+/// **It is crude and the page will say so.** A regular expression over source is
+/// not a parser, so a `use` inside a comment or a macro would register as an
+/// edge. That is a false positive in the direction of showing too much structure,
+/// which is the safer of the two errors for a monitoring view, and the counts are
+/// printed next to the drawing so a reader can judge them.
+fn arch_response() -> String {
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut files: Vec<(String, String)> = Vec::new(); // (module, body)
+    let mut dirs: Vec<String> = match std::fs::read_dir("src") {
+        Ok(r) => r
+            .flatten()
+            .filter_map(|e| {
+                e.path()
+                    .is_dir()
+                    .then(|| e.path().to_string_lossy().to_string())
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    dirs.push("src".to_string());
+    for d in &dirs {
+        let rd = match std::fs::read_dir(d) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        for f in rd.flatten() {
+            let path = f.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let Ok(body) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if stem == "main" {
+                continue;
+            }
+            let module = path
+                .parent()
+                .and_then(|p| p.file_name())
+                .map(|d| d.to_string_lossy().to_string())
+                .map(|d| if d == "src" { stem.to_string() } else { d })
+                .unwrap_or_else(|| stem.to_string());
+            files.push((module, body));
+        }
+    }
+
+    // A module's kind, from what it is. Checkable rather than decorative: the
+    // `ActuatorDriver` trait lives in `nucleus`, and calling that a "driver"
+    // module would hide the very relationship the graph exists to show.
+    let kind_of = |m: &str| -> &'static str {
+        match m {
+            "nucleus" | "os" => "nucleus",
+            "resolve" | "network_driver" | "camaduci" => "ductile",
+            "transduce" | "transducer" | "fluid" => "transducer",
+            "lexicon" | "bridge" | "edit" => "transpiler",
+            "link" | "registry" | "identify" => "linker",
+            "mcp" | "gc" | "session" => "store",
+            "doubt" | "toll" | "slm" => "meter",
+            "clean" | "induce" | "learner" | "evolution" => "metrology",
+            _ => "module",
+        }
+    };
+
+    let mut edges: BTreeSet<(String, String)> = BTreeSet::new();
+    for (module, body) in &files {
+        for line in body.lines() {
+            let Some(rest) = line.trim().strip_prefix("use crate::") else {
+                continue;
+            };
+            let target = rest
+                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .next()
+                .unwrap_or("");
+            if target.is_empty() || target == module {
+                continue;
+            }
+            edges.insert((module.clone(), target.to_string()));
+        }
+    }
+
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    files.retain(|(m, _)| seen.insert(m.clone()));
+    let nodes: Vec<String> = files
+        .iter()
+        .map(|(m, body)| {
+            // `body`, not `m` -- and that mistake is why the first run reported
+            // 0 public items on every module: the name has no lines to count.
+            let out = body
+                .lines()
+                .filter(|l| {
+                    l.trim_start().starts_with("pub fn ")
+                        || l.trim_start().starts_with("pub struct ")
+                })
+                .count();
+            format!(
+                "{{\"id\":{},\"kind\":{},\"public\":{}}}",
+                json_str(m),
+                json_str(kind_of(m)),
+                out
+            )
+        })
+        .collect();
+    let edges_json: Vec<String> = edges
+        .iter()
+        .map(|(a, b)| format!("{{\"a\":{},\"b\":{}}}", json_str(a), json_str(b)))
+        .collect();
+
+    format!(
+        "{{\"nodes\":[{}],\"edges\":[{}],\"stats\":{{\"modules\":{},\"import_edges\":{},\"scanned\":\"{}\"}},
+         \"method\":\"a regular expression over src/, not a parser. Edges are real use-crate imports; one inside a comment would register.\",
+         \"note\":\"nuclei, ductiles, transducers, transpilers. This is the software, not the game. /api/graph is what the game consumes of it.\"}}",
+        nodes.join(","),
+        edges_json.join(","),
+        files.len(),
+        edges.len(),
+        "src/**.rs"
+    )
+}
 
 fn graph_page_response() -> String {
     // **Built the way `html_response` builds the game page, and that is the fix.**
