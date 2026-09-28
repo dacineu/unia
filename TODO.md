@@ -37,7 +37,27 @@ you and confusing them is how a project spends a year on the wrong one.
    or *reissue* (needs a replayable act, and per §2.3 a closed `Signature` is not
    one). "Unreachable contract exit choosable by all parties." `Linker::promote`
    reports the count rather than choosing, deliberately.
-3. **Who authors the 200-query fixture.** Someone who has not read
+3. **Who authors the 200-query fixture. Specified: `docs/FIXTURE-SPEC.md`.**
+   The author supplies 200 lines of JSON and a signature; the harness, the
+   invocation route and the scorer all exist. **A model in a fresh context is a
+   valid author and an invalid judge** — the project rule in a new place: the
+   third party supplies the questions, `cargo test` supplies the verdict, never
+   the same party for both.
+   **A model is a weaker author than a person, and the spec says so up front:**
+   a model's priors are the matcher's priors, so an LLM-authored set is an
+   **upper bound** on the matcher's quality and a human one is truer. The gap
+   between them is itself a finding. Distribution is fixed and deliberately
+   unequal — 80 plain / 60 paraphrase / 30 ambiguous / 20 out-of-scope / 10
+   adversarial — because the last 30 are what separate a matcher from a lookup
+   table, and what a model author will under-produce. Rows may carry several
+   accepted answers; one answer per row scores the author, not the matcher.
+   **One pass, and the first-run score is the number** — an author who iterates
+   against the harness has become a benchmarker and destroyed the independence
+   the fixture exists for. Per-bucket scoring only: high paraphrase beside low
+   adversarial means confidently wrong, which is worse than slow, and a mean
+   rewards exactly that. **Known weakness in the spec, not a footnote:**
+   `map_intent` scores lexically, so this measures **routing, not comprehension**
+   and the paper must say so. The remaining need is a person, not work.
    `src/bridge/primitive.rs` or `src/meet.rs`. Whoever writes it writes in the
    matcher's vocabulary, so the escalation rate becomes a measurement of their
    assumptions. **This gates the paper's central number.**
