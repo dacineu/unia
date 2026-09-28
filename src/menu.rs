@@ -68,17 +68,28 @@ pub struct Menu {
 }
 
 impl Menu {
-    /// The pet's four acts, from `Care`.
+    /// The pet's four acts, now **in a manifest**.
     ///
-    /// `declared_in` names the enum rather than a file path because the path
-    /// moves and the enum is the thing; the line number is in the doc comment
-    /// above and in `docs/FIXTURE-SPEC.md`.
+    /// `declared_in_manifest` was `false` when this was written and the flag was
+    /// the finding: the creature's acts were `Care` enum variants, so there was
+    /// no artifact to offer a peer, nothing for the market to carry, and every
+    /// fixture authored before it was scored against a fiction.
+    ///
+    /// `src/transduce.rs` **derives** the manifest from the same Rust, so the two
+    /// cannot drift, and this constructor now reads that file rather than
+    /// asserting the flag.
     pub fn creature() -> Self {
+        let ure = crate::transduce::creature_ure(crate::transduce::DEFAULT_CREATURE_ID);
+        let mut acts: Vec<String> = ure.action_primitives.iter().map(|a| a.id.clone()).collect();
+        // Sorted, because a menu is a *set* of capabilities and the order the
+        // manifest happens to list them in is not part of what it declares. The
+        // manifest keeps the enum's order; the menu does not need to.
+        acts.sort();
         Menu {
-            resource_id: "creature".to_string(),
-            acts: vec!["clean".into(), "feed".into(), "play".into(), "sleep".into()],
-            declared_in: "Care enum, src/camaduci.rs".to_string(),
-            declared_in_manifest: false,
+            resource_id: ure.resource_id.clone(),
+            acts,
+            declared_in: "patterns/creature/creature-001.ure, derived from Care".to_string(),
+            declared_in_manifest: true,
         }
     }
 
@@ -140,27 +151,31 @@ mod tests {
 
     use super::*;
 
-    /// **The finding, as a test.** The creature's four acts live in a Rust enum
-    /// and in no manifest, so a menu that is not in a manifest cannot be scored
-    /// against — and the offering axis of the vision has no payload.
+    /// **The finding, closed.** This test asserted that the creature's acts were
+    /// a Rust enum and in no manifest, so `check` refused and no fixture could be
+    /// scored. `src/transduce.rs` **derives** the manifest from that same Rust,
+    /// so the two cannot drift, and this is the first time `check` has returned
+    /// `Ok` on a real menu.
     #[test]
-    fn the_creature_menu_is_not_in_a_manifest_and_that_is_the_finding() {
+    fn the_creature_menu_is_now_in_a_manifest_and_the_gate_stops_refusing() {
         let m = Menu::creature();
         assert_eq!(m.acts, vec!["clean", "feed", "play", "sleep"]);
         assert!(
-            !m.declared_in_manifest,
-            "the pet declares its acts as enum variants, so there is no artefact \\
-             to offer a peer and `receive` has nothing to receive"
+            m.declared_in_manifest,
+            "the acts are a manifest now, so there is an artefact to offer a peer \
+             and `receive` has something to receive"
         );
+        assert!(
+            std::path::Path::new(&format!("patterns/creature/{}.ure", m.resource_id)).exists(),
+            "and the manifest is on disk, not merely derivable"
+        );
+        let rows: Vec<Vec<String>> = m.acts.iter().map(|a| vec![a.clone()]).collect();
         assert_eq!(
-            check(&m, &[vec!["feed".into()]]),
-            Err(Unscoreable::MenuNotInManifest {
-                declared_in: "Care enum, src/camaduci.rs".into()
-            }),
-            "and the gate refuses before it even looks at the answers"
+            check(&m, &rows),
+            Ok(()),
+            "a confirmed menu, in a manifest, with every declared act exercised"
         );
     }
-
     /// **The draft fixture, as a refusal.** Four of its eight acts were fiction.
     /// This is the exact shape of the failure, expressed as the thing that would
     /// have caught it.

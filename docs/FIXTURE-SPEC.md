@@ -225,10 +225,12 @@ axis of the vision has no payload for the creature it was designed around.**
 
 So the order is not "re-run the fixture". It is:
 
-1. **Put the creature's acts in a `.ure`.** Four `action_primitives` on a manifest
-   for the creature, so the capability set has an artefact. Until then
-   `Menu::creature().declared_in_manifest` is `false` and `menu::check` refuses —
-   which is the correct behaviour, not a bug to route around.
+1. ~~**Put the creature's acts in a `.ure`.~~ DONE.** `src/transduce.rs` derives
+   `patterns/creature/creature-001.ure` from `Pet::state_space_manifest()` and the
+   `Care` variants, so the manifest cannot drift from the code,
+   `Menu::creature().declared_in_manifest` is `true`, and `menu::check` returns
+   `Ok` for the first time in the repository. A test regenerates and compares, so
+   a hand-edited file fails.
 2. **Then** `menu::check` against a real manifest, which asserts every `accepts`
    entry is declared and every declared act is exercised.
 3. **Then** a fresh author, under the corrected exclusion list.

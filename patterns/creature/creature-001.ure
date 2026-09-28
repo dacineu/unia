@@ -1,0 +1,99 @@
+{
+  "ure_version": "1.0",
+  "resource_id": "creature-001",
+  "category": "creature",
+  "state_space": {
+    "nuants": {
+      "type": "float",
+      "range": [
+        0.0,
+        24.0
+      ],
+      "unit": "resources",
+      "values": null
+    },
+    "quants": {
+      "type": "float",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": "power",
+      "values": null
+    },
+    "hunger": {
+      "type": "float",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "values": null
+    },
+    "age_ticks": {
+      "type": "int",
+      "range": [
+        0.0,
+        1000000.0
+      ],
+      "unit": null,
+      "values": null
+    },
+    "happiness": {
+      "type": "float",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "values": null
+    },
+    "health": {
+      "type": "float",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "values": null
+    }
+  },
+  "action_primitives": [
+    {
+      "id": "feed",
+      "aliases": [
+        "feed"
+      ],
+      "params": {},
+      "target_state": "hunger falls",
+      "constraints": []
+    },
+    {
+      "id": "play",
+      "aliases": [
+        "play"
+      ],
+      "params": {},
+      "target_state": "happiness rises",
+      "constraints": []
+    },
+    {
+      "id": "clean",
+      "aliases": [
+        "clean"
+      ],
+      "params": {},
+      "target_state": "happiness rises, slowly",
+      "constraints": []
+    },
+    {
+      "id": "sleep",
+      "aliases": [
+        "sleep"
+      ],
+      "params": {},
+      "target_state": "age_ticks advances, only if health holds",
+      "constraints": []
+    }
+  ]
+}
