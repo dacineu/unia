@@ -98,6 +98,41 @@ is a set membership test — but neither is free.
 
 ---
 
+## 3a. What was measured once it was built
+
+Both parts are in `src/clean.rs`, and the convergence claim is no longer an
+argument. Six generations, each authoring its own mattern at an address of its own
+choosing, teaching it a vocabulary nothing else had, and then being culled with
+nothing but failed traces left behind:
+
+| | |
+| --- | --- |
+| generations | 6 |
+| capabilities afterwards | **1** |
+| distinct addresses afterwards | **1** |
+| surviving artifacts naming a culled one | **0** |
+| re-mattering an already-clean corpus | **changes nothing** |
+
+That last row was a bug and then a property. The cleaner first reported a
+re-matter whenever anything was stale, so `changed()` came to mean "something was
+stale" rather than "the corpus differs", and a second pass over a clean corpus
+claimed to have cleaned all eleven of its matterns. Being stale and being
+*replaced* are different facts: a mattern with no evidence may already be
+canonical, and the fix is that a replacement is recorded only when the result
+differs. What is left is a genuine fixed point, which is what makes the cleaner
+safe to run repeatedly.
+
+The address is also a stronger thing than this note claimed. It was written as a
+content address of "the signature and the phrasings still standing", and a test
+appeared to confirm that. It did not: `DuUuid::generate` runs its input through
+`skeleton`, which drops `aliases` as surface, so three vocabularies produced one
+identical address and the test was asserting a coincidence. The architecture is
+right and the note was wrong — identity is the act, the phrasings are the surface,
+and two creatures that learned different words for the same thing *are* the same
+artifact. That is also what makes the run above converge at all.
+
+---
+
 ## 4. The horizons, and what "trim the fat" would mean there
 
 Three horizons, already half-separated by the economy:

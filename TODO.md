@@ -405,9 +405,38 @@ never as anything that determines identity.
     and set the flag but neither counted the loss nor floored the power. Every
     test passed because they all called `go_dormant` directly. One transition,
     one place.
-- [ ] **Self-cleaning, and recycling with no genealogy.** Not started. Both need
-  a spec rather than a guess, and one of them contradicts something the
-  architecture currently relies on — see `docs/dormancy-and-recycling.md`.
+- [x] **Self-cleaning, and recycling with no genealogy.** Done. A mattern nobody
+  has confirmed is re-mattered rather than deleted: the same signature at a new
+  address, with the confidence and observation count discarded. Deleting would
+  delete the capability and the creature would forget; re-mattering keeps the
+  capability and throws the evidence away. The new address is a content address of
+  the signature alone — *not* a hash of the old one — because chaining them would
+  be a genealogy wearing a disguise.
+  All three triggers are read out of the trace log, because a trigger nothing
+  records cannot fire honestly: unknown situations are successful traces no
+  mattern covers, chaotic events are `succeeded: false`, and readiness patterning
+  is a mattern with no confirming trace.
+  **And it made the convergence test runnable.** Six generations, six
+  author-chosen addresses, six private vocabularies, six cullings: 1 capability,
+  1 address, 0 survivors naming a culled one. The project had never been able to
+  produce a convergence at all — twelve hand-written patterns share zero
+  capabilities, and thirty-six generated artifacts share six denominators they
+  were manufactured to share. See `docs/dormancy-and-recycling.md`.
+- [x] **`Sense::Inferred` has an inhabitant.** It was a variant nothing was ever
+  of: distinguishable, documented, unreachable, and the test that noticed read as
+  a claim about the sensors rather than as an admission. A `Sensor` now carries
+  the sequence it dispatches, and an inferred one cannot be evaluated without a
+  `Dispatch` — with none, its `reading` is absent from the state, its predicate
+  is unevaluable, and it is not reporting. The same answer a malformed sensor
+  gets, with no special case in the evaluator. The inhabitant is a readiness
+  sensor: whether the evidence behind this creature's own matterns still stands is
+  a question about the trace log, so reading it is an act against that log, and
+  the long horizon becomes askable as something a creature notices about itself.
+- [ ] **The escalation rate, now that it can be measured.** The measurement has to
+  be per *signature*, not per address — which is the direction the corpus evidence
+  was already pointing, since the generated corpus escalates in reach and in no
+  capability at all. Still needs the 200-query fixture authored by someone who did
+  not build the matcher.
 - [ ] **`nuants` never regenerate, so an empty creature is dead for good.**
   Found by playing rather than by reading: `apply_economy` and
   `decay_economy` were the only writers outside tests and both only

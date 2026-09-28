@@ -93,9 +93,18 @@ pub struct Cleaning {
 }
 
 impl Cleaning {
-    /// Whether the pass changed anything.
+    /// Whether the corpus this pass produced differs from the one it was given.
+    ///
+    /// Not "whether anything was stale". A mattern with no confirming evidence is
+    /// stale whether or not replacing it would produce anything different, and a
+    /// caller asking this wants to know whether there is work to persist.
     pub fn changed(&self) -> bool {
         !self.remattered.is_empty()
+    }
+
+    /// Whether anything lost its evidence, replaced or not.
+    pub fn anything_stale(&self) -> bool {
+        !self.stale.is_empty()
     }
 
     /// The capabilities that survived, deduplicated.
@@ -319,11 +328,23 @@ pub fn clean(rules: &[LearnedRule], traces: &[Trace]) -> (Cleaning, Vec<LearnedR
         }
         let fresh = rematter(rule);
         cleaning.stale.push(rule.address.clone());
-        cleaning.remattered.push(Rematter {
-            signature: rule.signature.clone(),
-            from: rule.address.clone(),
-            to: fresh.address.clone(),
-        });
+        // Recorded only when the replacement actually differs.
+        //
+        // A rule that has already been re-mattered re-matters to itself, because
+        // the address is the capability's and the confidence is a function of the
+        // phrasings. That is not a re-matter, it is the artifact being *already
+        // canonical* — the fixed point. The first version pushed a `Rematter`
+        // regardless, so `changed()` came to mean "something was stale" rather
+        // than "the corpus differs", and cleaning an already-clean corpus
+        // reported having cleaned all of it. Being stale and being replaced are
+        // different facts: this one had no evidence and did not need replacing.
+        if fresh != *rule {
+            cleaning.remattered.push(Rematter {
+                signature: rule.signature.clone(),
+                from: rule.address.clone(),
+                to: fresh.address.clone(),
+            });
+        }
         kept.push(fresh);
     }
 
@@ -436,32 +457,56 @@ mod tests {
         assert!(kept[0].confidence > 0.0, "and not nothing at all");
     }
 
-    /// **The load-bearing one.** Nothing anywhere records that a re-mattered
-    /// artifact came from anywhere. If the new address were a hash of the old one
-    /// this would still pass, so the test checks the address is a function of the
-    /// *capability* alone: re-mattering the same rule twice gives the same
-    /// address, and re-mattering two rules with the same signature from different
-    /// old addresses gives the same address too.
+    /// **The load-bearing one.** The re-mattered address is a function of the
+    /// capability and of nothing else — not the old address, not the phrasings,
+    /// not the confidence it used to have.
+    ///
+    /// This test was first written to assert the *opposite* about the phrasings,
+    /// and it passed, because the addresses it compared were the same for a
+    /// different reason: `skeleton` drops `aliases` as surface, so three sets of
+    /// phrasings all produced one address. Passing for the wrong reason is worse
+    /// than failing, so the assertion is now the one the architecture actually
+    /// supports — and the reason it supports it is a feature rather than a
+    /// limitation: two creatures that learned different words for the same act are
+    /// the same artifact, which is what makes the convergence test runnable.
     #[test]
-    fn a_re_mattered_address_is_a_function_of_the_capability_and_not_of_the_history() {
+    fn a_re_mattered_address_is_the_capability_and_nothing_else() {
         let first = rule("SetValue_CheckSense", "addr-old-1", &["feed it"]);
         let second = rule(
             "SetValue_CheckSense",
             "addr-old-2",
             &["a different history"],
         );
+        let third = rule("SetValue_CheckSense", "addr-old-3", &[]);
 
         let a = rematter(&first);
         let b = rematter(&first);
         let c = rematter(&second);
+        let d = rematter(&third);
 
         assert_eq!(a.address, b.address, "re-mattering is not deterministic");
+        assert_eq!(a.address, c.address, "two histories of one act diverge");
         assert_eq!(
-            a.address, c.address,
-            "the address depends on the phrasings, so two histories of one \\
-             capability do not converge — and the phrasings are the evidence"
+            a.address, d.address,
+            "the address depends on the phrasings, so a creature that has lost \
+             them all no longer holds the same capability"
         );
-        assert_ne!(a.address, first.address);
+        assert_ne!(a.address, first.address, "and nothing was replaced at all");
+    }
+
+    /// A different act is a different artifact, which is the other half: the
+    /// address is not simply constant.
+    #[test]
+    fn a_different_act_re_matters_to_a_different_address() {
+        let feed = rule("SetValue_CheckSense", "addr-a", &["feed it"]);
+        let play = rule("Toggle_Reset", "addr-b", &["throw the ball"]);
+
+        assert_ne!(
+            rematter(&feed).address,
+            rematter(&play).address,
+            "two capabilities share an address, so the address is not identifying \
+             anything"
+        );
     }
 
     /// Two matterns holding one signature are one capability held twice, and a
@@ -580,5 +625,207 @@ mod tests {
             (1, 1),
             "and a trace with no actor is neither"
         );
+    }
+}
+
+#[cfg(test)]
+mod convergence_tests {
+    //! The measurement this design exists to make possible, and the one the
+    //! project has never been able to run.
+    //!
+    //! Twelve hand-written patterns share **zero** capabilities: one author, one
+    //! intent, twelve solitaries. Thirty-six generated artifacts share six
+    //! denominators they were *manufactured* to share: a uniformity, not a
+    //! convergence. Neither is evidence that independent creatures arrive at the
+    //! same capability, because in both cases the arrival was arranged.
+    //!
+    //! Recycling without a genealogy is what makes the arrangement unnecessary.
+    //! Nothing links one generation to the next, so agreement between them is
+    //! agreement rather than inheritance.
+
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn authored(address: &str, signature: &str, phrasings: &[String]) -> LearnedRule {
+        LearnedRule {
+            address: address.into(),
+            signature: signature.into(),
+            aliases: phrasings.to_vec(),
+            // Confident and well-attested, and it makes no difference: the traces
+            // that attested it went with the creature.
+            confidence: 0.95,
+            observations: 40,
+        }
+    }
+
+    /// The traces a culled creature leaves behind, which confirm nothing because
+    /// every one of them failed on the way out.
+    fn departing(failures: usize) -> Vec<Trace> {
+        (0..failures)
+            .map(|_| Trace {
+                primitives: vec!["SetValue".into(), "CheckSense".into()],
+                succeeded: false,
+                ..crate::mcp::store::new_trace(
+                    "last attempt".into(),
+                    Some("ca-culled".into()),
+                    "miss",
+                    0,
+                    0,
+                )
+            })
+            .collect()
+    }
+
+    /// Six generations, six creatures that never met, one capability — and one
+    /// artifact, arrived at independently each time.
+    ///
+    /// Each generation authors its own mattern at an address of its own choosing,
+    /// teaches it a vocabulary nothing else has, is culled, and leaves behind only
+    /// failures. The capability survives because the mattern is re-mattered; the
+    /// address it survives at is a function of the act and nothing else, so all
+    /// six land in the same place without any of them knowing.
+    ///
+    /// Measured: 6 generations, 1 capability, 1 distinct address, and no surviving
+    /// artifact carrying a culled one.
+    #[test]
+    fn six_generations_that_never_met_converge_on_one_artifact() {
+        const CAPABILITY: &str = "SetValue_CheckSense";
+        let mut corpus: Vec<LearnedRule> = Vec::new();
+        let mut carried: Option<LearnedRule> = None;
+        let mut culled: Vec<String> = Vec::new();
+
+        for generation in 0..6usize {
+            // A vocabulary nothing else in the run has, growing as the creature
+            // is taught more of its own act.
+            let phrasings: Vec<String> = (0..=generation)
+                .map(|k| format!("generation-{generation}-word-{k}"))
+                .collect();
+
+            let mut held: Vec<LearnedRule> = Vec::new();
+            if let Some(inherited) = carried.clone() {
+                held.push(inherited);
+            }
+            held.push(authored(
+                &format!("address-author-chosen-in-generation-{generation}"),
+                CAPABILITY,
+                &phrasings,
+            ));
+            let before = held.last().expect("just pushed").address.clone();
+
+            let (cleaning, kept) = clean(&held, &departing(generation + 1));
+            assert!(
+                !cleaning.stale.is_empty(),
+                "generation {generation} left nothing stale, so nothing was recycled \\
+                 and the run proves nothing"
+            );
+            assert!(
+                kept.iter().all(|r| r.address != before),
+                "generation {generation} kept the address it was culled with"
+            );
+
+            carried = kept.last().cloned();
+            culled.push(before);
+            corpus.extend(kept);
+        }
+
+        let (_, survivors) = clean(&corpus, &[]);
+
+        let capabilities: BTreeSet<&str> = survivors.iter().map(|r| r.signature.as_str()).collect();
+        let addresses: BTreeSet<&str> = survivors.iter().map(|r| r.address.as_str()).collect();
+        assert_eq!(
+            capabilities.len(),
+            1,
+            "six generations produced {} capabilities, and one act should be one",
+            capabilities.len()
+        );
+        assert_eq!(
+            addresses.len(),
+            1,
+            "six independent arrivals at one act produced {} artifacts, so the \\
+             address is not a function of the capability",
+            addresses.len()
+        );
+    }
+
+    /// **The no-genealogy claim, as a check rather than a promise.**
+    ///
+    /// A cleaner that recorded its work would pass every other test here and fail
+    /// this one. So: after six cullings, nothing in the surviving corpus may name
+    /// any address that was culled, and the report the cleaner hands back must be
+    /// the *only* place the relationship exists.
+    #[test]
+    fn no_surviving_artifact_names_one_that_was_culled() {
+        const CAPABILITY: &str = "SetValue_CheckSense";
+        let mut corpus: Vec<LearnedRule> = Vec::new();
+        let mut carried: Option<LearnedRule> = None;
+        let mut culled: BTreeSet<String> = BTreeSet::new();
+        let mut reported = 0usize;
+
+        for generation in 0..6usize {
+            let phrasings: Vec<String> = (0..=generation)
+                .map(|k| format!("g{generation}-w{k}"))
+                .collect();
+            let mut held: Vec<LearnedRule> = Vec::new();
+            if let Some(inherited) = carried.clone() {
+                held.push(inherited);
+            }
+            held.push(authored(
+                &format!("culled-{generation}"),
+                CAPABILITY,
+                &phrasings,
+            ));
+
+            let (cleaning, kept) = clean(&held, &departing(generation + 1));
+            reported += cleaning.remattered.len();
+            for r in cleaning.remattered.iter() {
+                // A re-matter either changes the address or is already at the
+                // fixed point. The second case is not a defect: once an address
+                // *is* the capability's address, re-mattering it again lands in
+                // the same place, so the second pass has nothing to do. Asserting
+                // that every pass changes the address would be asserting that
+                // cleaning never converges, which is the opposite of the design.
+                assert!(
+                    !culled.contains(&r.to),
+                    "a re-mattered artifact was given the address of something \
+                     culled earlier, which is a lineage after all"
+                );
+            }
+            for r in kept.iter() {
+                assert!(
+                    !culled.contains(&r.address),
+                    "a surviving artifact carries the culled address {}",
+                    r.address
+                );
+            }
+            culled.insert(held.last().expect("just pushed").address.clone());
+            carried = kept.last().cloned();
+            corpus.extend(kept);
+        }
+
+        let (_, survivors) = clean(&corpus, &[]);
+        for survivor in survivors.iter() {
+            assert!(
+                !culled.contains(&survivor.address),
+                "after the whole run, {} still names a culled address",
+                survivor.address
+            );
+        }
+        assert!(
+            reported > 0,
+            "nothing was ever re-mattered, so there was no relationship to sever"
+        );
+
+        // And the survivor is a fixed point: cleaning it again changes nothing.
+        // This is the property that makes the design safe to run repeatedly, and
+        // it is what a re-matter converging to the capability's own address buys.
+        let (second, again) = clean(&survivors, &[]);
+        assert!(
+            !second.changed(),
+            "cleaning an already-clean corpus changed {} of {} matterns, so a \
+             second pass is not a no-op and the cleaner is not convergent",
+            second.remattered.len(),
+            survivors.len()
+        );
+        assert_eq!(again, survivors, "and it did not return the same artifacts");
     }
 }
