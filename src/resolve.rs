@@ -124,6 +124,22 @@ pub struct HttpResolver {
     /// Bounded on purpose. A consultation that hangs is worse than one that
     /// refuses, because a hang looks like thinking.
     pub timeout: Duration,
+    /// How to say the doubt in the engine's own vocabulary.
+    ///
+    /// **`None` sends unia's own request, and that is what a real endpoint
+    /// rejects.** Probing a live `llama-server` on `127.0.0.1:8899` through this
+    /// transport returned `400` — the Doubt JSON is not a chat request, and the
+    /// engine said so rather than guessing. That refusal is the most useful
+    /// result the probe produced, because it located the missing piece exactly:
+    /// the transport works, the transcription does not exist, and the two fail
+    /// differently — a mistranscribed body is a `400`, a well-transcribed one the
+    /// engine cannot serve is a `5xx`, and telling those apart is what a probe is
+    /// for.
+    ///
+    /// A function rather than a string so the transpiler is a decision a caller
+    /// makes, and so a second engine means a second function rather than an edit
+    /// to this one.
+    pub transcribe: Option<fn(&Doubt, &str) -> String>,
 }
 
 impl HttpResolver {
@@ -142,6 +158,7 @@ impl HttpResolver {
             path: "/consult".to_string(),
             model: model.to_string(),
             timeout: Duration::from_secs(10),
+            transcribe: None,
         })
     }
 
@@ -149,7 +166,10 @@ impl HttpResolver {
     fn exchange(&self, doubt: &Doubt) -> Result<String, String> {
         use std::io::{Read, Write};
 
-        let payload = body(doubt);
+        let payload = match self.transcribe {
+            Some(f) => f(doubt, &self.model),
+            None => body(doubt),
+        };
         let request = format!(
             "POST {path} HTTP/1.1\r\nHost: {authority}\r\nContent-Type: application/json\r\n\
              Content-Length: {len}\r\nConnection: close\r\n\r\n{payload}",
