@@ -59,7 +59,28 @@ you and confusing them is how a project spends a year on the wrong one.
 
 ### C. Contradictions in the tree, right now
 
-11. **A shadow is fan-out and hotswap is a promotion, and both are implemented.**
+11. **~~`Superposition` and `Entangle` were names, not operations.~~ Cleared.**
+   Both fell through to `Pulse` with `arguments: HashMap::new()` and a comment
+   saying the arguments ought to be extracted from the op. They were not, so the
+   operand was dropped and a request to superpose two qubits was an
+   unparameterised pulse computing nothing — the only two names in the vocabulary
+   asserting something the code did not do. `src/quantum/mod.rs` now builds the
+   operand into `arguments`. **The lesson is the one the signless reduction taught
+   twice, and this is the third instance:** a plausible abstraction, closed under
+   composition, describing the wrong thing.
+12. **`MockSlm` reports `tokens_used: 450` and `reasoning_steps: 3` for a
+   `format!` call.** A mock that fabricates the measurements a real inference
+   engine would take, in fields named after those measurements — the same defect
+   as the three `MetaActuatorType` stubs, and worse, because the demos run on it.
+   Either the fields go or the mock stops claiming them.
+13. **There is no inference engine and no route for doubt out.** No tokenizer, no
+   model, no HTTP client. `SemanticSLM::build_prompt` has zero callers and
+   `map_intent_semantic` takes an `F: FnMut` that nothing supplies. The *shape* is
+   right — environment-agnostic, fetch injected, so native and wasm share it —
+   and it is unwired. The work: implement the fetch for both targets, put a
+   boundary where unresolvable doubt crosses it, and record the crossing with its
+   own signature so the model is *itself* a measurable capability.
+14. **A shadow is fan-out and hotswap is a promotion, and both are implemented.**
     `UpaDispatcher::shadow_routes` is commented "for hotswapping" but `route()`
     delivers to primary **and** shadow — for a counter, the act happens twice.
     `Linker::promote` promotes instead. The old behaviour is not removed. The two
