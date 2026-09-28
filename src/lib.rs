@@ -40,6 +40,7 @@ pub mod release_manager;
 pub mod resolve;
 pub mod router;
 pub mod slm;
+pub mod toll;
 pub mod transduce;
 pub mod transducer;
 pub mod weights;
