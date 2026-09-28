@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>unia — architecture graph</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font: 13px/1.5 ui-monospace, monospace; }
+  header { padding: 10px 16px; border-bottom: 1px solid #8883; }
+  h1 { font-size: 14px; margin: 0 0 4px; font-weight: 600; }
+  .sub { opacity: .7; }
+  #legend { padding: 8px 16px; display: flex; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid #8883; }
+  .k { display: flex; align-items: center; gap: 6px; }
+  .sw { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  svg { display: block; width: 100vw; height: calc(100vh - 110px); }
+  text { font: 11px ui-monospace, monospace; }
+  .edge { stroke: #8886; }
+  .n { cursor: pointer; }
+  .n:hover circle { stroke: #fff; stroke-width: 2; }
+</style>
+</head>
+<body>
+<header>
+  <h1>unia LPMM — architecture</h1>
+  <div class="sub" id="stats">loading…</div>
+</header>
+<div id="legend">
+  <div class="k"><span class="sw" style="background:#4ea1ff"></span> capability (declared act)</div>
+  <div class="k"><span class="sw" style="background:#3ddc84"></span> signature (observed in a trace)</div>
+  <div class="k"><span class="sw" style="background:#ff6b6b"></span> champion (promoted by a witness)</div>
+  <div class="k">— serves · ⋯ witnessed by</div>
+</div>
+<svg id="s"></svg>
+<script>
+// A force layout, written out rather than pulled in. The graph is small enough
+// that a library would be a dependency to maintain for a picture.
+const K = { repel: 5200, spring: 0.02, damp: 0.86, centre: 0.012 };
+let N = [], E = [], sim;
+
+async function load() {
+  const r = await fetch('/api/graph');
+  const g = await r.json();
+  N = g.nodes; E = g.edges;
+  document.getElementById('stats').textContent =
+    `${g.nodes.length} nodes · ${g.edges.length} edges · ` +
+    `${g.stats.traces} traces · ${g.stats.champions} champions · ` +
+    `${g.stats.manifests} manifests · source of truth: the store, not this page`;
+  const svg = document.getElementById('s');
+  N.forEach((n, i) => { n.x = 300 + (i % 7) * 70; n.y = 160 + Math.floor(i / 7) * 55; n.vx = 0; n.vy = 0; });
+  draw(); sim = setInterval(tick, 16);
+}
+
+function tick() {
+  for (let i = 0; i < N.length; i++) for (let j = i + 1; j < N.length; j++) {
+    const a = N[i], b = N[j];
+    let dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy || 1;
+    if (d2 > 250000) continue;
+    const f = K.repel / d2;
+    const d = Math.sqrt(d2);
+    a.vx -= (dx / d) * f; a.vy -= (dy / d) * f;
+    b.vx += (dx / d) * f; b.vy += (dy / d) * f;
+  }
+  for (const e of E) {
+    const a = e.a, b = e.b; if (!a || !b) continue;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    a.vx += dx * K.spring; a.vy += dy * K.spring;
+    b.vx -= dx * K.spring; b.vy -= dy * K.spring;
+  }
+  for (const n of N) {
+    n.vx += (400 - n.x) * K.centre; n.vy += (300 - n.y) * K.centre;
+    n.vx *= K.damp; n.vy *= K.damp;
+    n.x += n.vx; n.y += n.vy;
+  }
+  draw();
+}
+
+function draw() {
+  const s = document.getElementById('s');
+  const byId = {}; N.forEach(n => byId[n.id] = n);
+  let out = '';
+  for (const e of E) {
+    const a = byId[e.a], b = byId[e.b]; if (!a || !b) continue;
+    const dashed = e.kind === 'witnessed' ? ' stroke-dasharray="2 4"' : '';
+    out += `<line class="edge" x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}"${dashed}/>`;
+  }
+  const COL = { capability: '#4ea1ff', signature: '#3ddc84', champion: '#ff6b6b' };
+  for (const n of N) {
+    const r = 4 + Math.min(6, n.weight / 4);
+    out += `<g class="n"><circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${r}" fill="${COL[n.kind]}"><title>${n.id} (${n.kind}, weight ${n.weight})</title></circle>` +
+      `<text x="${(n.x + r + 3).toFixed(1)}" y="${(n.y + 4).toFixed(1)}">${n.id.length > 26 ? n.id.slice(0, 25) + '…' : n.id}</text></g>`;
+  }
+  s.innerHTML = out;
+}
+load();
+</script>
+</body>
+</html>

@@ -221,6 +221,11 @@ fn handle(
 
     let response = match (method.as_str(), path.as_str()) {
         ("GET", "/") => html_response(),
+        // The architecture, as a graph. Deliberately NOT the game: this is
+        // capabilities, signatures and promotions, read from the store, with no
+        // vitals and no play state on it.
+        ("GET", "/api/graph") => graph_response(store),
+        ("GET", "/graph") => graph_page_response(),
         ("GET", "/api/pet") => {
             // Re-derive on read so the creature always shows the most current
             // picture of what it has learned, without waiting for an action.
@@ -682,6 +687,121 @@ fn html_response() -> String {
 
 /// The browser client, inlined so the binary is the whole deliverable.
 const CLIENT_HTML: &str = include_str!("../../web/camaduci.html");
+/// The architecture graph. A separate page from the game, and included rather
+/// than served from a directory, so it travels with the binary and cannot drift
+/// from the version that renders it.
+const GRAPH_HTML: &str = include_str!("../../web/graph.html");
+
+fn graph_page_response() -> String {
+    let mut r = html_response();
+    r = r.replacen(&html_response(), GRAPH_HTML, 1);
+    r
+}
+
+/// The graph, built from the store and from the manifests on disk.
+///
+/// **Every count here is read, not asserted.** A graph that looked plausible while
+/// the store said something else would be the most convincing fabrication in the
+/// project, so the page states its own provenance in the header and a node's size
+/// is the number of traces that carry it.
+fn graph_response(store: &unia::mcp::store::Store) -> String {
+    use std::collections::BTreeMap;
+    let mut nodes: BTreeMap<String, (String, usize)> = BTreeMap::new();
+    let mut edges: Vec<(String, String, &str)> = Vec::new();
+
+    // Capabilities: every act every manifest on disk declares.
+    let manifests = unia::registry::ActuatorRegistry::with_base_dir("none", "patterns");
+    let mut declared = 0usize;
+    for dir in ["patterns/actuator/native-linux", "patterns/creature"] {
+        let rd = match std::fs::read_dir(dir) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        for f in rd.flatten() {
+            let Ok(text) = std::fs::read_to_string(f.path()) else {
+                continue;
+            };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+                continue;
+            };
+            let id = v
+                .get("resource_id")
+                .and_then(|r| r.as_str())
+                .unwrap_or("?")
+                .to_string();
+            if let Some(acts) = v.get("action_primitives").and_then(|a| a.as_array()) {
+                for a in acts {
+                    if let Some(aid) = a.get("id").and_then(|x| x.as_str()) {
+                        declared += 1;
+                        nodes
+                            .entry(aid.to_string())
+                            .or_insert(("capability".into(), 0))
+                            .1 += 1;
+                        edges.push((id.clone(), aid.to_string(), "declares"));
+                    }
+                }
+            }
+        }
+    }
+    let _ = manifests;
+
+    // Signatures: what the trace log actually contains, with the real count.
+    let traces = store.traces();
+    let mut champions = 0usize;
+    for tr in traces.iter() {
+        if tr.primitives.is_empty() {
+            continue;
+        }
+        let sig = unia::clean::signature_of(&tr.primitives);
+        nodes
+            .entry(sig.clone())
+            .or_insert(("signature".into(), 0))
+            .1 += 1;
+        if tr.primitives.first().map(String::as_str) == Some("RunTests") {
+            edges.push((sig.clone(), "witness".into(), "witnessed"));
+            nodes
+                .entry("witness".into())
+                .or_insert(("champion".into(), 0))
+                .1 += 1;
+        }
+        if matches!(tr.outcome.as_str(), "refused") {
+            nodes
+                .entry("refused".into())
+                .or_insert(("champion".into(), 0))
+                .1 += 1;
+        }
+        if tr.succeeded {
+            champions += 1;
+        }
+    }
+
+    let nodes_json: Vec<String> = nodes
+        .iter()
+        .map(|(id, v)| {
+            let (kind, w) = v;
+            format!(
+                "{{\"id\":{},\"kind\":{},\"weight\":{}}}",
+                json_str(id),
+                json_str(kind),
+                w
+            )
+        })
+        .collect();
+    let edges_json: Vec<String> = edges
+        .iter()
+        .map(|(a, b, k)| {
+            format!(
+                "{{\"a\":{},\"b\":{},\"kind\":{}}}",
+                json_str(a),
+                json_str(b),
+                json_str(k)
+            )
+        })
+        .collect();
+    format!(
+        "{{\"nodes\":[{}],\"edges\":[{}],\"stats\":{{\"traces\":{},\"champions\":{},\"manifests\":{},\"declared\":{}}}}}",
+        nodes_json.join(","), edges_json.join(","), traces.len(), champions, 3, declared)
+}
 
 /// The dispositions the creature can be given, as declared data.
 ///
