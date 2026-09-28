@@ -7,6 +7,14 @@ not intentions.
 
 ## Read this first
 
+**Work handed to another model:** [`docs/DELEGATION-PLAN.md`](./DELEGATION-PLAN.md)
+— four delegable tasks, each with its read-set, its excluded files, its
+deliverable, what verifies it, and the failure mode to name. Task 1 (the fixture)
+is the one I am structurally disqualified from; Task 3 (adversarial review of my
+own work) is the one I am worst placed to run.
+
+
+
 `docs/HANDOVER.md` — the vision in one place, what is built and verified, the
 failures that are the most useful thing in the log, and the six-phase plan with an
 exit per phase. Everything below is detail; that is the map.

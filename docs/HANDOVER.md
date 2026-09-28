@@ -306,6 +306,30 @@ Each has already been mistaken once here.
 
 ---
 
+## 6a. Delegation
+
+`docs/DELEGATION-PLAN.md` — four tasks handed to another reasoning model: author
+the fixture, propose the transposition counting method, adversarially review this
+session's diff, and propose what `Trace::succeeded` should be witnessed by. Each
+with its read-set, its exclusions, and what verifies it.
+
+**The load-bearing idea: the read-set is the only lever that creates
+independence.** A model's context is writable in a way a person's is not, so
+delegation is the construction of a specific audited context — and a deliverable's
+credibility comes from what the context was *excluded* from. Which is why the
+briefs are **paths to a document and nothing else**: if I describe the matcher in
+my own words, I have contaminated the model through the brief.
+
+**A stronger model is the right call for the open-ended tasks and the wrong call
+for anything with a verdict.** Every one of the fourteen failures in §3 was a
+fluent, internally consistent, wrong answer, and three of them *closed as
+algebra*. So all four tasks are authoring or method, and **not one is a
+judgement** — a delegated judgement is a score nobody computed, which is the
+`MockSlm` defect with a reasoning model attached and strictly harder to spot,
+because the fabricated number would be plausible.
+
+---
+
 ## 7. The standing rule, and the one that is missing
 
 **The rule that has held:** assert what is true and say so. Magic thresholds,
