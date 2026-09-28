@@ -285,6 +285,7 @@ fn trace_for(pet: &Pet, care: Care, primitives: &[String], succeeded: bool, now:
         intent: format!("{} the ca maduci", care.label()),
         resource_id: Some(pet.id.clone()),
         outcome: "hit".to_string(),
+        tier: "local".to_string(),
         tokens_in: 0,
         tokens_out: 0,
         primitives: primitives.to_vec(),

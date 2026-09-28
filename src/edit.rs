@@ -130,6 +130,7 @@ impl SourceAct {
             tokens_out: 0,
             primitives: self.sequence(),
             actor: Some(Actor::Caller),
+            tier: crate::mcp::store::TIER_LOCAL.to_string(),
             succeeded: self.confirms() || !self.is_witness(),
         }
     }

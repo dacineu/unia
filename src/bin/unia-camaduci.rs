@@ -536,6 +536,7 @@ fn trace_for(
         intent: intent.unwrap_or_else(|| format!("{} the ca maduci", care.label())),
         resource_id: Some(pet_id.to_string()),
         outcome: "hit".to_string(),
+        tier: "local".to_string(),
         tokens_in: 0,
         tokens_out: 0,
         primitives: primitives.to_vec(),

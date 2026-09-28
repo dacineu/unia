@@ -178,6 +178,23 @@ pub struct Trace {
     /// what an interaction looks like before any pattern exists to serve it.
     #[serde(default = "default_miss")]
     pub outcome: String,
+    /// Which tier served this act, if it was served.
+    ///
+    /// **Absent means `local`, and that default is the honest one:** most acts
+    /// are local, and an absent tier on an old log line should read as the
+    /// common case rather than as a parse failure.
+    ///
+    /// The field exists because the *cost of caring* was invisible. A trace
+    /// recorded **that** an act happened and not **which tier** served it, so
+    /// escalating outward — reaching for the network when the local machine
+    /// could not — left nothing on the log to attribute the tokens to. With
+    /// this, a network-served act has the same signature and the same witness as
+    /// a local one, which is the property that makes the two tiers one system
+    /// rather than two: a learner that cannot tell them apart will route to
+    /// whichever is cheaper, and that is the sharing policy becoming a
+    /// consequence of the economy instead of a rule written beside it.
+    #[serde(default = "default_local")]
+    pub tier: String,
     /// Tokens billed for the request. Zero when unrecorded, which is correct
     /// rather than unknown: an artifact served from tier 1 or 2 costs none, and
     /// that is the number escalation rate is computed from.
@@ -849,6 +866,41 @@ impl Store {
 }
 
 /// A trace with timestamps filled in, for callers that should not have to.
+/// Served by the local machine.
+pub const OUTCOME_HIT: &str = "hit";
+/// Escalated, and still answered. **Not a failure.**
+pub const OUTCOME_MISS: &str = "miss";
+/// Escalated, and refused. **The third value, and the one the field could not
+/// previously express** -- so a refusal and an escalation were entangled, and
+/// the server rejected anything else.
+///
+/// Added because the escalation cascade has to be able to fail *honestly*. With
+/// only `hit` and `miss`, a network that answered and a network that refused
+/// were both "miss", and the difference -- which is the difference between
+/// costing tokens and being an error -- was unrepresentable.
+pub const OUTCOME_REFUSED: &str = "refused";
+
+/// The default for an absent tier.
+///
+/// **A bare `#[serde(default)]` would have given `""`,** which is why this
+/// function exists and why there is a test for it: the field's own doc comment
+/// said an absent tier reads as `local`, and the first implementation returned an
+/// empty string. That is the same defect as `clear_champion` removing a raw key
+/// while its writer inserted a normalised one -- a documented contract that the
+/// code does not keep -- and it is the second time this repository has produced
+/// it. The test is the only reason this was caught before it shipped.
+fn default_local() -> String {
+    TIER_LOCAL.to_string()
+}
+
+/// Served by the local machine, or by the network when it could not.
+pub const TIER_LOCAL: &str = "local";
+pub const TIER_NETWORK: &str = "network";
+
+/// Every outcome the trace format accepts, and every tier.
+pub const OUTCOMES: [&str; 3] = [OUTCOME_HIT, OUTCOME_MISS, OUTCOME_REFUSED];
+pub const TIERS: [&str; 2] = [TIER_LOCAL, TIER_NETWORK];
+
 pub fn new_trace(
     intent: String,
     resource_id: Option<String>,
@@ -863,6 +915,9 @@ pub fn new_trace(
         outcome: outcome.to_string(),
         tokens_in: tin,
         tokens_out: tout,
+        // An act is local unless something says otherwise. Set by the cascade
+        // when it escalates; defaulted here so the common case needs no code.
+        tier: TIER_LOCAL.to_string(),
         // Callers that know the sequence set this; a trace with no sequence
         // cannot be inducted from.
         primitives: Vec::new(),
@@ -1662,5 +1717,89 @@ mod structural_retrieval_tests {
             "and the prose path, which is the one still in use, cannot reach it \
              either — so this is a limit of the structural check, not a fix for it"
         );
+    }
+}
+
+#[cfg(test)]
+mod outcome_tests {
+    //! The trace format is the instrument the learning loop reads, so a value it
+    //! cannot express is a measurement it cannot make. These are the three cases
+    //! that were entangled before `OUTCOME_REFUSED` and `tier` existed.
+
+    use super::*;
+
+    fn trace_with(outcome: &str, tier: &str) -> Trace {
+        let mut t = new_trace("q".into(), None, outcome, 0, 0);
+        t.tier = tier.to_string();
+        t
+    }
+
+    /// **Served locally, escalated, and refused are three different facts.**
+    ///
+    /// Before, a failure and an escalation were both `"miss"`, which is a
+    /// category the field's own documentation says does not exist: a `miss` is
+    /// an escalation that *still got an answer*. So a network that answered and
+    /// a network that refused were the same record, and the difference between
+    /// *costing tokens* and *being an error* was unrepresentable.
+    #[test]
+    fn the_three_outcomes_are_three_distinguishable_facts() {
+        let hit = trace_with(OUTCOME_HIT, TIER_LOCAL);
+        let miss = trace_with(OUTCOME_MISS, TIER_NETWORK);
+        let refused = trace_with(OUTCOME_REFUSED, TIER_NETWORK);
+
+        assert_eq!(hit.outcome, OUTCOME_HIT);
+        assert_eq!(miss.outcome, OUTCOME_MISS);
+        assert_eq!(refused.outcome, OUTCOME_REFUSED);
+        // The two that used to be one.
+        assert_ne!(
+            miss.outcome, refused.outcome,
+            "an escalation that answered and one that refused are the same \\
+             record, so the cost of escalating is not attributable"
+        );
+        // And the one the server used to reject outright, which is why a refusal
+        // could not be recorded at all.
+        assert!(OUTCOMES.contains(&refused.outcome.as_str()));
+        assert_eq!(OUTCOMES.len(), 3);
+    }
+
+    /// **The tier is what makes a network-served act attributable.** Two acts
+    /// with the same signature and the same witness are one capability — which
+    /// is the property that makes local and network one system rather than two —
+    /// and the tier is the only thing that says which one paid.
+    #[test]
+    fn the_tier_records_which_side_of_the_fence_served_the_act() {
+        let local = trace_with(OUTCOME_HIT, TIER_LOCAL);
+        let remote = trace_with(OUTCOME_MISS, TIER_NETWORK);
+        assert_ne!(local.tier, remote.tier, "the cost of caring was invisible");
+        assert!(TIERS.contains(&local.tier.as_str()));
+    }
+
+    /// **An absent tier is `local`, not a parse failure.** Most acts are local,
+    /// and a log line written before the field existed should read as the common
+    /// case rather than as corruption — the same reasoning the outcome default
+    /// already used, and it is why the default is on the field and not applied
+    /// at each read site.
+    #[test]
+    fn an_old_log_line_without_a_tier_reads_as_local() {
+        let line = r#"{"ts":1,"intent":"q","outcome":"hit"}"#;
+        let t: Trace = serde_json::from_str(line).expect("an old line still loads");
+        assert_eq!(t.tier, TIER_LOCAL, "absent means the common case");
+    }
+
+    /// And the pairing that matters: `hit` is local, `miss`/`refused` are the
+    /// network. A `hit` served by the network would mean the escalation
+    /// succeeded, and recording that as local is the one mislabelling that would
+    /// make the sharing policy unmeasurable.
+    #[test]
+    fn the_outcome_and_the_tier_have_to_agree_to_mean_anything() {
+        assert!(TIERS.contains(&trace_with(OUTCOME_HIT, TIER_LOCAL).tier.as_str()));
+        // A `hit` on the network is coherent -- the local side tried and the
+        // network answered -- but then the outcome is the one that carries the
+        // escalation, and the tier only says who served it. The format permits
+        // both readings; what it must never do is let them disagree silently,
+        // which is why both are explicit fields rather than one derived one.
+        let net_hit = trace_with(OUTCOME_HIT, TIER_NETWORK);
+        assert_eq!(net_hit.tier, TIER_NETWORK);
+        assert_eq!(net_hit.outcome, OUTCOME_HIT);
     }
 }

@@ -380,7 +380,17 @@ mod tests {
             ..crate::mcp::store::new_trace(
                 "do the thing".into(),
                 Some("ca-x".into()),
-                if succeeded { "hit" } else { "miss" },
+                // **Not `"miss"`.** This helper used to label a failure as an
+                // escalation, and every test built on it was reasoning about a
+                // category the format does not have: per the field's own
+                // documentation a `miss` is an escalation that *still got an
+                // answer*. A fixture that conflates the two is a fixture that
+                // disables the distinction under test.
+                if succeeded {
+                    crate::mcp::store::OUTCOME_HIT
+                } else {
+                    crate::mcp::store::OUTCOME_REFUSED
+                },
                 0,
                 0,
             )

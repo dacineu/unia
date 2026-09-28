@@ -161,6 +161,7 @@ impl Consultation {
                     .unwrap_or_else(|| "refused".to_string()),
             ],
             actor: Some(Actor::Caller),
+            tier: crate::mcp::store::TIER_LOCAL.to_string(),
             // A consultation is a *claim*, never a witness. `succeeded` is the
             // flag the self-cleaning pass reads as a chaotic event and the flag
             // the escalation count credits, so an answer is deliberately not

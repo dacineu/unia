@@ -132,7 +132,7 @@ impl UniaServer {
         &self,
         Parameters(args): Parameters<RecordArgs>,
     ) -> Result<CallToolResult, McpError> {
-        if !matches!(args.outcome.as_str(), "hit" | "miss") {
+        if !OUTCOMES.contains(&args.outcome.as_str()) {
             return Err(McpError::invalid_params(
                 "outcome must be either \"hit\" or \"miss\"",
                 None,
