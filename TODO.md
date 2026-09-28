@@ -531,6 +531,42 @@ never as anything that determines identity.
   about the vocabulary rather than a description of the running system. Wiring it in
   would be speculative, so it is not wired. The real binding question is therefore
   *which primitives have a registered driver*, and that is not measured yet.
+- [x] **The shape experiment.** Ran it: one `SynthesisRequest` from a creature's
+  own state, one `synthesize_nucleus` call, and an answer. **A shape is real and a
+  request synthesises one** — four slot bindings from a request, and an unfulfilled
+  slot refuses the *whole* shape rather than returning a partial one, which is right.
+  But **the request does not decide the shape.** Three defects, all pinned as tests
+  in `fluid::factory::shape_tests` so fixing one is a deliberate visible diff:
+  - **The market was unreachable, and is now not.** `discover_resources` read
+    `if !query.tags.is_empty() { return false; }` with a comment saying the real
+    check was unwritten — which made the *unfinished* branch the *rejecting* one.
+    Both production callers (`FluidFactory` and `OrchestratorMeta`) always send a
+    tag, so both always got zero results, and the only test that passed was the one
+    that sent no tags. Measured before: 3 offerings on the mesh, 3 found untagged,
+    **0** found tagged. Fixed and regression-tested.
+  - **A champion short-circuits the request entirely.** `resolve_best_actuator`
+    checks `get_champion` first and returns, so scope, quality floor and required
+    capabilities are compiled into a query that is never built. A champion is
+    *imposed* — one actuator declared the answer for a capability — and it is the
+    only path where choice is exercised at all.
+  - **Narrowing the scope widens the choice.** `allowed_scopes` is
+    `[preferred_scope, Global]`, so a `Circle` request sees `Circle ∪ Global` and a
+    `Global` request sees only `Global`. Measured: with `reasoning` offered at
+    `Circle` only, a **`Global` request is refused outright** and a `Circle` request
+    is served. Backwards from every word involved, and it compounds with the quality
+    floor — a `Global` request at `min_qor 0.5` refuses a qor-0.9 offering it would
+    otherwise have taken, because that offering is at `Circle`.
+  - **Quality is a gate, never a preference.** Nothing ranks what passes the floor:
+    `discover_resources` returns a `Vec` in `HashMap` order and the caller takes the
+    first. Measured: a qor-0.2 offering beat a qor-0.9 one. The winner is stable
+    within one market and differs between two, because `HashMap` seeds its hasher
+    per instance — which is worse than nondeterminism, because it looks principled.
+- [ ] **So "a different shape" is mechanical but not yet chosen.** The four-act
+  blocker stands, and the route to it is now identified rather than guessed: a
+  creature's capability would be a *shape* — four slot bindings — rather than a set
+  of acts, and the first thing to build is a ranking for the market, because without
+  one the market is either imposed (champion) or arbitrary (hash order) and neither
+  is the "choosable not imposable" the design is for.
 - [ ] **The 200-query fixture.** Unchanged and still the blocker for the paper.
   It has to be authored by someone who has not read the matcher, because whoever
   writes the queries will write them in the vocabulary the matcher was built to

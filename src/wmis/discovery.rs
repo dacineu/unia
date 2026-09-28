@@ -44,9 +44,25 @@ impl WmisDiscoveryProvider {
                 if res.quality.qor < query.min_qor {
                     return false;
                 }
-                // Tags check (simplified)
-                if !query.tags.is_empty() {
-                    // In a real system, we'd check tags here
+                // **Tag check. This rejected every tagged query.**
+                //
+                // It read `if !query.tags.is_empty() { return false; }` with a
+                // comment saying the real check had not been written yet, which
+                // made the *unfinished* branch the *rejecting* one. Both production
+                // callers — `FluidFactory::resolve_best_actuator` and
+                // `OrchestratorMeta` — always send a tag, so both always got zero
+                // results. The mesh was not merely unwired; it was unreachable, and
+                // the only test that passed was the one that happened to send no
+                // tags at all.
+                //
+                // Measured before the fix: three resources on the mesh, three
+                // found with no tags, **zero** found with a tag. After: a resource
+                // matches when it declares every requested capability.
+                if !query
+                    .tags
+                    .iter()
+                    .all(|tag| res.capabilities.iter().any(|c| c == tag))
+                {
                     return false;
                 }
                 true
