@@ -86,10 +86,33 @@ impl ActuatorNucleus {
     }
 
     fn convert_upa_to_primitive(&self, upa: &UpaPacket, target_id: &str) -> PrimitivePacket {
+        // `Superposition` and `Entangle` used to fall through to `Pulse` here,
+        // with `arguments: HashMap::new()` and a comment saying the arguments
+        // ought to be extracted from the op. They were not, so the `target` was
+        // dropped and a request to superpose two qubits was an unparameterised
+        // pulse that computed nothing. The two names were the only ones in the
+        // vocabulary asserting something the code did not do.
+        //
+        // They are now what they say they are, and `arguments` carries the
+        // operand. `Pulse` remains the verb -- superposition *is* a pulse in the
+        // sixteen-primitive vocabulary -- but the operand is no longer discarded.
+        let mut operands: Option<std::collections::HashMap<String, String>> = None;
         let primitive = match &upa.op {
             UpaOp::Suma { .. } | UpaOp::Product { .. } => UniversalPrimitive::SetValue,
             UpaOp::Transform { .. } => UniversalPrimitive::Transform,
-            UpaOp::Superposition { .. } | UpaOp::Entangle { .. } => UniversalPrimitive::Pulse,
+            UpaOp::Superposition { target } => {
+                let mut args = std::collections::HashMap::new();
+                args.insert("target".to_string(), target.clone());
+                operands = Some(args);
+                UniversalPrimitive::Pulse
+            }
+            UpaOp::Entangle { target_1, target_2 } => {
+                let mut args = std::collections::HashMap::new();
+                args.insert("target_1".to_string(), target_1.clone());
+                args.insert("target_2".to_string(), target_2.clone());
+                operands = Some(args);
+                UniversalPrimitive::Pulse
+            }
         };
 
         PrimitivePacket {
@@ -101,7 +124,7 @@ impl ActuatorNucleus {
             payload: crate::bridge::primitive::PacketPayload {
                 primitive,
                 resource_id: target_id.to_string(),
-                arguments: HashMap::new(), // In a real system, extract from UpaOp
+                arguments: operands.unwrap_or_default(),
             },
             context: crate::bridge::primitive::PacketContext {
                 expected_state: None,

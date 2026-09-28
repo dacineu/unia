@@ -30,6 +30,7 @@ pub mod os;
 pub mod pipeline;
 pub mod primitives;
 pub mod profiler;
+pub mod quantum;
 pub mod registry;
 pub mod release_manager;
 pub mod router;
