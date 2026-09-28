@@ -27,7 +27,7 @@
 //! says `refused`, which is honest. It does not return a truncated string as if
 //! it were an answer.
 
-use crate::doubt::{Doubt, Resolver};
+use crate::doubt::{Answer, Doubt, Resolver};
 use serde::Serialize;
 use std::time::Duration;
 
@@ -112,7 +112,8 @@ fn parse_answer(raw: &str) -> Option<String> {
     Some(trimmed.to_string())
 }
 
-/// Reads a `chat.completion` reply: the text, and the engine's own measurement.
+/// Reads a `chat.completion` reply into an [`Answer`]: the text, and the
+/// engine's own measurement.
 ///
 /// **The measurement is the point.** An OpenAI-shaped reply carries
 /// `usage.prompt_tokens`, `usage.completion_tokens` and often
@@ -126,7 +127,7 @@ fn parse_answer(raw: &str) -> Option<String> {
 /// model that spends its whole budget thinking and returns an empty `content`
 /// is the case that made this necessary: it used 8 tokens, produced no text, and
 /// a charge based on the text length would have been zero.
-pub fn parse_chat_completion(raw: &str) -> Result<(String, crate::slm::Measured), String> {
+pub fn parse_chat_completion(raw: &str) -> Result<Answer, String> {
     let v: serde_json::Value =
         serde_json::from_str(raw).map_err(|e| format!("the reply was not JSON: {e}"))?;
     let content = v
@@ -156,13 +157,13 @@ pub fn parse_chat_completion(raw: &str) -> Result<(String, crate::slm::Measured)
         .and_then(|r| r.as_str())
         .filter(|r| *r == "stop")
         .map(|_| 1);
-    Ok((
-        content,
-        crate::slm::Measured {
+    Ok(Answer {
+        text: content,
+        measured: Some(crate::slm::Measured {
             tokens: tokens as usize,
             engine_steps,
-        },
-    ))
+        }),
+    })
 }
 
 /// **Not yet reachable from `Resolver::ask`, and that is the finding.**
@@ -185,6 +186,15 @@ pub struct HttpResolver {
     pub authority: String,
     /// The request path, with a leading slash.
     pub path: String,
+    /// How to read the reply, in the engine's own shape.
+    ///
+    /// **The other end of `transcribe`, and it exists because the first probe
+    /// showed a seam with one end.** A live OpenAI-compatible service accepted the
+    /// transposed request and the reply came back -- and unia refused it, because
+    /// `parse_answer` speaks unia's own `/consult` vocabulary and a
+    /// `chat.completion` has no top-level `answer` key. So the request could be
+    /// said in the engine's words and the answer could not be read back.
+    pub interpret: Option<fn(&str) -> Result<Answer, String>>,
     pub model: String,
     /// Bounded on purpose. A consultation that hangs is worse than one that
     /// refuses, because a hang looks like thinking.
@@ -224,6 +234,7 @@ impl HttpResolver {
             model: model.to_string(),
             timeout: Duration::from_secs(10),
             transcribe: None,
+            interpret: None,
         })
     }
 
@@ -297,7 +308,7 @@ impl HttpResolver {
             }
             None => rest,
         };
-        parse_answer(body).ok_or_else(|| "the reply carried no answer".to_string())
+        Ok(body.to_string())
     }
 }
 
@@ -306,8 +317,21 @@ impl Resolver for HttpResolver {
         &self.model
     }
 
-    fn ask(&self, doubt: &Doubt) -> Result<String, String> {
-        self.exchange(doubt)
+    /// Asks, and returns the engine's **own** measurement when it reported one.
+    ///
+    /// Two shapes of answer, and telling them apart is the point: unia's own
+    /// endpoint returns a bare sentence and nothing is claimed about its cost,
+    /// while an OpenAI-shaped one returns `usage` and the measurement travels
+    /// through to the toll. The first is unmeasured and therefore free *and*
+    /// unchargeable; the second is priced.
+    fn ask(&self, doubt: &Doubt) -> Result<Answer, String> {
+        let body = self.exchange(doubt)?;
+        match self.interpret {
+            Some(f) => f(&body),
+            None => parse_answer(&body)
+                .map(Answer::unmeasured)
+                .ok_or_else(|| "the reply carried no answer".to_string()),
+        }
     }
 }
 
@@ -328,12 +352,10 @@ impl Resolver for WebResolver {
         &self.model
     }
 
-    fn ask(&self, doubt: &Doubt) -> Result<String, String> {
-        // The caller supplies the future's completion, because `ask` is
-        // synchronous by design and a wasm fetch is not. `web_exchange` returns
-        // a `JsFuture`; the synchronous trait is served by the caller driving it,
-        // which is why this is not yet a complete implementation and the TODO
-        // says the transport is missing for wasm.
+    fn ask(&self, doubt: &Doubt) -> Result<Answer, String> {
+        // A wasm `fetch` is not synchronous and this trait is. Returning an error
+        // that says exactly that is the honest state; pretending otherwise would
+        // be a transport that reports success and delivers nothing.
         let _ = (doubt, &self.endpoint);
         Err("the wasm transport needs an async boundary this trait does not have".into())
     }
@@ -422,7 +444,11 @@ mod tests {
         let ep = endpoint("HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ntend");
         let r = HttpResolver::new(&ep.authority, "test-engine").expect("a host:port");
         let answer = r.ask(&doubt()).expect("the endpoint answered");
-        assert_eq!(answer, "tend");
+        assert_eq!(answer.text, "tend");
+        assert_eq!(
+            answer.measured, None,
+            "unia's own endpoint reports no cost, so nothing is claimed about it              and nothing is chargeable -- which is the honest reading, not a zero"
+        );
 
         let sent = ep
             .seen

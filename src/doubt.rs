@@ -102,6 +102,39 @@ impl Doubt {
     }
 }
 
+/// What an engine said, and what it says it cost.
+///
+/// **This is the type `Resolver::ask` was missing.** The trait returned
+/// `Result<String, String>`, written for unia's own `/consult` endpoint, which
+/// returns a bare sentence -- and every other engine returns a *measurement*
+/// alongside: `usage.prompt_tokens`, `usage.completion_tokens`, and often
+/// `usage.completion_tokens_details.reasoning_tokens`. That block had nowhere to
+/// go, so it was discarded at the trait boundary and the toll had nothing to
+/// price. Found by probing a live OpenAI-compatible service: the request could be
+/// expressed in the engine's words and the answer could not be read back, because
+/// a `chat.completion` has no top-level `answer` key.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Answer {
+    /// What the engine said.
+    pub text: String,
+    /// What it says it spent. `None` when the engine reported nothing.
+    ///
+    /// **`None` and not a zero.** A zero is a claim that the engine was free, and
+    /// it would pass a budget check that nothing performed. `None` is a refusal
+    /// to charge, which is the only honest reading of a reply with no `usage`.
+    pub measured: Option<crate::slm::Measured>,
+}
+
+impl Answer {
+    /// An answer with no measurement behind it. The only honest way to build one.
+    pub fn unmeasured(text: impl Into<String>) -> Self {
+        Answer {
+            text: text.into(),
+            measured: None,
+        }
+    }
+}
+
 /// Something outside the machine that can be asked.
 ///
 /// A trait rather than an `impl FnMut` so that a real transport, a test script,
@@ -113,11 +146,19 @@ pub trait Resolver {
 
     /// Asks. Returning `Err` is a refusal and is recorded as a failed trace — it
     /// is not an absence.
-    fn ask(&self, doubt: &Doubt) -> Result<String, String>;
+    ///
+    /// **Returns an [`Answer`] and not a `String`, and that is the whole change.**
+    /// The measurement is what makes a consultation chargeable; a signature that
+    /// drops it makes the economy decorative, because nothing downstream can tell
+    /// a 400-token answer from a 400,000-token one.
+    fn ask(&self, doubt: &Doubt) -> Result<Answer, String>;
 }
 
 /// The outcome of a consultation, including whether it happened.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// **No `Eq`:** it carries a [`crate::toll::Toll`], which is `f64`, and `Eq` on a
+/// float is a lie anyway.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Consultation {
     /// The doubt as raised, carried so a receipt can be read without the caller.
     pub doubt: Doubt,
@@ -127,6 +168,13 @@ pub struct Consultation {
     pub refusal: Option<String>,
     /// The engine that was asked.
     pub resolver: String,
+    /// What the engine said it spent, and what that cost in nuants.
+    ///
+    /// **`None` when the toll could not be charged**, which is the case whenever
+    /// the engine reported no measurement. The answer still stands — a refusal to
+    /// charge is not a refusal to answer — but the crossing is recorded as unpaid
+    /// so the distinction is on the log.
+    pub charged: Option<crate::toll::Toll>,
 }
 
 impl Consultation {
@@ -171,6 +219,18 @@ impl Consultation {
     }
 }
 
+/// A stock large enough that the toll is always payable at this layer.
+///
+/// **Deliberately not a real balance, and it is the one thing here that is
+/// provisional.** Charging against a real stock needs the creature's `Economy`,
+/// and `doubt` has no handle on it — a `Resolver` is asked by a peer, not by a
+/// pet. So the toll is computed here and *recorded*, and the affordability
+/// decision stays with the caller, which is the only place that knows the stock.
+/// A constant that is never exhausted is the honest version of "I did not decide
+/// this"; `INFINITE` is named so nobody reads the result as a creature that can
+/// afford anything.
+const INFINITE_STOCK: f64 = f64::INFINITY;
+
 /// Asks, and records having asked — including when the answer is no.
 pub fn consult(
     store: &mut Store,
@@ -179,17 +239,28 @@ pub fn consult(
 ) -> Result<Consultation, String> {
     let base = store.stats().traces as u64;
     let outcome = match resolver.ask(&doubt) {
-        Ok(answer) => Consultation {
-            doubt,
-            answer: Some(answer),
-            refusal: None,
-            resolver: resolver.name().to_string(),
-        },
+        Ok(a) => {
+            // **The toll is charged here, where a consultation happens.** Not at
+            // the caller, because a caller that forgets is a free oracle, and not
+            // in the transport, because the transport does not know what the
+            // answer was worth. An unmeasured answer is charged nothing AND
+            // refuses to be charged, and `charged: None` records that.
+            let mut stock = INFINITE_STOCK;
+            let charged = crate::toll::charge(&mut stock, a.measured.as_ref()).ok();
+            Consultation {
+                doubt,
+                answer: Some(a.text),
+                refusal: None,
+                resolver: resolver.name().to_string(),
+                charged,
+            }
+        }
         Err(refusal) => Consultation {
             doubt,
             answer: None,
             refusal: Some(refusal),
             resolver: resolver.name().to_string(),
+            charged: None,
         },
     };
     store
@@ -276,6 +347,11 @@ mod tests {
     }
 
     /// A resolver that answers, and one that refuses, both named.
+    ///
+    /// **Unmeasured on purpose.** A test resolver that reported a cost would be
+    /// a fixture that decides the toll for every test that uses it, which is the
+    /// same class of defect as a fixture that disables the feature under test. The
+    /// toll's own tests are where a cost belongs.
     struct Fixed {
         name: &'static str,
         answer: Option<String>,
@@ -284,9 +360,10 @@ mod tests {
         fn name(&self) -> &str {
             self.name
         }
-        fn ask(&self, _d: &Doubt) -> Result<String, String> {
+        fn ask(&self, _d: &Doubt) -> Result<Answer, String> {
             self.answer
                 .clone()
+                .map(Answer::unmeasured)
                 .ok_or_else(|| "endpoint unreachable".to_string())
         }
     }

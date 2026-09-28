@@ -40,6 +40,7 @@ fn main() {
 
     if std::env::args().any(|a| a == "--openai") {
         // The transpiler: unia's Doubt in the engine's own vocabulary.
+        r.interpret = Some(unia::resolve::parse_chat_completion);
         r.transcribe = Some(|d: &Doubt, model: &str| {
             serde_json::json!({
                 "model": model,
@@ -54,9 +55,11 @@ fn main() {
     match r.ask(&doubt) {
         Ok(answer) => {
             // The engine's own reply shape, parsed for a real measurement.
-            if let Ok((text, m)) = unia::resolve::parse_chat_completion(&answer) {
+            let measured = answer.measured.clone();
+            {
+                let text = answer.text.clone();
                 let mut n = nuants;
-                match unia::toll::charge(&mut n, Some(&m)) {
+                match unia::toll::charge(&mut n, measured.as_ref()) {
                     Ok(toll) => {
                         println!("\n--- the answer, as the engine gave it ---");
                         println!("{}", text);
@@ -71,10 +74,11 @@ fn main() {
             }
             // Only reachable with a real measurement, which this transport does
             // not yet read. Print it, but say plainly that nothing was measured.
-            println!("\nLAYER 3 answered: {answer}");
-            let charged = unia::toll::charge(&mut nuants, None);
-            println!("toll: {charged:?}  (unmeasured -> refused, never free)");
-            println!("stock now: {nuants} nuants");
+            println!("\nLAYER 3 answered: {}", answer.text);
+            // Charged once, in the receipt above. This line used to charge again
+            // and print a second, lower stock -- a receipt that bills twice is
+            // the kind of bug nobody believes a number after.
+            println!("charged once, in the receipt above");
         }
         Err(e) => {
             println!("\nLAYER 2 refused — the engine or the transcription: {e}");
