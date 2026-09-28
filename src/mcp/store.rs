@@ -76,6 +76,23 @@ impl Pattern {
     }
 }
 
+/// Who chose the act behind a trace.
+///
+/// Deliberately a separate type from the creature's own `Who`, because this is a
+/// property of the *record* and not of a living thing: a trace outlives its
+/// actor, and a store that had to link the game in order to be read would be a
+/// store nobody could read without it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Actor {
+    /// A person chose the act.
+    Player,
+    /// The creature chose it, from its own reading of itself.
+    Itself,
+    /// Not a creature's act: a pattern served a caller.
+    Caller,
+}
+
 /// One recorded execution. These are the training signal: without them there is
 /// nothing to induce an actuator from, and today the project discards them.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -114,6 +131,21 @@ pub struct Trace {
     pub tokens_in: u64,
     #[serde(default)]
     pub tokens_out: u64,
+    /// Who chose the act, when the interaction was one a creature could have
+    /// chosen for itself.
+    ///
+    /// Present so that a trace log answers a question the counts otherwise
+    /// cannot: what share of the acting was the creature's own. It is the
+    /// measurement behind the word *civilisation* — the point at which a
+    /// population sustains itself rather than being kept running — and it is
+    /// unanswerable while every trace looks the same.
+    ///
+    /// `None` means the interaction was not a creature's at all: a pattern
+    /// served a caller, or a provider was escalated to. That is a real third
+    /// case rather than a missing value, and [`Store::authorship`] reports all
+    /// three.
+    #[serde(default)]
+    pub actor: Option<Actor>,
     /// The universal primitives the intent resolved to, in order.
     ///
     /// This is the generalisable part of the interaction and the grouping key
@@ -633,6 +665,30 @@ impl Store {
         )
     }
 
+    /// How the recorded acts divide between a person, the creature, and callers
+    /// that were never creatures.
+    ///
+    /// A count rather than a ratio, because the ratio is a derived convenience
+    /// and the raw division is the thing worth being able to read: a log of
+    /// forty traces where the creature took twenty of them and a log of forty
+    /// where it took none are both "half the log is not the creature", and only
+    /// the second means there is no self-direction in it at all.
+    pub fn authorship(&self) -> Authorship {
+        let mut a = Authorship::default();
+        for t in &self.traces {
+            match t.actor {
+                Some(Actor::Player) => a.player += 1,
+                Some(Actor::Itself) => a.itself += 1,
+                // `None` and an explicit `Caller` are the same claim about the
+                // past — this interaction was not a creature's — and are counted
+                // together, because a log written before the field existed must
+                // not inflate the creature's share by having traces in it.
+                Some(Actor::Caller) | None => a.caller += 1,
+            }
+        }
+        a
+    }
+
     pub fn stats(&self) -> Stats {
         let hits = self.traces.iter().filter(|t| t.outcome == "hit").count();
         let misses = self.traces.len() - hits;
@@ -682,7 +738,36 @@ pub fn new_trace(
         // Callers that know the sequence set this; a trace with no sequence
         // cannot be inducted from.
         primitives: Vec::new(),
+        actor: None,
         succeeded: true,
+    }
+}
+
+/// How a log of traces was divided between the three possible authors.
+///
+/// Exists so the ratio has a denominator nobody has to reconstruct. A single
+/// number would have been easier to state and would have hidden the case that
+/// matters most: a log where the creature never acts is not a log with a low
+/// ratio, it is a log with no self-direction in it at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Authorship {
+    /// Acts a person chose.
+    pub player: usize,
+    /// Acts the creature chose for itself.
+    pub itself: usize,
+    /// Interactions that were not a creature's at all.
+    pub caller: usize,
+}
+
+impl Authorship {
+    /// Of the acts a creature was involved in, the share it took by itself.
+    ///
+    /// `None` when no creature was involved, because a ratio between zero and
+    /// zero is not a number and reporting `0.0` would read as "it never acts"
+    /// when the truth is "there was nothing to act".
+    pub fn self_directed(&self) -> Option<f64> {
+        let acts = self.player + self.itself;
+        (acts > 0).then(|| self.itself as f64 / acts as f64)
     }
 }
 
@@ -736,6 +821,99 @@ mod tests {
         }
         s.push_str("]}");
         std::fs::write(dir.join(format!("{id}.ure")), s).expect("write manifest");
+    }
+
+    /// A trace authored by one of the three, for the authorship counts.
+    fn trace_by(actor: Option<Actor>) -> Trace {
+        Trace {
+            actor,
+            intent: "feed the ca maduci".into(),
+            ..new_trace(
+                "feed the ca maduci".into(),
+                Some("ca-x".into()),
+                "hit",
+                0,
+                0,
+            )
+        }
+    }
+
+    /// The division is counted per author, with the three kept apart.
+    ///
+    /// Getting this from a log is the whole point: a trace left by a player and a
+    /// trace left by the creature are otherwise byte-identical, and the ratio
+    /// behind the word *civilisation* was unanswerable for that reason.
+    #[test]
+    fn authorship_counts_who_acted() {
+        let (_dir, mut store) = corpus();
+        for actor in [
+            Some(Actor::Player),
+            Some(Actor::Itself),
+            Some(Actor::Itself),
+            Some(Actor::Caller),
+        ] {
+            store.record(trace_by(actor)).ok().unwrap();
+        }
+        let a = store.authorship();
+        assert_eq!(
+            (a.player, a.itself, a.caller),
+            (1, 2, 1),
+            "one person, two acts by the creature, one interaction that was neither"
+        );
+    }
+
+    /// A log written before the field existed must not make a creature look
+    /// self-directed.
+    ///
+    /// `None` means "this interaction was not a creature's", not "unknown, so
+    /// assume the best". Counting the absent as the creature's own would be the
+    /// flattering error, and it is the one that would make the number worth
+    /// reporting.
+    #[test]
+    fn a_trace_with_no_actor_counts_as_a_caller_and_not_as_the_creature() {
+        let (_dir, mut store) = corpus();
+        store.record(trace_by(None)).ok().unwrap();
+        let a = store.authorship();
+        assert_eq!(a.caller, 1);
+        assert_eq!(a.itself, 0);
+        assert_eq!(
+            a.self_directed(),
+            None,
+            "no creature was involved, so there is no share to report"
+        );
+    }
+
+    /// A self-directed ratio needs a creature in the denominator to mean
+    /// anything, and returns nothing rather than a flattering zero without one.
+    #[test]
+    fn a_log_of_only_callers_reports_no_share_rather_than_zero() {
+        let a = Authorship {
+            player: 0,
+            itself: 0,
+            caller: 40,
+        };
+        assert_eq!(a.self_directed(), None, "zero of zero is not a number");
+        let b = Authorship {
+            player: 10,
+            itself: 30,
+            caller: 40,
+        };
+        assert_eq!(b.self_directed(), Some(0.75), "30 of 40 acts were its own");
+    }
+
+    /// An actor survives a round trip through the log, which is the only reason
+    /// recording it is worth anything.
+    #[test]
+    fn an_actor_survives_the_log() {
+        let (dir, mut store) = corpus();
+        store.record(trace_by(Some(Actor::Itself))).ok().unwrap();
+        drop(store);
+        let reloaded = Store::open(dir.path());
+        assert_eq!(
+            reloaded.authorship().itself,
+            1,
+            "the creature's own act did not survive being written down"
+        );
     }
 
     /// The two-resource corpus the fixture's failures were diagnosed against.

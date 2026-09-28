@@ -359,6 +359,22 @@ never as anything that determines identity.
 - [x] **The liveness hole the correction opened.** Closed by two entry points
   rather than by weakening the economy: `tend` is the player's and has no
   power gate, `tend_as_self` is the creature's and does.
+- [x] **The authorship ratio, so "civilisation" has a number.** Done. `Trace` now
+  carries an `Actor` — `Player`, `Itself`, or `Caller` — and `Store::authorship`
+  counts all three, with a `self_directed()` share that returns `None` rather
+  than a flattering `0.0` when no creature was involved. `GET /api/authorship`.
+  Measured in play: the creature took four of six acts against itself,
+  `self_directed` 0.667. A missing actor counts as a caller, not as the
+  creature — the flattering error is the one that would make the number worth
+  reporting.
+- [ ] **`nuante` never regenerates, so an empty creature is dead for good.**
+  Found by playing rather than by reading. `apply_economy` and `decay_economy`
+  are the only writers outside tests and both only subtract. Splitting `tend`
+  from `tend_as_self` removed the *power* gate from the player's door and left
+  the *affordability* gate on both, so it looked like help was possible and was
+  not: three teaching phrasings against a creature at `nuante: 0.00` were all
+  refused, and nothing can raise it. Reached in about eight acts.
+  The obvious fix needs a decision rather than a patch — see below.
 - [ ] **The creature cannot learn a power it did not ship with.** Four built-in
   `Care` acts, so `new_signatures` saturates at four. This is now *blocking*
   rather than merely noted, because the implied economy equilibrium (about
@@ -375,12 +391,6 @@ never as anything that determines identity.
   is an instance check rather than a better score. Meanwhile `acting` is not a
   meet at all but composition in a monoid (`feed; sleep` ≠ `sleep; feed`),
   which is why patterning and acting cannot be one operation.
-- [ ] **The authorship ratio, so "civilisation" has a number.**
-  `Pet::last_actor` records who performed each act, but `Trace` has no actor
-  field, so nothing counts it. Civilisation is the point at which
-  creature-self-tended traces outnumber player traces and the economy runs on
-  production alone. Right now the creature feeds itself, and that is the whole
-  of it.
 - [ ] **Is there a civilisation at all?** The instrument above plus shared
   denominators. The honest starting position: 12 hand-written patterns with
   **0** shared capabilities — twelve solitaries, one author, one intent — and

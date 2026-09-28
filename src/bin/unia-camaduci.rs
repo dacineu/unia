@@ -25,7 +25,7 @@ use unia::camaduci::Understanding;
 use unia::camaduci::{
     firstness, Care, Drive, Firstness, LearnedRule, Personality, Pet, Sensor, MOTTO,
 };
-use unia::mcp::store::{Store, Trace};
+use unia::mcp::store::{Actor, Store, Trace};
 
 /// Seconds of real time per in-game tick.
 ///
@@ -270,7 +270,9 @@ fn handle(
             };
             *started = true;
             *now = now_secs();
-            let t = trace_for(&pet.id, care, &primitives, *now, None);
+            // The creature chose this act, on its own reading. The trace says so,
+            // so a log can later report how much of its own living it did.
+            let t = trace_for(&pet.id, care, &primitives, *now, None, Actor::Itself);
             match store.record(t) {
                 Ok(()) => {
                     pet.learn(learned_rules(store));
@@ -380,6 +382,25 @@ fn handle(
             let n = store.stats().traces;
             json_response(200, &format!(r#"{{"traces":{n}}}"#))
         }
+        // How much of the acting was the creature's own. The number behind the
+        // word *civilisation*, and deliberately reported as three counts rather
+        // than one ratio: a log where the creature took half its acts and a log
+        // where it took none both read as "half", and only one of them means
+        // there is nothing self-directed in it.
+        ("GET", "/api/authorship") => {
+            let a = store.authorship();
+            json_response(
+                200,
+                &json!({
+                    "player": a.player,
+                    "itself": a.itself,
+                    "caller": a.caller,
+                    // Null rather than 0.0 when no creature was involved at all.
+                    "self_directed": a.self_directed(),
+                })
+                .to_string(),
+            )
+        }
         ("POST", "/api/care") => match resolve_care(&body, pet) {
             Ok(care) => {
                 let result = pet.tend(care);
@@ -394,7 +415,15 @@ fn handle(
                         // sends "feed the ca maduci" can never clear the gate no
                         // matter how many times it feeds, which is the gate
                         // working as specified rather than a defect.
-                        let t = trace_for(&pet.id, care, &primitives, *now, parse_intent(&body));
+                        // A person chose this one.
+                        let t = trace_for(
+                            &pet.id,
+                            care,
+                            &primitives,
+                            *now,
+                            parse_intent(&body),
+                            Actor::Player,
+                        );
                         // A failed write must not be reported as a recorded
                         // interaction: the pet really was cared for, but the
                         // training signal did not get it, and saying otherwise
@@ -493,12 +522,14 @@ fn parse_intent(body: &str) -> Option<String> {
 /// `tokens_in` is zero because tiers 1 and 2 cost none, and that is the number
 /// an escalation rate would be computed from. `outcome` is `hit` because a
 /// pattern served the call.
+#[allow(clippy::too_many_arguments)]
 fn trace_for(
     pet_id: &str,
     care: Care,
     primitives: &[String],
     now: u64,
     intent: Option<String>,
+    actor: Actor,
 ) -> Trace {
     Trace {
         ts: now,
@@ -508,6 +539,7 @@ fn trace_for(
         tokens_in: 0,
         tokens_out: 0,
         primitives: primitives.to_vec(),
+        actor: Some(actor),
         succeeded: true,
     }
 }

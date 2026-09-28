@@ -23,7 +23,7 @@
 //! artifact with no peer to converge with.
 
 use std::collections::BTreeMap;
-use unia::mcp::store::{Store, Trace};
+use unia::mcp::store::{Actor, Store, Trace};
 
 /// The creature's declared state space.
 ///
@@ -273,6 +273,12 @@ fn summarise(history: &BTreeMap<Care, u32>) -> String {
 }
 
 /// Builds a trace for one care operation, in the form `Store::record` writes.
+///
+/// Every act in this demonstration is one the script chose, so the actor is
+/// always a person. That is worth stating rather than leaving absent: the
+/// authorship ratio reads a missing actor as "not a creature's", and this
+/// example is precisely the case of a population being kept running by someone
+/// else, which is the state the ratio exists to make visible.
 fn trace_for(pet: &Pet, care: Care, primitives: &[String], succeeded: bool, now: u64) -> Trace {
     Trace {
         ts: now,
@@ -282,6 +288,7 @@ fn trace_for(pet: &Pet, care: Care, primitives: &[String], succeeded: bool, now:
         tokens_in: 0,
         tokens_out: 0,
         primitives: primitives.to_vec(),
+        actor: Some(Actor::Player),
         succeeded,
     }
 }
