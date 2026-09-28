@@ -591,6 +591,39 @@ never as anything that determines identity.
   opposite of what a training plan needs. This corrects what I told the user an
   earlier turn, when I described `MetaActuatorType` as "the reason the long
   horizon is askable" without opening the file.
+- [x] **The unia target specification.** Written: `docs/unia-target-spec.md`. The
+  question "can Rust compile for this architecture" has a precondition that is not
+  a compiler, and this is it. Of nine pipeline stages, **three are done** — the ISA
+  is sufficient (the sixteen verbs are Turing-complete, so the instruction count
+  was never the constraint), verification exists at 488 tests plus a building wasm
+  target, and the history is already shaped like a port via `SourceAct` and
+  `Caller` traces. **Six are missing**: the ABI, an IR, a type mapping, a memory
+  model, a linker, a runtime. The load-bearing finding is §2.3: `Signature` is
+  `primitives.join("_")`, a **closed** sequence, so a signature has no parameters,
+  no return and no invocation — **there is no calling convention because there is
+  no notion of a callable thing.** Binding and definition are not features to add;
+  definition is what a function *is*. Worked through on `Production::credit()`:
+  six lines, and they lower to nothing at all, for want of four scoped locals and
+  a way to return. The acceptance criterion is stated in advance — **a transposed
+  module must be shorter than its source, and the ratio measured** — because a
+  ratio of 1.0 is a failure that looks like a success, which is the same trap the
+  escalation metric fell into when a deduplicated denominator rated fifty-one
+  identical edits as a perfect escalator.
+- [ ] **The fork at §6, and it is the author's to close.** (a) An
+  ownership-preserving target, and `unia` is a real compiler target with Rust's
+  central guarantee intact. Or (b) a virtual machine with a heap and no ownership
+  promises, and **the one reason to compile Rust to it is gone.**
+  **The tree is already (b) and it was never written down**:
+  `Arc<Mutex<HashMap<String, HashMap<String, String>>>>` is a heap without
+  ownership, and every consequence in the spec follows from that silent
+  assumption. It decides whether this is a compiler target or a virtual
+  machine — different projects with the same name, which the vocabulary does not
+  yet distinguish.
+- [ ] **Transpose one module and measure the ratio.** `src/clean.rs` first:
+  ~500 lines, small surface (`rematter`, `serves`, `meet`, `confirming_traces`,
+  `clean`), already pinned by tests. Report the matterns the semantics decomposes
+  into, the occurrences of each, and the ratio. Blocked on the fork above, not on
+  effort.
 - [ ] **The 200-query fixture.** Unchanged and still the blocker for the paper.
   It has to be authored by someone who has not read the matcher, because whoever
   writes the queries will write them in the vocabulary the matcher was built to
