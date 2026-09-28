@@ -624,6 +624,36 @@ never as anything that determines identity.
   `clean`), already pinned by tests. Report the matterns the semantics decomposes
   into, the occurrences of each, and the ratio. Blocked on the fork above, not on
   effort.
+- [x] **The fake benchmark, retracted.** `tests/benchmark_tests.rs` timed one
+  dispatch against `thread::sleep(800ms) + thread::sleep(50ms)` and printed the
+  quotient as an "Efficiency Gain", asserting `gain > 1.0`. The numerator was a
+  duration the test slept through, so it could not fail, and
+  `docs/PROVENANCE.md` cited it as "empirical benchmarks" for the first public
+  commit. **Removed rather than repaired**: repairing it means asserting that one
+  unia act and one LLM inference are comparable quantities, which is a claim
+  about value and not a timing. Replaced with two tests that check what was always
+  worth checking — a permitted act is admitted, executed and paid for, and an act
+  whose precondition cannot be evaluated is refused. Real measurement in
+  `examples/dispatch_bench.rs`; the retraction is in `docs/PROVENANCE.md` and the
+  numbers in `docs/perf-unia-vs-lua.md`.
+- [ ] **The 77% is `map_intent`, not interpretation.** Measured: a whole act is
+  ~14,300 ns, of which ~11,000 (77%) is turning a natural-language intent into an
+  action key and ~3,300 (23%) is gate + route + construct + execute. The hot path
+  re-allocates on every call — `to_lowercase()` per call, per action, and
+  `SemanticMapper::compute_score` builds two `HashSet<String>` and intersects and
+  unions them per candidate. None of it is inherent to interpreting sixteen verbs.
+  **This is the measurement to make next**: whether an induced matcher
+  (`src/lexicon.rs`, `src/induce/`) removes the per-call tokenisation.
+- [ ] **"unia vs Lua" has no program-shaped meaning yet.** ~69,600 acts/s against
+  Lua 5.4.9's 3.5M combined table-write-and-format ops/s is a 51× figure, and
+  quoting it as "51× slower than Lua" is a category error: an act resolves an
+  intent, checks preconditions, charges an economy, routes and returns a receipt,
+  and the list is the product. Making the comparison real needs three things, none
+  of which hold: an agreed unit of work (a specification, like the fork at
+  `docs/unia-target-spec.md` §6), a fixture authored by someone who has not read
+  the matcher, and the 16 verbs able to express a program — per §2.3, a
+  `Signature` is a closed sequence with no call, no return and no locals, so there
+  is no program to run and no loop to time.
 - [ ] **The 200-query fixture.** Unchanged and still the blocker for the paper.
   It has to be authored by someone who has not read the matcher, because whoever
   writes the queries will write them in the vocabulary the matcher was built to

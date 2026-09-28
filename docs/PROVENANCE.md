@@ -11,7 +11,8 @@ unia was first published publicly at <https://github.com/dacineu/unia> on
 
 | Date | Event |
 | --- | --- |
-| 2026-09-13 | First public commit. Primitive Bridge and Actuator Nucleus, with empirical benchmarks. |
+| 2026-09-13 | First public commit. Primitive Bridge and Actuator Nucleus. |
+| 2026-09-28 | Retraction: the "empirical benchmarks" cited for 2026-09-13 were a test that timed one dispatch against two `thread::sleep` calls and printed the quotient as a speedup. No baseline was measured. See `docs/perf-unia-vs-lua.md`. |
 | 2026-09-13 | UPA, UPA distributed dispatch, and Wasm-backed browser runtime. |
 | 2026-09-13 | unia-omni: SLM intelligence, distributed fabric, formal verification. |
 | 2026-09-13 | unia-OS: virtual kernel and shell for a browser-runnable system. |
