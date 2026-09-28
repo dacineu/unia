@@ -464,17 +464,36 @@ never as anything that determines identity.
   transitive, and the meet is a real greatest lower bound — the first
   implementation returned the empty sequence for `meet(a, a)`, which satisfies
   every lattice law and is not a meet.
-- [ ] **Swap the retrieval scorer for the decidable check.** The check exists and
-  is measured, but the pipeline still calls `score_phrase`, so **the 2 false
-  positives are still there.** Switching needs `meet::serves`, not
-  `meet::instantiates`, and the difference is the finding: against a whole act
-  `instantiates` is exact, but a *one*-primitive candidate is instantiated by
-  every witness containing that primitive, because the subsequence relation is
-  monotone and the smaller the candidate the more witnesses stand above it. The
-  false positives score 0.2236 and 0.2197 against 0.2041, so they are exactly the
-  thin-coverage candidates where the cheap check has nothing to say. `serves` adds
-  the clause that closes it — the candidate must be a *whole declared act*, so a
-  fragment of one is served by nothing.
+- [x] **The decidable retrieval check, and the reason it was not already there.**
+  `Store::search_primitives` uses `meet::serves` with no threshold and no ranking.
+  Measured on a corpus of induced manifests: it finds the true positive (an act
+  performed with a primitive interleaved) and refuses both shapes of false
+  positive — the witnesses that merely *touched* the act and did something else
+  after. Those are the shapes the scorer could not separate at 0.2236 and 0.2197
+  against 0.2041.
+  Getting there exposed something bigger. **The store had no primitive sequences
+  at all.** `Action` carries an id, aliases, a target state and constraints; the
+  sequence a pattern performs lives nowhere in a manifest, so the decidable check
+  could not be applied to the corpus even in principle. It turns out the sequence
+  *is* recoverable, because induction sets an action's id to the signature it
+  induced — so `SetValue_CheckSense` is a declared act and `emergency_shutdown` is
+  prose, decidably. That is a convention rather than a schema and it is fragile in
+  one way worth naming: a hand-authored action legitimately named after a
+  primitive sequence would be read as one.
+- [ ] **So the retrieval number has not changed, and cannot yet.** Every
+  checked-in manifest is hand-authored, so the corpus declares no acts, a
+  structural search finds nothing, and the 20/20-with-2-false-positives figure is
+  still the scorer's. Two things have to happen and neither is a code change: the
+  corpus has to be *induced* so it has acts to search, and `search` needs a
+  `primitives` field on `Action` so the sequence stops depending on an id
+  convention. A persisted-schema change, and not something to slip in beside a
+  measurement.
+- [ ] **The 200-query fixture.** Unchanged and still the blocker for the paper.
+  It has to be authored by someone who has not read the matcher, because whoever
+  writes the queries will write them in the vocabulary the matcher was built to
+  handle and the escalation rate will be a measurement of my assumptions. That is
+  the same failure as the corpus generator manufacturing the convergence it then
+  reported.
 - [ ] **Is there a civilisation at all?** The instrument above plus shared
   denominators. The honest starting position: 12 hand-written patterns with
   **0** shared capabilities — twelve solitaries, one author, one intent — and

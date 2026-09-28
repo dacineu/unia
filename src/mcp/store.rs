@@ -52,6 +52,32 @@ pub struct Action {
     pub constraints: Vec<String>,
 }
 
+impl Action {
+    /// The primitive sequence this action declares, when its id is one.
+    ///
+    /// Whole-token, case-sensitive, and every component required to be a known
+    /// primitive — so `SetValue_CheckSense` is a sequence and `emergency_shutdown`
+    /// and `SetValue` alone are not, the second because a single primitive is a
+    /// *fragment* of a sequence rather than one. The last part is not pedantry:
+    /// [`crate::meet::serves`] refuses fragments precisely because a one-primitive
+    /// candidate is instantiated by almost every witness, and recovering fragments
+    /// here would put them straight back into the place that breaks it.
+    pub fn declared_act(&self) -> Option<Vec<String>> {
+        let parts: Vec<&str> = self.id.split('_').collect();
+        if parts.len() < 2 {
+            return None;
+        }
+        if parts
+            .iter()
+            .all(|p| crate::bridge::primitive::is_primitive_name(p))
+        {
+            Some(parts.iter().map(|p| p.to_string()).collect())
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pattern {
     pub id: String,
@@ -63,6 +89,34 @@ pub struct Pattern {
 }
 
 impl Pattern {
+    /// The primitive sequences this pattern declares as whole acts, if any.
+    ///
+    /// **The store had no primitive sequences at all until this, and that is why
+    /// retrieval is scored on prose.** `Action` carries an id, aliases, a target
+    /// state and constraints; the sequence a pattern performs lives nowhere in a
+    /// manifest. So the decidable check in [`crate::meet::serves`] could not be
+    /// applied to the corpus even in principle, and the two false positives had no
+    /// structural reason to go away.
+    ///
+    /// It turns out the sequence *is* recoverable, because induction sets an
+    /// action's id to the signature it induced (`UreAction.id = group.signature`).
+    /// So the id of an induced action is literally `SetValue_CheckSense`, while a
+    /// hand-authored one is `emergency_shutdown`, and the difference is decidable:
+    /// an id made entirely of primitive names is a declared act, and one that is
+    /// not is prose that happens to sit in the same field.
+    ///
+    /// That is a convention rather than a schema, and it is fragile in a specific
+    /// way worth naming: a hand-authored action legitimately named after a
+    /// primitive sequence would be read as one. The honest fix is a `primitives`
+    /// field on `Action`, which is a persisted-schema change and not something to
+    /// slip in beside a measurement.
+    pub fn declared_acts(&self) -> Vec<Vec<String>> {
+        self.actions
+            .iter()
+            .filter_map(|a| a.declared_act())
+            .collect()
+    }
+
     /// Every phrase this pattern can be found by: its id, guidance, each action
     /// id, and each alias.
     fn phrases(&self) -> Vec<String> {
@@ -509,6 +563,80 @@ impl Store {
         let covered = p_tokens.iter().filter(|t| intent_set.contains(*t)).count();
         let coverage = covered as f64 / intent.len() as f64;
         base * coverage.sqrt()
+    }
+
+    /// Every act the corpus declares as a whole sequence.
+    ///
+    /// The declared set [`crate::meet::serves`] refuses anything outside, and it is
+    /// the parameter that makes the check decidable: without it a thin candidate is
+    /// a subsequence of almost every witness, which is the case the retrieval false
+    /// positives live in.
+    pub fn declared_acts(&self) -> Vec<Vec<String>> {
+        let mut out: Vec<Vec<String>> = self
+            .patterns
+            .iter()
+            .flat_map(|p| p.declared_acts())
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// Retrieval by decidable check rather than by score, for a caller that has
+    /// already resolved the intent to primitives.
+    ///
+    /// No threshold and no ranking: a pattern matches when one of its declared acts
+    /// is an act the intent performed, in order, whole. That is
+    /// [`crate::meet::serves`], and the reason to prefer it over [`Store::search`]
+    /// is the measurement rather than a preference — `search`'s false positives
+    /// score 0.2236 and 0.2197 against a weakest true positive of 0.2041, so no
+    /// threshold separates them and no threshold will ever. They are not badly
+    /// separated. They are incomparable under a partial order, being asked about by
+    /// a linear one.
+    ///
+    /// Returns fewer matches than `search` and never a wrong one. It also cannot
+    /// find a pattern that declares no act, which is every hand-authored manifest in
+    /// the corpus: those are prose and only prose can reach them. So this is a
+    /// supplement to `search`, not a replacement, and the honest summary of the
+    /// state is that the corpus cannot yet be searched structurally.
+    pub fn search_primitives(&self, primitives: &[String], limit: usize) -> Vec<Match> {
+        if primitives.is_empty() {
+            return Vec::new();
+        }
+        let declared = self.declared_acts();
+        if declared.is_empty() {
+            return Vec::new();
+        }
+        let champion_ids: HashSet<&String> = self.champions.values().collect();
+
+        let mut out: Vec<Match> = self
+            .patterns
+            .iter()
+            .filter_map(|p| {
+                let served = p
+                    .declared_acts()
+                    .into_iter()
+                    .find(|act| crate::meet::serves(act, primitives, &declared))?;
+                let is_champion = champion_ids.contains(&p.id);
+                Some(Match {
+                    id: p.id.clone(),
+                    category: p.category.clone(),
+                    // Not a confidence. Every match here is equally certain, and
+                    // giving them all 1.0 is what keeps this function from being
+                    // mistaken for a scorer with a better score.
+                    score: 1.0,
+                    champion: is_champion,
+                    saves_tokens: p.payload.as_ref().is_some_and(|pl| pl.is_runnable()),
+                    matched_on: served.join(" "),
+                    guidance: p.guidance.clone(),
+                    actions: p.actions.clone(),
+                    payload: p.payload.clone(),
+                    source: p.source.display().to_string(),
+                })
+            })
+            .collect();
+        out.truncate(limit);
+        out
     }
 
     /// Ranks corpus patterns against an intent. Champions get a small boost so a
@@ -1310,5 +1438,229 @@ mod tests_support_readiness {
         f.write_all(body.as_bytes()).expect("write traces");
         let store = Store::open(dir.path());
         (dir, store)
+    }
+}
+
+#[cfg(test)]
+mod structural_retrieval_tests {
+    //! Retrieval by decidable check, and the corpus-shape problem it exposed.
+    //!
+    //! The claim being tested is narrow and the scope is stated in the same breath:
+    //! for a corpus that declares primitive sequences, the false positives have a
+    //! structural reason to go away. The current corpus does not, which is the more
+    //! important half of the result.
+
+    use super::*;
+
+    fn seq(tokens: &[&str]) -> Vec<String> {
+        tokens.iter().map(|t| t.to_string()).collect()
+    }
+
+    /// A scratch directory that removes itself, declared here rather than borrowed
+    /// from the other test module — a fixture shared across sibling modules has to
+    /// be made visible to both, and the other one is not this module's business.
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Self {
+            let dir =
+                std::env::temp_dir().join(format!("unia-structural-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("scratch directory");
+            Scratch(dir)
+        }
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A manifest whose action id is a whole primitive sequence, which is what
+    /// induction produces.
+    fn induced(id: &str, act: &[&str]) -> String {
+        assert_eq!(act.join("_"), id, "the fixture's id must be its sequence");
+        format!(
+            r#"{{"ure_version":"1.0","resource_id":"{id}","category":"actuator",
+                 "action_primitives":[{{"id":"{id}","aliases":["{id}"],"params":{{}},
+                 "target_state":"","constraints":[]}}]}}"#
+        )
+    }
+
+    /// A manifest whose action id is prose, which is what a person writes.
+    fn authored(id: &str) -> String {
+        format!(
+            r#"{{"ure_version":"1.0","resource_id":"{id}","category":"actuator",
+                 "action_primitives":[{{"id":"{id}","aliases":["{id}"],"params":{{}},
+                 "target_state":"","constraints":[]}}]}}"#
+        )
+    }
+
+    /// The primitive-name list is a transcription of the enum, and a transcription
+    /// drifts. This holds the two together: a name added to one and not the other
+    /// fails here rather than silently becoming unrecognisable to the store.
+    #[test]
+    fn the_primitive_name_list_matches_the_enum() {
+        use crate::bridge::primitive::{UniversalPrimitive, PRIMITIVE_NAMES};
+        let every = [
+            UniversalPrimitive::GetState,
+            UniversalPrimitive::GetValue,
+            UniversalPrimitive::CheckSense,
+            UniversalPrimitive::SetValue,
+            UniversalPrimitive::Toggle,
+            UniversalPrimitive::Increment,
+            UniversalPrimitive::Reset,
+            UniversalPrimitive::Route,
+            UniversalPrimitive::Pipe,
+            UniversalPrimitive::Broadcast,
+            UniversalPrimitive::Delay,
+            UniversalPrimitive::Watch,
+            UniversalPrimitive::Pulse,
+            UniversalPrimitive::Compare,
+            UniversalPrimitive::Transform,
+            UniversalPrimitive::Validate,
+        ];
+        for p in &every {
+            let name = format!("{p:?}");
+            assert!(
+                PRIMITIVE_NAMES.contains(&name.as_str()),
+                "{name} is in the enum and not in PRIMITIVE_NAMES, so an action \
+                 carrying it would be invisible to the store"
+            );
+        }
+        assert_eq!(
+            PRIMITIVE_NAMES.len(),
+            every.len(),
+            "the list has entries the enum does not"
+        );
+    }
+
+    /// An induced action's id is recovered as a sequence, and a hand-authored one
+    /// is not. The discriminator is that every component is a known primitive.
+    #[test]
+    fn an_induced_action_declares_an_act_and_a_hand_authored_one_does_not() {
+        let induced = Action {
+            id: "SetValue_CheckSense".into(),
+            aliases: vec![],
+            target_state: String::new(),
+            constraints: vec![],
+        };
+        let authored_action = Action {
+            id: "emergency_shutdown".into(),
+            aliases: vec![],
+            target_state: String::new(),
+            constraints: vec![],
+        };
+        let fragment = Action {
+            id: "SetValue".into(),
+            aliases: vec![],
+            target_state: String::new(),
+            constraints: vec![],
+        };
+
+        assert_eq!(
+            induced.declared_act(),
+            Some(seq(&["SetValue", "CheckSense"]))
+        );
+        assert_eq!(
+            authored_action.declared_act(),
+            None,
+            "a hand-authored action id was read as a primitive sequence"
+        );
+        assert_eq!(
+            fragment.declared_act(),
+            None,
+            "a single primitive was read as a whole act, and a one-primitive \
+             candidate is exactly what the decidable check cannot refuse"
+        );
+    }
+
+    /// Case-sensitive and whole-token, because the same discipline as
+    /// `resolve_primitive` is the only reason that function works. `setvalue` is
+    /// not the primitive.
+    #[test]
+    fn primitive_names_are_matched_whole_and_case_sensitively() {
+        use crate::bridge::primitive::is_primitive_name;
+        assert!(is_primitive_name("SetValue"));
+        assert!(!is_primitive_name("setvalue"));
+        assert!(!is_primitive_name("SetValueX"));
+        assert!(!is_primitive_name(""));
+    }
+
+    /// The measured result: for a corpus that declares acts, the check finds the
+    /// true positive and refuses both shapes of false positive, and the refused
+    /// ones are the shapes the scorer could not separate.
+    #[test]
+    fn the_decidable_check_refuses_what_no_threshold_could() {
+        let dir = Scratch::new("structural");
+        std::fs::write(
+            dir.path().join("feed.ure"),
+            induced("SetValue_CheckSense", &["SetValue", "CheckSense"]),
+        )
+        .ok()
+        .unwrap();
+        let store = Store::open(dir.path());
+
+        assert_eq!(
+            store.declared_acts(),
+            vec![seq(&["SetValue", "CheckSense"])],
+            "the induced act was not recovered from the corpus"
+        );
+
+        // The true positive: the act was performed, with an interleaved primitive.
+        assert_eq!(
+            store
+                .search_primitives(&seq(&["SetValue", "Pulse", "CheckSense", "Emit"]), 10)
+                .len(),
+            1,
+            "the true positive was refused"
+        );
+        // The two false-positive shapes: touched the act, then did something else.
+        for witness in [seq(&["SetValue", "Pulse"]), seq(&["GetValue", "SetValue"])] {
+            assert!(
+                store.search_primitives(&witness, 10).is_empty(),
+                "a witness that merely touched the act was served: {witness:?}"
+            );
+        }
+    }
+
+    /// **The finding, and the more important half.** A corpus of hand-authored
+    /// manifests declares no acts at all, because their action ids are prose — so a
+    /// structural search finds nothing and only the scorer can reach them.
+    ///
+    /// This is not a defect in the check. It is why the check was not already
+    /// there: the corpus has to be induced before it can be searched
+    /// structurally, and the two retrieval numbers are therefore still the ones the
+    /// scorer produces. The first version of this test opened a `corpus/`
+    /// directory and asserted about its contents, and there is no such directory —
+    /// it was asserting against nothing.
+    #[test]
+    fn a_hand_authored_corpus_declares_no_acts_and_only_prose_reaches_it() {
+        let dir = Scratch::new("authored");
+        std::fs::write(dir.path().join("valve.ure"), authored("emergency_shutdown"))
+            .ok()
+            .unwrap();
+        let store = Store::open(dir.path());
+
+        assert!(
+            store.declared_acts().is_empty(),
+            "a prose action id declared a primitive sequence: {:?}",
+            store.declared_acts()
+        );
+        assert!(
+            store
+                .search_primitives(&seq(&["SetValue", "CheckSense"]), 10)
+                .is_empty(),
+            "a corpus declaring no acts returned a structural match"
+        );
+        assert!(
+            !store.search("emergency shutdown", 10).is_empty(),
+            "and the prose path, which is the one still in use, cannot reach it \
+             either — so this is a limit of the structural check, not a fix for it"
+        );
     }
 }

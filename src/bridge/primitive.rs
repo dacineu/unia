@@ -29,6 +29,42 @@ pub enum UniversalPrimitive {
     Validate,
 }
 
+/// Every primitive's name, in the form a signature spells it.
+///
+/// Exposed because the store has to recognise a *declared act* — a primitive
+/// sequence — inside a manifest, and the only decidable way to tell an induced
+/// action from a hand-authored one is whether its id is made entirely of primitive
+/// names. `emergency_shutdown` is not a sequence; `SetValue_CheckSense` is. The
+/// store cannot import the enum's variants by reflection, so the names are listed
+/// here once and a test below holds the list to the enum.
+pub const PRIMITIVE_NAMES: &[&str] = &[
+    "GetState",
+    "GetValue",
+    "CheckSense",
+    "SetValue",
+    "Toggle",
+    "Increment",
+    "Reset",
+    "Route",
+    "Pipe",
+    "Broadcast",
+    "Delay",
+    "Watch",
+    "Pulse",
+    "Compare",
+    "Transform",
+    "Validate",
+];
+
+/// Whether `name` is a primitive.
+///
+/// Whole-token and case-sensitive, which is the same discipline `resolve_primitive`
+/// uses and for the same reason: a substring test fires on ordinary words, since
+/// `widget` contains `get` and `offset` contains `off`.
+pub fn is_primitive_name(name: &str) -> bool {
+    PRIMITIVE_NAMES.contains(&name)
+}
+
 /// Substrings that select each primitive, ordered most specific first.
 ///
 /// A list and not a decision tree because the input is a manifest's free-form
