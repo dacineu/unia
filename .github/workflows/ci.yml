@@ -81,8 +81,25 @@ jobs:
       - name: Verify the filesystem pipeline example
         run: cargo run --example verify_fs_pipeline
 
+  # **The library only, and that is a statement about what this crate is.**
+  #
+  # The job was red for as long as it existed, and the note in `TODO.md` called it
+  # pre-existing. Two reasons, both real:
+  #
+  # 1. `tokio` with `full` pulls in `mio`, which does not build for
+  #    `wasm32-unknown-unknown` -- 48 errors in `mio` alone. tokio is now a
+  #    `cfg(not(target_arch = "wasm32"))` dependency, which is the truth: the
+  #    library never used it, and only two networked binaries do.
+  # 2. Those binaries open `TcpListener`s, and `wasm32-unknown-unknown` has no
+  #    sockets. No feature change makes them build for this target, because they
+  #    could not run there if they did. So `--lib` is not a scope reduction to get
+  #    a green tick; it is the only scope that means anything, and the job is
+  #    renamed to say so.
+  #
+  # The native build still compiles both binaries, in the `check` job, so nothing is
+  # being skipped -- it is being checked where it can be checked.
   wasm:
-    name: Wasm build
+    name: Wasm library build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -95,8 +112,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: cargo check for wasm32
-        run: cargo check --target wasm32-unknown-unknown --locked
+      - name: cargo check the library for wasm32
+        run: cargo check --lib --target wasm32-unknown-unknown --locked
 
   dco:
     name: DCO sign-off
