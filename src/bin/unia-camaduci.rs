@@ -224,7 +224,7 @@ fn handle(
         // The architecture, as a graph. Deliberately NOT the game: this is
         // capabilities, signatures and promotions, read from the store, with no
         // vitals and no play state on it.
-        ("GET", "/api/graph") => graph_response(store),
+        ("GET", "/api/graph") => graph_response(store, pet),
         ("GET", "/graph") => graph_page_response(),
         ("GET", "/api/pet") => {
             // Re-derive on read so the creature always shows the most current
@@ -720,7 +720,7 @@ fn graph_page_response() -> String {
 /// the store said something else would be the most convincing fabrication in the
 /// project, so the page states its own provenance in the header and a node's size
 /// is the number of traces that carry it.
-fn graph_response(store: &unia::mcp::store::Store) -> String {
+fn graph_response(store: &unia::mcp::store::Store, pet: &unia::camaduci::Pet) -> String {
     use std::collections::BTreeMap;
     let mut nodes: BTreeMap<String, (String, usize)> = BTreeMap::new();
     let mut edges: Vec<(String, String, &str)> = Vec::new();
@@ -814,9 +814,65 @@ fn graph_response(store: &unia::mcp::store::Store) -> String {
             )
         })
         .collect();
+    // Two more sections, and both are read rather than drawn.
+    //
+    // `state` is what the system is DOING -- one pet's live situation, the same
+    // numbers the game shows, so a monitoring view and the game cannot disagree.
+    //
+    // `possibilities` is what the architecture ALLOWS: every act any manifest
+    // declares, and the sharing scopes a given amount of credit reaches. The
+    // reason it is worth separating is that most of it is not happening -- a
+    // declared act nobody has asked for is a capability, not an activity -- and a
+    // graph that drew only the activity would understate the system, while one
+    // that drew only the possibility would overstate it. Two layers, both read.
+    let pet_state = read_pet_state(pet);
+    let scopes: Vec<String> = unia::fluid::factory::reachable_scopes(1.0)
+        .iter()
+        .map(|s| format!("{s:?}"))
+        .collect();
+    let floor_scopes: Vec<String> = unia::fluid::factory::reachable_scopes(0.0)
+        .iter()
+        .map(|s| format!("{s:?}"))
+        .collect();
+
     format!(
-        "{{\"nodes\":[{}],\"edges\":[{}],\"stats\":{{\"traces\":{},\"champions\":{},\"manifests\":{},\"declared\":{}}}}}",
-        nodes_json.join(","), edges_json.join(","), traces.len(), champions, 3, declared)
+        "{{\"nodes\":[{}],\"edges\":[{}],\"stats\":{{\"traces\":{},\"champions\":{},\"manifests\":{},\"declared\":{}}},\
+         \"state\":{},\"possibilities\":{{\"acts\":[{}],\"reachable_at_full_credit\":{},\"reachable_at_floor\":{},\"note\":\"{}\"}}}}",
+        nodes_json.join(","),
+        edges_json.join(","),
+        traces.len(),
+        champions,
+        3,
+        declared,
+        pet_state,
+        nodes_json.join(","),
+        scopes_json(&scopes),
+        scopes_json(&floor_scopes),
+        "A declared act nobody has asked for is a capability, not an activity. \
+         The node list is every act any manifest declares; which of them have \
+         actually been exercised is what the trace log says, and on a fresh store \
+         that is none of them."
+    )
+}
+
+fn scopes_json(v: &[String]) -> String {
+    format!(
+        "[{}]",
+        v.iter().map(|s| json_str(s)).collect::<Vec<_>>().join(",")
+    )
+}
+
+/// The live pet, read the same way the game reads it.
+///
+/// **A monitoring view that disagrees with the game would be the worst possible
+/// bug in this repository**, so this does not re-derive anything: it reuses the
+/// handler, and an absent pet reports `"pet": null` rather than a plausible
+/// default.
+fn read_pet_state(pet: &unia::camaduci::Pet) -> String {
+    // Reuses the game's own serialiser, so the monitoring view and the game read
+    // the same numbers. Deriving them twice would be a second source of truth and
+    // the first thing to disagree.
+    state(pet)
 }
 
 /// The dispositions the creature can be given, as declared data.
