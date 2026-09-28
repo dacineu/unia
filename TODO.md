@@ -339,3 +339,58 @@ an escalation.
 - [ ] **Reclaim disk.** The working filesystem is at 98% with roughly 11 GB free.
   Models under `~/.local/share/unia-models` and the `target/` directory are the
   largest reclaimable items.
+
+---
+
+## Translucency: the five steps and what each still needs
+
+The claim is that the whole chain is inspectable — `resolve_primitive`
+(decoding), `signature` (narrowing), `dispatch` (transduction), `induce`
+(patterning), `skeleton` (matterning) — and that the language model is
+confined to one of them, as a transducer from text to a primitive sequence,
+never as anything that determines identity.
+
+- [x] **The economy pays for production, not for repetition.** Done. An act
+  spends and debits; the only path to power is `Pet::learn`. The first
+  version credited the power on every act, so twelve identical feeds took a
+  creature from 0.500 to 0.694 with nothing learned; the same twelve now end
+  at 0.157. Four countable integers, of which the fourth — consolidation — had
+  to be added because there are only four built-in acts and novelty saturates.
+- [x] **The liveness hole the correction opened.** Closed by two entry points
+  rather than by weakening the economy: `tend` is the player's and has no
+  power gate, `tend_as_self` is the creature's and does.
+- [ ] **The creature cannot learn a power it did not ship with.** Four built-in
+  `Care` acts, so `new_signatures` saturates at four. This is now *blocking*
+  rather than merely noted, because the implied economy equilibrium (about
+  0.25, from a 0.03 credit against a 0.15 debit) sits below the peak the
+  creature reaches at act four — so a creature that has learned everything it
+  can learn ends up weaker than one still learning, and the long game is
+  decay. Pinned as a test so it cannot be rediscovered in play. Also blocks
+  meeting, handover, and the primitive protocol.
+- [ ] **The meet, concretely.** `Denominator` is meant to be a greatest lower
+  bound over primitive sequences — the largest sequence substitutable in both
+  witnesses — and nothing in the tree implements it. It is also the honest
+  explanation for retrieval's 2 false positives: a partial order has no
+  threshold, so 0.2236 and 0.2197 are *adjacent*, not separable, and the fix
+  is an instance check rather than a better score. Meanwhile `acting` is not a
+  meet at all but composition in a monoid (`feed; sleep` ≠ `sleep; feed`),
+  which is why patterning and acting cannot be one operation.
+- [ ] **The authorship ratio, so "civilisation" has a number.**
+  `Pet::last_actor` records who performed each act, but `Trace` has no actor
+  field, so nothing counts it. Civilisation is the point at which
+  creature-self-tended traces outnumber player traces and the economy runs on
+  production alone. Right now the creature feeds itself, and that is the whole
+  of it.
+- [ ] **Is there a civilisation at all?** The instrument above plus shared
+  denominators. The honest starting position: 12 hand-written patterns with
+  **0** shared capabilities — twelve solitaries, one author, one intent — and
+  36 generated artifacts agreeing on 6 denominators they were *manufactured*
+  to agree on. Neither is a convergence. The test that would find one is
+  creatures that never met agreeing anyway, and it has never been run.
+- [ ] **Three horizons as three types.** Not a gap; a roadmap item, and the
+  correction above already separates two of the three by accident. `nuante` is
+  the short horizon and is spent; `cuante` is the middle and is now
+  production-only; the signatures and the content address are the long one and
+  are neither spent nor sustained. Making that explicit removes the tuning war
+  between credit and debit, both of which are currently rates against different
+  distances on the same axis.
