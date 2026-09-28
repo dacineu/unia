@@ -114,7 +114,15 @@ you and confusing them is how a project spends a year on the wrong one.
     different events); the fetch receives a whole `SlmRequest` and returns a whole
     `Reply`; and the duplicate `SlmResponse` that lived beside the real one in
     `src/slm/` is gone.
-17. **No model, no tokenizer, and nothing points at an endpoint.** Closed the
+17. **The route runs end to end; there is still no model.** One test now drives
+    doubt → signature → `HttpResolver` → a real `TcpListener` on a real port →
+    `Reply` → `judge` → trace → ledger, with nothing mocked. Every link that had
+    no caller three commits ago is exercised by it. The only absent piece is a
+    model, and a responder cannot substitute for one: it reports
+    `tokens_used: None` and names itself `reference-responder`, which is the
+    point — **a `Reply` with no measured cost is the honest shape for something
+    that ran no inference**, and the test is what proves the field means what the
+    type says. What is still missing: Closed the
     half that was a real inconsistency: the mapper's menu match was
     case-*sensitive* while `resolve_primitive` and `map_intent` are explicitly
     indifferent ("the format does not constrain the casing of an action id"), so

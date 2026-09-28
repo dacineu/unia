@@ -434,6 +434,77 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// **The whole chain, over a socket, with nothing mocked.**
+    ///
+    /// This is the first test in the project that runs the route end to end:
+    /// doubt -> signature -> `HttpResolver` -> a real `TcpListener` on a real
+    /// port -> `Reply` -> `judge` -> trace -> ledger. Every link that had no
+    /// caller until two commits ago is now exercised by one test, and the only
+    /// thing absent is a model.
+    ///
+    /// Which is why the responder below **cannot be mistaken for one**: it
+    /// reports `tokens_used: None` and names itself `reference-responder`, not a
+    /// model. A `Reply` with no measured cost is the honest shape for something
+    /// that ran no inference, and this is the test that proves the field means
+    /// what the type says.
+    #[test]
+    fn the_whole_route_runs_end_to_end_over_a_socket() {
+        use crate::doubt::{ledger, Unresolvable};
+
+        let ep =
+        // The length is computed, not written: the first version hardcoded 30 for a\
+        // 22-byte body and the client refused the reply as truncated -- the guard\
+        // working as intended, on me.
+            endpoint(Box::leak(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                    "{\"answer\":\"tend wins\"}".len(),
+                    "{\"answer\":\"tend wins\"}"
+                )
+                .into_boxed_str(),
+            ));
+        let r = HttpResolver::new(&ep.authority, "reference-responder").expect("authority");
+        let dir = std::env::temp_dir().join(format!("unia-e2e-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch");
+        let mut store = crate::mcp::store::Store::open(&dir);
+
+        let doubt = Doubt::new(
+            "which rule governs a creature dormant by neglect?",
+            Unresolvable::Contradiction {
+                a: "neglect forgets".into(),
+                b: "dormancy holds".into(),
+            },
+        );
+        let c = crate::doubt::consult(&mut store, doubt, &r).expect("recorded");
+
+        assert!(c.answered(), "the responder answered: {c:?}");
+        assert_eq!(c.answer.as_deref(), Some("tend wins"));
+        assert_eq!(
+            c.resolver, "reference-responder",
+            "and it is named on the receipt"
+        );
+
+        // The signature, the ledger, and the witness rule, all on the log.
+        let trace = store.traces().last().expect("a trace was written");
+        assert!(!trace.succeeded, "an answer is a claim and never a witness");
+        assert_eq!(
+            trace.primitives.first().map(String::as_str),
+            Some("Consult_Contradiction")
+        );
+
+        let l = ledger(&store);
+        assert_eq!((l.answered, l.refused, l.shapes), (1, 0, 1));
+
+        // The request that produced it carried the evidence, over the wire.
+        let sent = ep
+            .seen
+            .recv_timeout(Duration::from_secs(2))
+            .expect("saw a request");
+        assert!(sent.contains("Contradiction"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// An authority that is a URL is refused at construction, where the mistake
     /// is obvious, rather than at the first request.
     #[test]
