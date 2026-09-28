@@ -20,7 +20,7 @@
 //! What this does not model: rendering, sound, score, or more than one pet. One
 //! pet is one artifact with no peer, so nothing here demonstrates convergence.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The creature's declared state space.
 ///
@@ -94,7 +94,9 @@ impl Vitals {
 }
 
 /// The growth stage, advanced only by a completed sleep cycle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Stage {
     Egg,
@@ -138,7 +140,9 @@ impl Stage {
 }
 
 /// A care operation. These are the primitives the pet exposes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Care {
     Feed,
@@ -149,6 +153,13 @@ pub enum Care {
 
 impl Care {
     /// Parses an operation name, for a wire protocol.
+    ///
+    /// This is the wire form, not understanding. It recognises four words and
+    /// nothing else, which is why a player who types "give it some kibble" is
+    /// told the operation is unknown even though the creature has been fed that
+    /// exact sentence many times. Understanding lives in
+    /// [`Pet::understand`], which resolves free text through the vocabulary the
+    /// creature has actually learned.
     pub fn parse(s: &str) -> Option<Care> {
         match s.to_ascii_lowercase().as_str() {
             "feed" => Some(Care::Feed),
@@ -157,6 +168,42 @@ impl Care {
             "sleep" => Some(Care::Sleep),
             _ => None,
         }
+    }
+
+    /// Every act the creature knows how to perform, as its own name.
+    ///
+    /// Offered when a request is not understood, so that a player who cannot be
+    /// served is at least told what would be. A refusal that does not say what
+    /// would work is the same as no answer.
+    pub fn all() -> [Care; 4] {
+        [Care::Feed, Care::Play, Care::Clean, Care::Sleep]
+    }
+
+    /// The primitive sequence this act reduces to.
+    ///
+    /// The single source of the mapping, so that recognising a sequence and
+    /// producing one cannot drift apart. `apply` used to return this inline and
+    /// nothing could read it back, which is why a learned rule could be
+    /// recognised and then not acted on.
+    pub fn signature(self) -> &'static str {
+        match self {
+            Care::Feed => "SetValue_CheckSense",
+            // Was `SetValue_Emit`. `Emit` is not one of the sixteen declared
+            // `UniversalPrimitive` variants, so playing with the creature recorded
+            // a sequence the bridge could never resolve and the nucleus could
+            // never dispatch. It survived all the way into a learned rule, as
+            // `SetValue_Emit`, which is the case P2 exists to prevent. `Pulse` is
+            // the honest name for a short outward emission.
+            Care::Play => "SetValue_Pulse",
+            Care::Clean => "SetValue",
+            Care::Sleep => "SetValue_GetState",
+        }
+    }
+
+    /// The act a primitive sequence corresponds to, if it is one the creature
+    /// knows how to perform.
+    pub fn from_signature(signature: &str) -> Option<Care> {
+        Care::all().into_iter().find(|c| c.signature() == signature)
     }
 
     /// The operation's name, as shown to a player.
@@ -179,16 +226,28 @@ impl Care {
             Care::Feed => {
                 v.hunger = (v.hunger - 0.5).max(0.0);
                 v.health = (v.health + 0.05).min(1.0);
-                vec!["SetValue".into(), "CheckSense".into()]
+                Care::Feed
+                    .signature()
+                    .split('_')
+                    .map(String::from)
+                    .collect()
             }
             Care::Play => {
                 v.happiness = (v.happiness + 0.4).min(1.0);
-                vec!["SetValue".into(), "Emit".into()]
+                Care::Play
+                    .signature()
+                    .split('_')
+                    .map(String::from)
+                    .collect()
             }
             Care::Clean => {
                 v.happiness = (v.happiness + 0.1).min(1.0);
                 v.health = (v.health + 0.03).min(1.0);
-                vec!["SetValue".into()]
+                Care::Clean
+                    .signature()
+                    .split('_')
+                    .map(String::from)
+                    .collect()
             }
             // Sleep is the only operation that advances age, and only if the pet
             // is alive to be put to sleep.
@@ -198,9 +257,76 @@ impl Care {
                     v.hunger = (v.hunger + 0.05).min(1.0);
                     v.happiness = (v.happiness + 0.05).min(1.0);
                 }
-                vec!["SetValue".into(), "GetState".into()]
+                Care::Sleep
+                    .signature()
+                    .split('_')
+                    .map(String::from)
+                    .collect()
             }
         }
+    }
+}
+
+/// Terms too common to carry meaning about which act is meant.
+///
+/// Deliberately short and deliberately English-only. A Romanian request would
+/// not be filtered by it, which is a known asymmetry rather than a decision: the
+/// creature understands what it has been fed and has no way to know that "the"
+/// is common in a language it has never encountered.
+const FUNCTION_WORDS: &[&str] = &[
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "could", "for", "from", "give",
+    "has", "have", "he", "her", "him", "his", "i", "in", "is", "it", "its", "let", "me", "my",
+    "no", "not", "of", "on", "or", "our", "please", "she", "should", "so", "than", "that", "the",
+    "their", "them", "then", "there", "they", "this", "to", "up", "was", "we", "were", "what",
+    "when", "which", "will", "with", "would", "you", "your",
+];
+
+/// What a creature made of a request.
+///
+/// Three outcomes, and keeping them apart is the whole point. Collapsing the
+/// last two into one "unknown" is worse than useless: a creature then either
+/// apologises for knowledge it has, or claims knowledge it lacks, and the player
+/// stops asking either way. The middle case exists so that a player who cannot be
+/// served is told what *would* be served, and can simply switch.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum Understanding {
+    /// The request reduced to an act. The exact wording was one it already had.
+    Understood { care: Care },
+    /// The act is one the creature performs, and this phrasing is among the ways
+    /// it has been seen to be asked for it.
+    UnderstoodByExperience { care: Care, matched: String },
+    /// The act is one the creature performs, but this phrasing is not among the
+    /// ways it has been asked. It is being told what would work, not refused.
+    NeedsDifferentWords {
+        known: Vec<String>,
+        learned_examples: Vec<String>,
+    },
+    /// Nothing matches, and none of the wording is recognisable either. The
+    /// creature says so as a fact rather than as a score, and still says what it
+    /// has: being told "no" and nothing else is the same as not answering.
+    NeverHeardOf {
+        known: Vec<String>,
+        learned_examples: Vec<String>,
+    },
+}
+
+impl Understanding {
+    /// Whether the creature can act on the request.
+    pub fn acts(&self) -> Option<Care> {
+        match self {
+            Understanding::Understood { care }
+            | Understanding::UnderstoodByExperience { care, .. } => Some(*care),
+            _ => None,
+        }
+    }
+
+    /// Whether this is a refusal to act, as opposed to a clarification.
+    pub fn is_refusal(&self) -> bool {
+        matches!(
+            self,
+            Understanding::NeedsDifferentWords { .. } | Understanding::NeverHeardOf { .. }
+        )
     }
 }
 
@@ -271,7 +397,12 @@ impl Pet {
     }
 
     /// Restores a pet from recorded state, for resuming a session.
-    pub fn restore(id: impl Into<String>, vitals: Vitals, quarantined: bool, history: BTreeMap<Care, u32>) -> Self {
+    pub fn restore(
+        id: impl Into<String>,
+        vitals: Vitals,
+        quarantined: bool,
+        history: BTreeMap<Care, u32>,
+    ) -> Self {
         let mut p = Pet {
             id: id.into(),
             vitals,
@@ -290,6 +421,110 @@ impl Pet {
     ///
     /// The saved form is the whole memory. There is no export, and a handed-over
     /// creature arrives carrying its mistakes along with its progress.
+    /// Works out what a free-text request is asking for.
+    ///
+    /// Three stages, in order of how much the creature actually knows:
+    /// the four wire words, then the phrasings it has been fed, then nothing.
+    /// Phrasing is matched on **whole terms**, not substrings, for the reason
+    /// `resolve_primitive` does it: `widget` contains `get` and `offset` contains
+    /// `off`, so a substring test reads one word as another.
+    ///
+    /// It reads the creature's own `learned` rules, which is the point. The
+    /// vocabulary that resolves a request is the vocabulary the creature earned
+    /// from being kept, not a list hard-coded next to the parser.
+    pub fn understand(&self, text: &str) -> Understanding {
+        if let Some(care) = Care::parse(text) {
+            return Understanding::Understood { care };
+        }
+
+        let terms = crate::bridge::primitive::tokenize_id(text);
+        if terms.is_empty() {
+            return Understanding::NeverHeardOf {
+                known: Care::all().iter().map(|c| c.label().to_string()).collect(),
+                learned_examples: self.heard_examples(8),
+            };
+        }
+
+        // Longest match wins, so a phrasing that is a superset of another is
+        // preferred over the shorter one it contains.
+        let mut best: Option<(usize, Care, String)> = None;
+        for rule in &self.learned {
+            let Some(care) = Care::from_signature(&rule.signature) else {
+                continue;
+            };
+            for alias in &rule.aliases {
+                let alias_terms = crate::bridge::primitive::tokenize_id(alias);
+                if alias_terms.is_empty() || !alias_terms.iter().all(|a| terms.contains(a)) {
+                    continue;
+                }
+                let score = alias_terms.len();
+                if best.as_ref().is_none_or(|(n, _, _)| score > *n) {
+                    best = Some((score, care, alias.clone()));
+                }
+            }
+        }
+
+        let known = Care::all().iter().map(|c| c.label().to_string()).collect();
+        if let Some((_, care, matched)) = best {
+            return Understanding::UnderstoodByExperience { care, matched };
+        }
+
+        // Nothing matched. The honest next question is whether the creature has
+        // heard *any* of this player's words, and that decides which of the two
+        // refusals applies.
+        //
+        // This distinction is only available lexically, and that is a real limit
+        // rather than an implementation detail. "give it a snack" and
+        // "frobnicate the widget" are the same act to this creature: it has
+        // never been shown either, and with no model it cannot tell that one is
+        // a request for something it does and the other is not. Pretending
+        // otherwise would be a guess wearing the costume of a distinction.
+        let vocabulary = self.vocabulary_terms();
+        let heard_any = terms.iter().any(|t| vocabulary.contains(t));
+
+        if !heard_any {
+            return Understanding::NeverHeardOf {
+                known,
+                learned_examples: self.heard_examples(8),
+            };
+        }
+
+        Understanding::NeedsDifferentWords {
+            known,
+            learned_examples: self.heard_examples(8),
+        }
+    }
+
+    /// The content terms the creature has any evidence for.
+    ///
+    /// Function words are dropped, because almost every English sentence shares
+    /// them: counting "the" as an overlap would make every request look like one
+    /// the creature had half-heard, and the distinction between the two refusals
+    /// would collapse.
+    fn vocabulary_terms(&self) -> BTreeSet<String> {
+        self.learned
+            .iter()
+            .flat_map(|r| r.aliases.iter())
+            .flat_map(|a| crate::bridge::primitive::tokenize_id(a))
+            .filter(|t| !FUNCTION_WORDS.contains(&t.as_str()))
+            .collect()
+    }
+
+    /// The phrasings the creature has been fed, most recent evidence first in
+    /// whatever order the rules carry, capped so a refusal stays readable.
+    fn heard_examples(&self, limit: usize) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .learned
+            .iter()
+            .filter(|r| Care::from_signature(&r.signature).is_some())
+            .flat_map(|r| r.aliases.clone())
+            .collect();
+        out.sort();
+        out.dedup();
+        out.truncate(limit);
+        out
+    }
+
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
     }
@@ -379,14 +614,20 @@ mod tests {
 
     #[test]
     fn feeding_reduces_hunger() {
-        let mut v = Vitals { hunger: 0.9, ..Default::default() };
+        let mut v = Vitals {
+            hunger: 0.9,
+            ..Default::default()
+        };
         Care::Feed.apply(&mut v);
         assert!(v.hunger < 0.9);
     }
 
     #[test]
     fn playing_raises_happiness() {
-        let mut v = Vitals { happiness: 0.2, ..Default::default() };
+        let mut v = Vitals {
+            happiness: 0.2,
+            ..Default::default()
+        };
         Care::Play.apply(&mut v);
         assert!(v.happiness > 0.2);
     }
@@ -517,7 +758,11 @@ mod tests {
     fn every_care_operation_reduces_to_a_primitive_sequence() {
         let mut v = Vitals::default();
         for care in [Care::Feed, Care::Play, Care::Clean, Care::Sleep] {
-            assert!(!care.apply(&mut v).is_empty(), "{} reduced to nothing", care.label());
+            assert!(
+                !care.apply(&mut v).is_empty(),
+                "{} reduced to nothing",
+                care.label()
+            );
         }
     }
 
@@ -540,7 +785,11 @@ mod tests {
         for care in [Care::Feed, Care::Play, Care::Clean, Care::Sleep] {
             assert_eq!(Care::parse(care.label()), Some(care));
         }
-        assert_eq!(Care::parse("FEED"), Some(Care::Feed), "parsing is case-insensitive");
+        assert_eq!(
+            Care::parse("FEED"),
+            Some(Care::Feed),
+            "parsing is case-insensitive"
+        );
         assert_eq!(Care::parse("burn"), None);
     }
 
@@ -612,9 +861,15 @@ mod tests {
         for _ in 0..3 {
             p.tend(Care::Sleep);
         }
-        let json = p.to_json().replace("\"stage\": \"egg\"", "\"stage\": \"hatchling\"");
+        let json = p
+            .to_json()
+            .replace("\"stage\": \"egg\"", "\"stage\": \"hatchling\"");
         let restored = Pet::from_json("ca-001", &json).expect("round trips");
-        assert_eq!(restored.stage, Stage::Juvenile, "recomputed, not read from the file");
+        assert_eq!(
+            restored.stage,
+            Stage::Juvenile,
+            "recomputed, not read from the file"
+        );
     }
 
     #[test]
@@ -742,7 +997,10 @@ mod firstness_tests {
         // The interesting case. Content addressing collapses them, so the
         // chicken and the egg are the same artifact and the ordering question
         // has no answer rather than a preferred one.
-        let f = firstness(&players(&[("ca-001", &["shared"]), ("ca-002", &["shared"])]));
+        let f = firstness(&players(&[
+            ("ca-001", &["shared"]),
+            ("ca-002", &["shared"]),
+        ]));
         assert_eq!(
             f,
             Firstness::Converged {
@@ -807,5 +1065,332 @@ mod firstness_tests {
     fn the_motto_asks_the_question_it_can_answer() {
         assert!(MOTTO.contains("egg"));
         assert!(MOTTO.contains("chicken"));
+    }
+}
+
+#[cfg(test)]
+mod understanding_tests {
+    use super::*;
+
+    fn rule(signature: &str, aliases: &[&str]) -> LearnedRule {
+        LearnedRule {
+            address: "addr".into(),
+            signature: signature.into(),
+            aliases: aliases.iter().map(|a| a.to_string()).collect(),
+            confidence: 0.9,
+            observations: aliases.len(),
+        }
+    }
+
+    fn fed_pet() -> Pet {
+        // A creature that has been fed several ways, and played with once.
+        let mut p = Pet::new("ca-x");
+        p.learn(vec![
+            rule(
+                "SetValue_CheckSense",
+                &["pour some kibble", "serve the food", "refill the bowl"],
+            ),
+            rule("SetValue_Pulse", &["throw the ball"]),
+        ]);
+        p
+    }
+
+    mod understands {
+        use super::*;
+
+        #[test]
+        fn a_wire_word_is_understood_without_any_evidence() {
+            let p = Pet::new("ca-y");
+            assert_eq!(
+                p.understand("feed"),
+                Understanding::Understood { care: Care::Feed }
+            );
+        }
+
+        #[test]
+        fn a_wire_word_is_matched_case_insensitively() {
+            let p = Pet::new("ca-y");
+            assert!(p.understand("SLEEP").acts().is_some());
+        }
+
+        #[test]
+        fn a_learned_phrasing_resolves_to_the_act_it_was_fed_under() {
+            let p = fed_pet();
+            assert_eq!(
+                p.understand("please pour some kibble now"),
+                Understanding::UnderstoodByExperience {
+                    care: Care::Feed,
+                    matched: "pour some kibble".into(),
+                }
+            );
+        }
+
+        #[test]
+        fn a_learned_phrasing_survives_surrounding_words() {
+            // The player's sentence contains the act's phrasing and other words
+            // besides; requiring the whole request to equal the alias would make
+            // free text impossible.
+            let p = fed_pet();
+            assert_eq!(p.understand("pour some kibble").acts(), Some(Care::Feed));
+            assert_eq!(
+                p.understand("could you pour some kibble, it looks hungry")
+                    .acts(),
+                Some(Care::Feed)
+            );
+        }
+    }
+
+    mod distinguishes {
+        use super::*;
+
+        #[test]
+        fn a_near_miss_says_what_would_work() {
+            // The middle outcome: the creature has heard these words, just not in
+            // this arrangement. "pour the kibble" shares its content terms with a
+            // phrasing it knows, so it can say the request was nearly right.
+            let p = fed_pet();
+            let u = p.understand("pour the kibble in the bowl");
+
+            assert!(u.is_refusal());
+            assert_eq!(u.acts(), None);
+            match u {
+                Understanding::NeedsDifferentWords {
+                    known,
+                    learned_examples,
+                } => {
+                    assert!(known.contains(&"feed".to_string()), "{known:?}");
+                    assert!(
+                        learned_examples.contains(&"pour some kibble".to_string()),
+                        "{learned_examples:?}"
+                    );
+                }
+                other => panic!("expected NeedsDifferentWords, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn an_unrelated_request_says_it_has_never_heard_it() {
+            // The far case. Nothing in the request resembles anything the
+            // creature has been fed, so it says so rather than implying the
+            // player was nearly right.
+            let p = fed_pet();
+            assert!(matches!(
+                p.understand("frobnicate the widget"),
+                Understanding::NeverHeardOf { .. }
+            ));
+        }
+
+        #[test]
+        fn it_cannot_tell_a_metaphor_from_nonsense_and_does_not_pretend_to() {
+            // "give it a snack" is a request for something the creature does. With
+            // no model it shares no vocabulary with what it has been fed, so it is
+            // indistinguishable from nonsense. An earlier version of this test
+            // asserted otherwise and was wrong: the distinction is not available
+            // from the evidence the creature actually has, and claiming it would
+            // be a guess dressed as a distinction. What it must do is say which
+            // of the two it is, and offer the vocabulary either way.
+            let p = fed_pet();
+            for text in ["give it a snack", "frobnicate the widget"] {
+                let u = p.understand(text);
+                assert!(u.is_refusal(), "{text}: {u:?}");
+                match u {
+                    Understanding::NeverHeardOf {
+                        known,
+                        learned_examples,
+                    } => {
+                        assert_eq!(known.len(), 4, "{text}: {known:?}");
+                        assert!(
+                            learned_examples.contains(&"pour some kibble".to_string()),
+                            "{text}: {learned_examples:?}"
+                        );
+                    }
+                    other => panic!("{text}: expected NeverHeardOf, got {other:?}"),
+                }
+            }
+        }
+
+        #[test]
+        fn a_creature_with_no_evidence_still_says_what_it_knows() {
+            // Never heard of anything, but still not a bare "no": the four acts
+            // are the whole of what it can do and saying so is more use than an
+            // error.
+            let p = Pet::new("ca-z");
+            let u = p.understand("give it some kibble");
+            assert!(u.is_refusal());
+            match u {
+                Understanding::NeverHeardOf {
+                    known,
+                    learned_examples,
+                } => {
+                    assert_eq!(known.len(), 4, "{known:?}");
+                    assert!(learned_examples.is_empty(), "{learned_examples:?}");
+                }
+                other => panic!("expected NeverHeardOf, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn the_two_refusals_are_distinguishable_from_each_other() {
+            // Conflating these is the failure the type exists to prevent: a
+            // creature that cannot tell "nearly right" from "not addressed to
+            // me" cannot tell the player whether trying again would help.
+            let p = fed_pet();
+            assert!(matches!(
+                p.understand("pour the kibble in the bowl"),
+                Understanding::NeedsDifferentWords { .. }
+            ));
+            assert!(matches!(
+                p.understand("frobnicate the widget"),
+                Understanding::NeverHeardOf { .. }
+            ));
+        }
+
+        #[test]
+        fn function_words_alone_do_not_make_a_request_look_half_heard() {
+            // Every English sentence shares "the" and "it". Counting those as
+            // overlap would make every request look nearly right, and the two
+            // refusals would collapse into one.
+            let p = fed_pet();
+            assert!(matches!(
+                p.understand("it is the widget"),
+                Understanding::NeverHeardOf { .. }
+            ));
+        }
+
+        #[test]
+        fn an_empty_request_is_refused_rather_than_panicking() {
+            let p = fed_pet();
+            assert!(p.understand("   ").is_refusal());
+        }
+    }
+
+    mod refuses_to_guess {
+        use super::*;
+
+        #[test]
+        fn a_word_containing_another_act_s_name_does_not_match_it() {
+            // The D6 trap, in a new place. `widget` contains no act word today,
+            // but `sleep` inside `asleep` and `play` inside `player` are the live
+            // cases, and a substring matcher would serve those.
+            let p = fed_pet();
+            assert_eq!(p.understand("the player is asleep").acts(), None);
+        }
+
+        #[test]
+        fn an_act_it_never_learned_is_not_offered_as_known() {
+            // The pet knows feeding and playing. Cleaning and sleeping it has
+            // never been shown, so a learned phrase must not conjure them.
+            let p = fed_pet();
+            assert!(!matches!(
+                p.understand("pour some kibble"),
+                Understanding::UnderstoodByExperience {
+                    care: Care::Clean,
+                    ..
+                }
+            ));
+        }
+
+        #[test]
+        fn a_rule_for_an_unknown_signature_is_ignored() {
+            // A learned rule whose sequence is not an act the creature performs
+            // is a real thing — induction produces them — and must not be
+            // resolved into an act by taking the first match.
+            let mut p = Pet::new("ca-w");
+            p.learn(vec![rule("Toggle_Reset", &["flip the switch"])]);
+            assert_eq!(p.understand("flip the switch").acts(), None);
+        }
+    }
+
+    mod signatures_round_trip {
+        use super::*;
+
+        #[test]
+        fn every_act_reads_back_from_its_own_sequence() {
+            // The mapping is declared once. If `apply` and `from_signature` could
+            // disagree, a learned rule would be recognised and then not acted on,
+            // which is the unaddressable-signature bug this was written to close.
+            for care in Care::all() {
+                assert_eq!(Care::from_signature(care.signature()), Some(care));
+            }
+        }
+
+        #[test]
+        fn applying_an_act_produces_the_sequence_it_declares() {
+            for care in Care::all() {
+                let mut v = Vitals::default();
+                let produced = care.apply(&mut v).join("_");
+                assert_eq!(produced, care.signature(), "{}", care.label());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod primitive_vocabulary_tests {
+    use super::*;
+    use crate::bridge::primitive::UniversalPrimitive;
+
+    /// Every name the game is capable of putting into a trace.
+    fn declared_by_the_game() -> Vec<String> {
+        Care::all()
+            .iter()
+            .flat_map(|c| c.signature().split('_').map(String::from))
+            .collect()
+    }
+
+    #[test]
+    fn every_primitive_the_game_emits_is_a_declared_one() {
+        // P2, as an invariant rather than a promise. The game hands these to
+        // `Trace.primitives`, which is the densest learning signal in the system
+        // and the input to induction, so a name that is not in the vocabulary
+        // becomes a learned rule the bridge can never resolve. `Emit` did exactly
+        // that and reached a `LearnedRule` as `SetValue_Emit`.
+        let names = declared_by_the_game();
+        let mut seen = names.clone();
+        seen.sort();
+        seen.dedup();
+
+        for name in &seen {
+            let declared = serde_json::to_value(name)
+                .ok()
+                .and_then(|v| serde_json::from_value::<UniversalPrimitive>(v).ok())
+                .is_some();
+            assert!(
+                declared,
+                "the game emits {name:?}, which is not a UniversalPrimitive. \
+                 A trace carrying it cannot be dispatched by anything."
+            );
+        }
+    }
+
+    #[test]
+    fn applying_an_act_emits_only_declared_primitives() {
+        // The same check on the actual output rather than on the declaration, so
+        // a future edit to `apply` that bypasses `signature` is caught here.
+        for care in Care::all() {
+            let mut v = Vitals::default();
+            for name in care.apply(&mut v) {
+                let declared = serde_json::to_value(&name)
+                    .ok()
+                    .and_then(|v| serde_json::from_value::<UniversalPrimitive>(v).ok())
+                    .is_some();
+                assert!(declared, "{} emitted {name:?}", care.label());
+            }
+        }
+    }
+
+    #[test]
+    fn the_sequence_the_game_records_is_the_sequence_it_declares() {
+        // Guards against the declaration and the behaviour drifting apart, which
+        // is how `SetValue_Emit` survived: nothing read one back from the other.
+        for care in Care::all() {
+            let mut v = Vitals::default();
+            assert_eq!(
+                care.apply(&mut v).join("_"),
+                care.signature(),
+                "{}",
+                care.label()
+            );
+        }
     }
 }

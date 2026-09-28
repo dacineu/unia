@@ -1,6 +1,6 @@
 // Does the artifact's identity depend on its surface form?
-use unia::identifiers::DuUuid;
 use serde_json::json;
+use unia::identifiers::DuUuid;
 
 #[test]
 fn probe_address_language_sensitivity() {

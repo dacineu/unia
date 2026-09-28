@@ -1,7 +1,7 @@
 #[test]
 fn probe_hazards() {
-    use unia::mcp::store::{Store};
     use std::io::Write;
+    use unia::mcp::store::Store;
     let d = std::env::temp_dir().join("unia-haz");
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
@@ -16,16 +16,21 @@ fn probe_hazards() {
     std::fs::write(d.join("valve-001.ure"), m).unwrap();
     let s = Store::open(&d);
 
-    for q in ["inchide supapa",           // close the valve (Romanian)
-              "oprit supapa urgent",      // stop the valve urgently
-              "regleaza debitul",         // regulate the flow
-              "open the valve",           // the ANTONYM of inchide
-              "close the valve",          // the ANTONYM of open
-              "deschide supapa"] {       // open the valve (Romanian)
+    for q in [
+        "inchide supapa",      // close the valve (Romanian)
+        "oprit supapa urgent", // stop the valve urgently
+        "regleaza debitul",    // regulate the flow
+        "open the valve",      // the ANTONYM of inchide
+        "close the valve",     // the ANTONYM of open
+        "deschide supapa",
+    ] {
+        // open the valve (Romanian)
         let hits = s.search(q, 1);
-        let top = hits.first().map(|m| format!("{} ({:.3})", m.id, m.score)).unwrap_or("-".into());
+        let top = hits
+            .first()
+            .map(|m| format!("{} ({:.3})", m.id, m.score))
+            .unwrap_or("-".into());
         println!("  {q:<26} -> {top}");
     }
     let _ = std::fs::remove_dir_all(&d);
-    
 }

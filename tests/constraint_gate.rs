@@ -12,9 +12,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use unia::bridge::primitive::{
-    PrimitiveBridge, UreAction, UreResource, UniversalPrimitive,
-};
+use unia::bridge::primitive::{PrimitiveBridge, UniversalPrimitive, UreAction, UreResource};
 use unia::nucleus::{ActuatorDriver, ActuatorNucleus, ValveDriver};
 use unia::wmis::{QualityMetrics, ResourceType, SharingScope, WmisEconomicLayer, WmisResource};
 
@@ -93,7 +91,10 @@ fn an_action_with_no_preconditions_reaches_the_driver() {
         !err.contains("will not do that"),
         "the gate let it through; the driver said: {err}"
     );
-    assert!(err.contains("Missing value"), "and it was the driver: {err}");
+    assert!(
+        err.contains("Missing value"),
+        "and it was the driver: {err}"
+    );
 }
 
 #[test]
@@ -132,8 +133,14 @@ fn a_violated_precondition_refuses_and_names_both_sides() {
     // on "precondition failed".
     assert!(err.contains("valve-001"), "names the resource: {err}");
     assert!(err.contains("status is fault"), "names what it is: {err}");
-    assert!(err.contains("needs it to be 'fault'"), "names what was needed: {err}");
-    assert!(err.contains("left it alone"), "says nothing was done: {err}");
+    assert!(
+        err.contains("needs it to be 'fault'"),
+        "names what was needed: {err}"
+    );
+    assert!(
+        err.contains("left it alone"),
+        "says nothing was done: {err}"
+    );
 }
 
 #[test]
@@ -228,7 +235,10 @@ fn a_reported_value_survives_for_the_next_call() {
         "dispatch reported: {first}"
     );
     assert_eq!(
-        nucleus.state_of("valve-001").get("status").map(String::as_str),
+        nucleus
+            .state_of("valve-001")
+            .get("status")
+            .map(String::as_str),
         Some("closed"),
         "the driver wrote the new value, and the gate can read it back"
     );

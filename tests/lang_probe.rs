@@ -1,13 +1,22 @@
 #[test]
 fn probe_multilingual() {
     use unia::session::{lessons, summarise, Turn};
-    let t = |s: &str, x: &str| Turn { speaker: s.into(), text: x.into() };
+    let t = |s: &str, x: &str| Turn {
+        speaker: s.into(),
+        text: x.into(),
+    };
 
     // A Romanian session where the person corrects the model three times.
     let ro = vec![
         t("human", "adauga un comentariu la parser"),
-        t("assistant", "Am adaugat `/// Parseaza o afirmatie` deasupra functiei."),
-        t("human", "nu, comentariul trebuie sa descrie valoarea returnata"),
+        t(
+            "assistant",
+            "Am adaugat `/// Parseaza o afirmatie` deasupra functiei.",
+        ),
+        t(
+            "human",
+            "nu, comentariul trebuie sa descrie valoarea returnata",
+        ),
         t("assistant", "Am rescris comentariul."),
         t("human", "in loc de asta foloseste o referinta"),
         t("assistant", "Am schimbat."),

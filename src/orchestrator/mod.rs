@@ -119,7 +119,10 @@ mod tests {
             .collapse_actuator(id, BehavioralVector::Quickest)
             .unwrap();
 
-        assert!(!activation.is_deep_dive, "a shallow skill is not a deep dive");
+        assert!(
+            !activation.is_deep_dive,
+            "a shallow skill is not a deep dive"
+        );
         assert!(
             activation.system_prompt.contains("[MODE:FAST]"),
             "got: {}",

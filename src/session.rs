@@ -143,8 +143,21 @@ pub fn is_correction(text: &str) -> bool {
 pub fn is_confirmation(text: &str) -> bool {
     let t = text.trim().to_lowercase();
     const ACKNOWLEDGEMENTS: &[&str] = &[
-        "yes", "yep", "yeah", "ok", "okay", "correct", "right", "perfect", "that works",
-        "works", "good", "nice", "thanks", "thank you", "exactly",
+        "yes",
+        "yep",
+        "yeah",
+        "ok",
+        "okay",
+        "correct",
+        "right",
+        "perfect",
+        "that works",
+        "works",
+        "good",
+        "nice",
+        "thanks",
+        "thank you",
+        "exactly",
     ];
     ACKNOWLEDGEMENTS.iter().any(|a| {
         t == *a
@@ -224,7 +237,10 @@ pub fn summarise(turns: &[Turn]) -> SessionSummary {
     SessionSummary {
         turns: turns.len(),
         human_turns: turns.iter().filter(|t| t.is_human()).count(),
-        corrections: found.iter().filter(|l| l.kind == LessonKind::Correction).count(),
+        corrections: found
+            .iter()
+            .filter(|l| l.kind == LessonKind::Correction)
+            .count(),
         confirmations: found
             .iter()
             .filter(|l| l.kind == LessonKind::Confirmation)
@@ -247,8 +263,14 @@ mod tests {
     pub(super) fn session() -> Vec<Turn> {
         vec![
             turn("human", "add a doc comment to the parser"),
-            turn("assistant", "Added `/// Parses one statement` above the function."),
-            turn("human", "no, the comment should describe the return value, not the input"),
+            turn(
+                "assistant",
+                "Added `/// Parses one statement` above the function.",
+            ),
+            turn(
+                "human",
+                "no, the comment should describe the return value, not the input",
+            ),
             turn("assistant", "Rewritten to describe the return value."),
             turn("human", "perfect"),
             turn("human", "now run the tests"),
@@ -256,7 +278,6 @@ mod tests {
             turn("human", "yes"),
         ]
     }
-
 }
 
 #[cfg(test)]
@@ -303,7 +324,9 @@ mod describe_markers {
         // A substring scan would fire here and invent a correction that was never
         // made. Real transcripts are full of remarks about earlier parts of the
         // thread.
-        assert!(!is_correction("that is not quite what I meant earlier in the thread"));
+        assert!(!is_correction(
+            "that is not quite what I meant earlier in the thread"
+        ));
         assert!(!is_correction("the error was wrong about the path"));
         assert!(!is_correction(""));
     }
@@ -311,7 +334,10 @@ mod describe_markers {
     #[test]
     fn recognises_an_acknowledgement() {
         for text in ["yes", "ok", "perfect", "thanks!", "correct."] {
-            assert!(is_confirmation(text), "{text:?} should read as an acknowledgement");
+            assert!(
+                is_confirmation(text),
+                "{text:?} should read as an acknowledgement"
+            );
         }
     }
 
@@ -393,7 +419,10 @@ mod describe_lessons {
 
     #[test]
     fn extracts_nothing_when_a_model_only_agrees_with_itself() {
-        let turns = vec![turn("assistant", "I will do that"), turn("assistant", "Done.")];
+        let turns = vec![
+            turn("assistant", "I will do that"),
+            turn("assistant", "Done."),
+        ];
         assert!(lessons(&turns).is_empty());
     }
 

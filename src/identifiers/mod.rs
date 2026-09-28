@@ -202,7 +202,10 @@ mod skeleton_tests {
     #[test]
     fn drops_the_guidance_written_for_a_human() {
         let s = skeleton(&valve(["halt", "stop"]));
-        assert!(s.get("guidance").is_none(), "guidance is prose, not structure");
+        assert!(
+            s.get("guidance").is_none(),
+            "guidance is prose, not structure"
+        );
     }
 
     #[test]
@@ -229,8 +232,10 @@ mod skeleton_tests {
         // `preserve_order` feature, and the failure would be silent: every
         // address in existence changes. Asserted here rather than left as a
         // comment, because a comment was what let the wrong claim stand.
-        let a = json!({"category": "actuator", "payload": {"kind": "native"}, "ure_version": "1.0"});
-        let b = json!({"ure_version": "1.0", "payload": {"kind": "native"}, "category": "actuator"});
+        let a =
+            json!({"category": "actuator", "payload": {"kind": "native"}, "ure_version": "1.0"});
+        let b =
+            json!({"ure_version": "1.0", "payload": {"kind": "native"}, "category": "actuator"});
         assert_eq!(
             DuUuid::generate(&a, None).unwrap(),
             DuUuid::generate(&b, None).unwrap()

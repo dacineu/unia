@@ -453,7 +453,11 @@ mod tests {
         p.tend(Care::Sleep, 1);
         assert_eq!(p.earned_stage(), Stage::Hatchling);
         p.tend(Care::Sleep, 2);
-        assert_eq!(p.earned_stage(), Stage::Hatchling, "two cycles is not yet three");
+        assert_eq!(
+            p.earned_stage(),
+            Stage::Hatchling,
+            "two cycles is not yet three"
+        );
         p.tend(Care::Sleep, 3);
         assert_eq!(p.earned_stage(), Stage::Juvenile);
         p.tend(Care::Sleep, 4);
@@ -530,7 +534,11 @@ mod tests {
         // nothing would be uninducible.
         let mut v = Vitals::default();
         for care in [Care::Feed, Care::Play, Care::Clean, Care::Sleep] {
-            assert!(!care.apply(&mut v).is_empty(), "{} reduced to nothing", care.label());
+            assert!(
+                !care.apply(&mut v).is_empty(),
+                "{} reduced to nothing",
+                care.label()
+            );
         }
     }
 

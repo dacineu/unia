@@ -174,8 +174,7 @@ impl ActuatorNucleus {
                 .unwrap_or_default();
             drop(state);
 
-            let report =
-                crate::constraints::check(&packet.context.preconditions, &current);
+            let report = crate::constraints::check(&packet.context.preconditions, &current);
             if let Some(refusal) = report.first_refusal {
                 return Err(format!(
                     "{} will not do that: {refusal}. I have left it alone.",

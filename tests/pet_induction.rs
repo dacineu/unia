@@ -98,7 +98,11 @@ fn the_same_button_worded_differently_induces_a_rule() {
 
     let c = &candidates[0];
     assert_eq!(c.signature, "SetValue_CheckSense");
-    assert_eq!(c.learned_aliases.len(), 5, "every phrasing becomes an alias");
+    assert_eq!(
+        c.learned_aliases.len(),
+        5,
+        "every phrasing becomes an alias"
+    );
     for phrase in ["give it dinner", "pour some kibble", "she needs feeding"] {
         assert!(
             c.learned_aliases.iter().any(|a| a == phrase),
@@ -117,8 +121,8 @@ fn different_actions_induce_different_rules() {
             ("give it dinner", FEED),
             ("pour some kibble", FEED),
             ("serve the food", FEED),
-            ("throw a ball", &["SetValue", "Emit"]),
-            ("fetch the ball", &["SetValue", "Emit"]),
+            ("throw a ball", &["SetValue", "Pulse"]),
+            ("fetch the ball", &["SetValue", "Pulse"]),
         ],
     );
 
@@ -128,7 +132,7 @@ fn different_actions_induce_different_rules() {
 
     let mut signatures: Vec<&str> = candidates.iter().map(|c| c.signature.as_str()).collect();
     signatures.sort();
-    assert_eq!(signatures, vec!["SetValue_CheckSense", "SetValue_Emit"]);
+    assert_eq!(signatures, vec!["SetValue_CheckSense", "SetValue_Pulse"]);
 }
 
 #[test]
@@ -146,7 +150,11 @@ fn a_trace_with_no_primitive_sequence_is_not_induced_from() {
 
     let store = Store::open(dir.path());
     assert_eq!(store.traces().len(), 3);
-    assert_eq!(store.malformed_traces(), 0, "the lines are valid, just sequenceless");
+    assert_eq!(
+        store.malformed_traces(),
+        0,
+        "the lines are valid, just sequenceless"
+    );
     assert!(induce_all(store.traces()).unwrap().is_empty());
 }
 
@@ -233,8 +241,8 @@ fn two_players_reaching_one_address_answer_the_motto_with_neither() {
     // reach the same content address, and the question the game asks dissolves
     // rather than being decided. This is the argument for treating ancestry as a
     // relation rather than a chain, expressed as a test.
-    use unia::camaduci::{Firstness, firstness};
     use std::collections::BTreeMap;
+    use unia::camaduci::{firstness, Firstness};
 
     let mut by_player: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for who in ["ca-001", "ca-002"] {
@@ -264,8 +272,8 @@ fn two_players_reaching_one_address_answer_the_motto_with_neither() {
 
 #[test]
 fn two_players_staying_apart_leave_the_motto_undetermined() {
-    use unia::camaduci::{Firstness, firstness};
     use std::collections::BTreeMap;
+    use unia::camaduci::{firstness, Firstness};
 
     let mut by_player: BTreeMap<String, Vec<String>> = BTreeMap::new();
     by_player.insert("ca-001".to_string(), vec!["address-a".to_string()]);

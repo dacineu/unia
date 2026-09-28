@@ -340,7 +340,11 @@ pub fn render(lexicon: &Lexicon, address: &str, language: &str) -> Utterance {
             Utterance::Known(phrase)
         }
         _ => Utterance::UnknownLanguage {
-            available: lexicon.languages(address).into_iter().map(str::to_string).collect(),
+            available: lexicon
+                .languages(address)
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
         },
     }
 }
@@ -357,7 +361,6 @@ mod tests {
         l.learn(&address, "ro", "toarnă porumb");
         (l, address)
     }
-
 }
 
 #[cfg(test)]
@@ -375,7 +378,10 @@ mod describe_learn {
     fn is_idempotent_so_relearning_never_grows_the_set() {
         let mut l = Lexicon::new();
         assert!(l.learn("a", "en", "hello"));
-        assert!(!l.learn("a", "en", "hello"), "a repeated phrase adds nothing");
+        assert!(
+            !l.learn("a", "en", "hello"),
+            "a repeated phrase adds nothing"
+        );
         assert_eq!(l.surface("a", "en").unwrap().len(), 1);
     }
 
@@ -406,8 +412,14 @@ mod describe_surface {
     fn distinguishes_an_unknown_language_from_an_unknown_address() {
         let (l, a) = bilingual();
         assert!(l.surface(&a, "en").is_some());
-        assert!(l.surface(&a, "de").is_none(), "act is known, language is not");
-        assert!(l.surface("nope", "en").is_none(), "address is not known at all");
+        assert!(
+            l.surface(&a, "de").is_none(),
+            "act is known, language is not"
+        );
+        assert!(
+            l.surface("nope", "en").is_none(),
+            "address is not known at all"
+        );
     }
 
     #[test]
@@ -425,7 +437,10 @@ mod describe_render {
     #[test]
     fn renders_a_phrase_when_the_language_is_known() {
         let (l, a) = bilingual();
-        assert_eq!(render(&l, &a, "ro"), Utterance::Known("toarnă porumb".into()));
+        assert_eq!(
+            render(&l, &a, "ro"),
+            Utterance::Known("toarnă porumb".into())
+        );
     }
 
     #[test]
@@ -668,14 +683,13 @@ mod form_tests {
 
     /// One act: a feed, stated three ways, renderable four ways.
     pub(super) fn act() -> Transduction {
-        Transduction::new("9f2b1c44-0000-4000-8000-000000000001", vec![
-            "SetValue".into(),
-            "CheckSense".into(),
-        ])
+        Transduction::new(
+            "9f2b1c44-0000-4000-8000-000000000001",
+            vec!["SetValue".into(), "CheckSense".into()],
+        )
         .with("en", "pour some kibble")
         .with("ro", "toarnă porumb")
     }
-
 }
 
 #[cfg(test)]
@@ -711,8 +725,14 @@ mod describe_render_forms {
     #[test]
     fn renders_prose_in_the_language_asked_for() {
         let a = act();
-        assert_eq!(a.render("en", Form::Prose).as_deref(), Some("pour some kibble"));
-        assert_eq!(a.render("ro", Form::Prose).as_deref(), Some("toarnă porumb"));
+        assert_eq!(
+            a.render("en", Form::Prose).as_deref(),
+            Some("pour some kibble")
+        );
+        assert_eq!(
+            a.render("ro", Form::Prose).as_deref(),
+            Some("toarnă porumb")
+        );
     }
 
     #[test]
@@ -721,7 +741,10 @@ mod describe_render_forms {
         // reader without the vocabulary and free to one that has it.
         let out = act().render("en", Form::Pseudocode).unwrap();
         assert!(out.starts_with("SetValue CheckSense"), "got {out}");
-        assert!(out.contains("pour some kibble"), "keeps the phrase as a gloss");
+        assert!(
+            out.contains("pour some kibble"),
+            "keeps the phrase as a gloss"
+        );
     }
 
     #[test]
@@ -743,7 +766,10 @@ mod describe_render_forms {
             );
         }
         let (_, from_data) = decode_data(&a.render("en", Form::Data).unwrap()).unwrap();
-        assert_eq!(from_data, a.primitives, "the fast channel carries the same act");
+        assert_eq!(
+            from_data, a.primitives,
+            "the fast channel carries the same act"
+        );
     }
 
     #[test]
@@ -754,7 +780,11 @@ mod describe_render_forms {
         // misread.
         let a = act();
         for form in [Form::Prose, Form::Pseudocode, Form::Rust, Form::Data] {
-            assert_eq!(a.render("de", form), None, "{form:?} should refuse an unknown language");
+            assert_eq!(
+                a.render("de", form),
+                None,
+                "{form:?} should refuse an unknown language"
+            );
         }
     }
 
@@ -762,7 +792,8 @@ mod describe_render_forms {
     fn keeps_a_phrase_from_closing_the_comment_it_sits_in() {
         // A phrasing is arbitrary player-supplied text. An unescaped `*/` would
         // close the comment and turn the remainder into code.
-        let a = Transduction::new("a", vec!["SetValue".into()]).with("en", "kill */ System.exit(1); //");
+        let a = Transduction::new("a", vec!["SetValue".into()])
+            .with("en", "kill */ System.exit(1); //");
         let out = a.render("en", Form::Rust).unwrap();
         assert!(!out.contains("*/ System"), "comment was not escaped: {out}");
     }
@@ -834,6 +865,9 @@ mod describe_location_independence {
         let blob = a.render("en", Form::Data).unwrap();
         let (address, primitives) = decode_data(&blob).unwrap();
         assert_eq!(address, a.address);
-        assert_eq!(primitives, vec!["SetValue".to_string(), "CheckSense".to_string()]);
+        assert_eq!(
+            primitives,
+            vec!["SetValue".to_string(), "CheckSense".to_string()]
+        );
     }
 }

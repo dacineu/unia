@@ -170,7 +170,9 @@ impl Constraint {
             (Literal::Number(want), Ok(Literal::Number(got))) => {
                 self.verdict(actual, &compare(&got, want))
             }
-            (Literal::Bool(want), Ok(Literal::Bool(got))) => self.verdict(actual, &compare(&got, want)),
+            (Literal::Bool(want), Ok(Literal::Bool(got))) => {
+                self.verdict(actual, &compare(&got, want))
+            }
             // A type mismatch is a manifest bug and is reported as one rather
             // than being coerced into a comparison that would silently pass.
             (_, Ok(other)) => Verdict::TypeMismatch {
@@ -265,7 +267,9 @@ fn parse_literal(raw: &str) -> Result<Literal, String> {
     match trimmed.to_ascii_lowercase().as_str() {
         "true" => Ok(Literal::Bool(true)),
         "false" => Ok(Literal::Bool(false)),
-        _ => Err(format!("{trimmed:?} is not a quoted string, a number, or a boolean")),
+        _ => Err(format!(
+            "{trimmed:?} is not a quoted string, a number, or a boolean"
+        )),
     }
 }
 
@@ -318,7 +322,9 @@ impl Verdict {
                 field,
                 required,
                 observed,
-            } => Some(format!("{field} is {observed}, and this needs it to be {required}")),
+            } => Some(format!(
+                "{field} is {observed}, and this needs it to be {required}"
+            )),
             Verdict::UnknownField(field) => Some(format!(
                 "{field} is a declared field, but nothing has told me its value yet"
             )),
@@ -335,7 +341,9 @@ impl Verdict {
                 field,
                 value,
                 reason,
-            } => Some(format!("{field} is {value:?}, which is not readable: {reason}")),
+            } => Some(format!(
+                "{field} is {value:?}, which is not readable: {reason}"
+            )),
         }
     }
 }
@@ -448,7 +456,11 @@ mod constraint_tests {
             // A constraint may only test a declared state key, so prose on the
             // left is a manifest bug and must not be interpreted.
             let err = Constraint::parse("the valve status != 'fault'").unwrap_err();
-            assert!(err.contains("not a\ndeclared state key") || err.contains("not a declared state key"), "{err}");
+            assert!(
+                err.contains("not a\ndeclared state key")
+                    || err.contains("not a declared state key"),
+                "{err}"
+            );
         }
 
         #[test]
@@ -490,7 +502,9 @@ mod constraint_tests {
         #[test]
         fn a_numeric_boundary_is_inclusive_where_the_operator_says_so() {
             let at = Constraint::parse("flow_rate <= 1.0").unwrap();
-            assert!(at.evaluate(&state(&[("flow_rate", "1.0")])).permits_dispatch());
+            assert!(at
+                .evaluate(&state(&[("flow_rate", "1.0")]))
+                .permits_dispatch());
 
             let over = Constraint::parse("flow_rate < 1.0").unwrap();
             assert!(!over
@@ -527,7 +541,9 @@ mod constraint_tests {
             // precondition, which is the opposite of a working verifier.
             let c = Constraint::parse("status != 'fault'").unwrap();
             assert!(c.evaluate(&state(&[("status", "open")])).permits_dispatch());
-            assert!(!c.evaluate(&state(&[("status", "fault")])).permits_dispatch());
+            assert!(!c
+                .evaluate(&state(&[("status", "fault")]))
+                .permits_dispatch());
         }
 
         #[test]
@@ -563,7 +579,11 @@ mod constraint_tests {
             let report = check(&cs, &state(&[("status", "open"), ("power", "false")]));
             assert!(!report.permits_dispatch());
             assert!(
-                report.first_refusal.as_deref().unwrap_or_default().contains("power"),
+                report
+                    .first_refusal
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("power"),
                 "{report:?}"
             );
         }
@@ -587,13 +607,14 @@ mod constraint_tests {
         fn the_first_refusal_is_the_one_reported() {
             // A precondition that already blocks dispatch makes the rest
             // irrelevant, and reporting all of them buries what to act on.
-            let cs = vec![
-                "status != 'fault'".to_string(),
-                "power == true".to_string(),
-            ];
+            let cs = vec!["status != 'fault'".to_string(), "power == true".to_string()];
             let report = check(&cs, &state(&[("status", "fault"), ("power", "false")]));
             assert!(
-                report.first_refusal.as_deref().unwrap_or_default().contains("status"),
+                report
+                    .first_refusal
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("status"),
                 "{report:?}"
             );
         }

@@ -61,10 +61,7 @@ enum Signal {
     /// The token travels on the first message rather than in a header because the
     /// browser WebSocket API cannot set request headers, and a signalling channel
     /// that only browsers can use is not much of one.
-    Hello {
-        room: String,
-        token: String,
-    },
+    Hello { room: String, token: String },
     /// A session description offer, relayed to the room.
     Offer { room: String, sdp: String },
     /// A session description answer, relayed to the room.
@@ -270,10 +267,9 @@ async fn serve_tls(
         std::fs::File::open(cert_path)?,
     ))
     .collect::<Result<_, _>>()?;
-    let key: PrivateKeyDer<'static> = rustls_pemfile::private_key(&mut std::io::BufReader::new(
-        std::fs::File::open(key_path)?,
-    ))?
-    .ok_or("no private key in the --tls-key file")?;
+    let key: PrivateKeyDer<'static> =
+        rustls_pemfile::private_key(&mut std::io::BufReader::new(std::fs::File::open(key_path)?))?
+            .ok_or("no private key in the --tls-key file")?;
 
     let config = ServerConfig::builder()
         .with_no_client_auth()
@@ -299,7 +295,10 @@ async fn serve_tls(
 }
 
 /// Runs one plaintext session.
-async fn handle_plain(stream: TcpStream, session: Session) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_plain(
+    stream: TcpStream,
+    session: Session,
+) -> Result<(), Box<dyn std::error::Error>> {
     let ws = tokio_tungstenite::accept_async(stream).await?;
     run(ws, session).await
 }
@@ -417,7 +416,13 @@ mod tests {
         let b = a.clone();
         let mut rx = b.relay.subscribe();
         a.relay
-            .send(("r".to_string(), Signal::Offer { room: "r".into(), sdp: "v=0".into() }))
+            .send((
+                "r".to_string(),
+                Signal::Offer {
+                    room: "r".into(),
+                    sdp: "v=0".into(),
+                },
+            ))
             .expect("a send with a live subscriber must succeed");
         let (room, signal) = rx.try_recv().expect("the peer must receive it");
         assert_eq!(room, "r");
@@ -466,16 +471,28 @@ mod tests {
     fn a_hello_is_not_relayed() {
         // Relaying it would announce an arriving peer to a room before that peer
         // had authenticated for it.
-        let hello = Signal::Hello { room: "r".into(), token: "t".into() };
+        let hello = Signal::Hello {
+            room: "r".into(),
+            token: "t".into(),
+        };
         assert!(!hello.is_relayed());
     }
 
     #[test]
     fn session_descriptions_and_candidates_are_relayed() {
         for s in [
-            Signal::Offer { room: "r".into(), sdp: "v=0".into() },
-            Signal::Answer { room: "r".into(), sdp: "v=0".into() },
-            Signal::Ice { room: "r".into(), candidate: "c".into() },
+            Signal::Offer {
+                room: "r".into(),
+                sdp: "v=0".into(),
+            },
+            Signal::Answer {
+                room: "r".into(),
+                sdp: "v=0".into(),
+            },
+            Signal::Ice {
+                room: "r".into(),
+                candidate: "c".into(),
+            },
             Signal::Bye { room: "r".into() },
         ] {
             assert!(s.is_relayed(), "{s:?} should be relayed");
@@ -485,10 +502,34 @@ mod tests {
     #[test]
     fn every_message_reports_the_room_it_belongs_to() {
         let cases = [
-            (Signal::Hello { room: "a".into(), token: "t".into() }, "a"),
-            (Signal::Offer { room: "b".into(), sdp: String::new() }, "b"),
-            (Signal::Answer { room: "c".into(), sdp: String::new() }, "c"),
-            (Signal::Ice { room: "d".into(), candidate: String::new() }, "d"),
+            (
+                Signal::Hello {
+                    room: "a".into(),
+                    token: "t".into(),
+                },
+                "a",
+            ),
+            (
+                Signal::Offer {
+                    room: "b".into(),
+                    sdp: String::new(),
+                },
+                "b",
+            ),
+            (
+                Signal::Answer {
+                    room: "c".into(),
+                    sdp: String::new(),
+                },
+                "c",
+            ),
+            (
+                Signal::Ice {
+                    room: "d".into(),
+                    candidate: String::new(),
+                },
+                "d",
+            ),
             (Signal::Bye { room: "e".into() }, "e"),
         ];
         for (signal, room) in cases {
@@ -500,7 +541,10 @@ mod tests {
     fn round_trips_through_json() {
         // A browser peer and this server must agree on the wire format, and the
         // tag is what they dispatch on.
-        let s = Signal::Offer { room: "r".into(), sdp: "v=0\r\n".into() };
+        let s = Signal::Offer {
+            room: "r".into(),
+            sdp: "v=0\r\n".into(),
+        };
         let text = serde_json::to_string(&s).unwrap();
         assert!(text.contains("\"kind\":\"offer\""));
         assert_eq!(serde_json::from_str::<Signal>(&text).unwrap(), s);

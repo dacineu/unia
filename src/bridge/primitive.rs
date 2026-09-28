@@ -41,30 +41,78 @@ pub const PRIMITIVE_TABLE: &[(&[&str], UniversalPrimitive)] = &[
     // Ordered most specific first. Two shapes of mistake this ordering prevents:
     // a state query swallowed by a bare `get`, and a reset swallowed by a bare
     // `off` that happens to occur inside a longer word.
-    (&["get_state", "read_state", "inspect", "snapshot", "dump", "describe"],
-     UniversalPrimitive::GetState),
+    (
+        &[
+            "get_state",
+            "read_state",
+            "inspect",
+            "snapshot",
+            "dump",
+            "describe",
+        ],
+        UniversalPrimitive::GetState,
+    ),
     (&["watch", "observe", "monitor"], UniversalPrimitive::Watch),
-    (&["broadcast", "fan_out", "announce"], UniversalPrimitive::Broadcast),
-    (&["transform", "map", "convert"], UniversalPrimitive::Transform),
+    (
+        &["broadcast", "fan_out", "announce"],
+        UniversalPrimitive::Broadcast,
+    ),
+    (
+        &["transform", "map", "convert"],
+        UniversalPrimitive::Transform,
+    ),
     (&["validate"], UniversalPrimitive::Validate),
-    (&["check", "verify", "assert", "sense"], UniversalPrimitive::CheckSense),
+    (
+        &["check", "verify", "assert", "sense"],
+        UniversalPrimitive::CheckSense,
+    ),
     (&["compare", "match", "diff"], UniversalPrimitive::Compare),
-    (&["get", "read", "fetch", "query", "poll", "peek"],
-     UniversalPrimitive::GetValue),
-    (&["delay", "sleep", "wait", "defer", "retry_later"], UniversalPrimitive::Delay),
+    (
+        &["get", "read", "fetch", "query", "poll", "peek"],
+        UniversalPrimitive::GetValue,
+    ),
+    (
+        &["delay", "sleep", "wait", "defer", "retry_later"],
+        UniversalPrimitive::Delay,
+    ),
     (&["pulse", "ping", "poke"], UniversalPrimitive::Pulse),
-    (&["route", "forward", "relay", "send", "dispatch"], UniversalPrimitive::Route),
-    (&["pipe", "plumb", "attach", "bind"], UniversalPrimitive::Pipe),
+    (
+        &["route", "forward", "relay", "send", "dispatch"],
+        UniversalPrimitive::Route,
+    ),
+    (
+        &["pipe", "plumb", "attach", "bind"],
+        UniversalPrimitive::Pipe,
+    ),
     (&["toggle", "flip", "switch"], UniversalPrimitive::Toggle),
-    (&["increment", "inc", "bump", "raise", "lower", "adjust_by"],
-     UniversalPrimitive::Increment),
+    (
+        &["increment", "inc", "bump", "raise", "lower", "adjust_by"],
+        UniversalPrimitive::Increment,
+    ),
     // `off` alone is deliberately absent. It occurs inside ordinary words, and a
     // reset key that fires on `offset_value` is worse than no key at all.
-    (&["reset", "shutdown", "halt", "stop", "kill", "turn_off", "power_off",
-      "shut_off", "clear", "purge", "flush", "empty", "wipe"],
-     UniversalPrimitive::Reset),
-    (&["set", "adjust", "assign", "write", "configure", "update"],
-     UniversalPrimitive::SetValue),
+    (
+        &[
+            "reset",
+            "shutdown",
+            "halt",
+            "stop",
+            "kill",
+            "turn_off",
+            "power_off",
+            "shut_off",
+            "clear",
+            "purge",
+            "flush",
+            "empty",
+            "wipe",
+        ],
+        UniversalPrimitive::Reset,
+    ),
+    (
+        &["set", "adjust", "assign", "write", "configure", "update"],
+        UniversalPrimitive::SetValue,
+    ),
 ];
 
 /// Splits an action id into whole terms.
@@ -409,7 +457,10 @@ mod resolve_tests {
         // genuinely unknown action used to dispatch SetValue, so a request to
         // broadcast was silently sent a set and nothing said so.
         let err = resolve("frobnicate_the_widget").unwrap_err();
-        assert!(err.contains("frobnicate_the_widget"), "names the input: {err}");
+        assert!(
+            err.contains("frobnicate_the_widget"),
+            "names the input: {err}"
+        );
         assert!(err.contains("guessing"), "says why it refused: {err}");
     }
 
@@ -419,7 +470,11 @@ mod resolve_tests {
         // `offset` contains `off`, so a substring resolver read a widget as a
         // value query and an offset as a shutdown.
         assert!(resolve("render_widget").is_err(), "`widget` contains `get`");
-        assert_ne!(resolve("offset_value"), Ok(UniversalPrimitive::Reset), "`offset` contains `off`");
+        assert_ne!(
+            resolve("offset_value"),
+            Ok(UniversalPrimitive::Reset),
+            "`offset` contains `off`"
+        );
     }
 
     #[test]
@@ -428,7 +483,11 @@ mod resolve_tests {
         // resolver has to be indifferent to it. An all-caps id splitting into
         // eight letters is how that was first broken.
         for a in ["set_value", "SET_VALUE", "SetValue"] {
-            assert_eq!(tokenize_id(a), vec!["set".to_string(), "value".to_string()], "{a}");
+            assert_eq!(
+                tokenize_id(a),
+                vec!["set".to_string(), "value".to_string()],
+                "{a}"
+            );
         }
     }
 

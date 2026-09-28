@@ -20,7 +20,8 @@ use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
-use unia::camaduci::{Care, Firstness, LearnedRule, Pet, firstness, MOTTO};
+use unia::camaduci::Understanding;
+use unia::camaduci::{firstness, Care, Firstness, LearnedRule, Pet, MOTTO};
 use unia::mcp::store::{Store, Trace};
 
 /// Seconds of real time per in-game tick.
@@ -55,7 +56,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // gain from a reactor here.
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else { continue };
-        if let Err(e) = handle(&mut stream, &mut pet, &mut store, &mut now, &mut started, &store_dir) {
+        if let Err(e) = handle(
+            &mut stream,
+            &mut pet,
+            &mut store,
+            &mut now,
+            &mut started,
+            &store_dir,
+        ) {
             eprintln!("unia-camaduci: {e}");
         }
     }
@@ -113,7 +121,11 @@ fn load_pet(dir: &str, id: &str) -> Pet {
     match std::fs::read_to_string(&path) {
         Ok(text) => match Pet::from_json(id, &text) {
             Some(p) => {
-                println!("  restored {id}: {} sleep cycles, care {}", p.vitals.age_ticks, p.summary());
+                println!(
+                    "  restored {id}: {} sleep cycles, care {}",
+                    p.vitals.age_ticks,
+                    p.summary()
+                );
                 p
             }
             None => {
@@ -228,8 +240,8 @@ fn handle(
             let n = store.stats().traces;
             json_response(200, &format!(r#"{{"traces":{n}}}"#))
         }
-        ("POST", "/api/care") => match parse_care(&body) {
-            Some(care) => {
+        ("POST", "/api/care") => match resolve_care(&body, pet) {
+            Ok(care) => {
                 let result = pet.tend(care);
                 match result {
                     Some(primitives) => {
@@ -265,7 +277,14 @@ fn handle(
                     ),
                 }
             }
-            None => json_response(400, r#"{"error":"unknown care operation"}"#),
+            // The three outcomes are reported as themselves. A player who has
+            // been refused is told what would have worked, and a player whose
+            // wording simply is not one the creature has heard is not told the
+            // same thing as a player who asked for something impossible.
+            Err(understanding) => json_response(
+                400,
+                &serde_json::to_string(&understanding).unwrap_or_default(),
+            ),
         },
         _ => json_response(404, r#"{"error":"not found"}"#),
     };
@@ -274,13 +293,24 @@ fn handle(
     stream.flush()
 }
 
-/// Extracts the care operation from a JSON body without pulling in a parser.
+/// Works out which care operation a request is asking for.
 ///
-/// The body is produced by this project's own client and is one of four known
-/// strings, so a hand-rolled match is proportionate; anything that does not
-/// parse is rejected rather than guessed at.
-fn parse_care(body: &str) -> Option<Care> {
-    string_field(body, "care").and_then(|v| Care::parse(&v))
+/// The client's own `care` field wins when it is one of the four wire words,
+/// because that is an explicit instruction. Otherwise the player's free text is
+/// resolved by the creature itself, through the phrasings it has actually been
+/// fed. That is the whole difference between a four-word protocol and a
+/// vocabulary: the list of ways to say "feed" is not written down next to the
+/// parser, it is what the creature learned by being fed.
+fn resolve_care(body: &str, pet: &Pet) -> Result<Care, Understanding> {
+    if let Some(care) = string_field(body, "care").and_then(|v| Care::parse(&v)) {
+        return Ok(care);
+    }
+    let spoken = string_field(body, "intent")
+        .or_else(|| string_field(body, "care"))
+        .unwrap_or_default();
+    pet.understand(&spoken)
+        .acts()
+        .ok_or_else(|| pet.understand(&spoken))
 }
 
 /// Reads a string field out of the request body.
