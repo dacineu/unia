@@ -38,6 +38,19 @@ pub struct Vitals {
     pub health: f64,
     /// Completed sleep cycles. A stage cannot advance without one.
     pub age_ticks: u32,
+    /// The economy: `cuante`, the power it acts at, and `nuante`, the resources it
+    /// spends to act.
+    ///
+    /// Declared state rather than a field of the creature, because it is
+    /// observable and checkable in the same way hunger is. That is what lets a
+    /// precondition be written about it, and what makes "this creature is broke"
+    /// a sentence the verifier can refuse an act on rather than a mood.
+    ///
+    /// Defaults on load, for the same reason the personality does: a file written
+    /// before the economy existed must still open. Without this it did not —
+    /// `from_json` returned `None` and the creature was gone.
+    #[serde(default)]
+    pub economy: Economy,
 }
 
 impl Default for Vitals {
@@ -47,6 +60,7 @@ impl Default for Vitals {
             happiness: 0.6,
             health: 1.0,
             age_ticks: 0,
+            economy: Economy::default(),
         }
     }
 }
@@ -150,16 +164,20 @@ impl Vitals {
         // wanted to sleep. The evaluator was right and the declaration was
         // incomplete, which is the only kind of bug a checkable field catches.
         state.insert("age_ticks".to_string(), format!("{}", v.age_ticks));
+        state.insert("cuante".to_string(), format!("{}", v.economy.cuante));
+        state.insert("nuante".to_string(), format!("{}", v.economy.nuante));
         state
     }
 
     /// Every field the published state carries, in manifest form.
-    pub fn declared_state() -> [(&'static str, &'static str); 4] {
+    pub fn declared_state() -> [(&'static str, &'static str); 6] {
         [
             ("hunger", "rises when I am not fed"),
             ("happiness", "falls when I am not played with"),
             ("health", "falls when the other two bottom out"),
             ("age_ticks", "completed sleep cycles"),
+            ("cuante", "the power I can currently act at"),
+            ("nuante", "the resources I have left to spend"),
         ]
     }
 
@@ -311,12 +329,26 @@ impl Care {
             happiness: 0.5,
             health: 0.5,
             age_ticks: 0,
+            economy: Economy::default(),
         };
         let mut out = Vec::new();
         for care in Care::all() {
             let mut probe = baseline;
+            // The whole act, not just its effect on the vitals. An act spends
+            // `nuante` through `apply_economy` and moves a vital through
+            // `apply`, and asking only about the second reported that nothing
+            // here ever spent a resource — which is not true, and which is what
+            // the "declared but no act changes it" test caught.
+            let mut economy = probe.economy;
+            care.apply_economy(&mut economy);
             care.apply(&mut probe);
-            if field_moved(field, &baseline, &probe) {
+            let touched_vital = field_moved(field, &baseline, &probe);
+            let touched_economy = match field {
+                "nuante" => economy.nuante < baseline.economy.nuante,
+                "cuante" => economy.cuante != baseline.economy.cuante,
+                _ => false,
+            };
+            if touched_vital || touched_economy {
                 out.push(care.label());
             }
         }
@@ -327,6 +359,71 @@ impl Care {
     /// knows how to perform.
     pub fn from_signature(signature: &str) -> Option<Care> {
         Care::all().into_iter().find(|c| c.signature() == signature)
+    }
+
+    /// The nuante one act costs — the resources it spends.
+    ///
+    /// Declared per act, in the same way drives are, because "what does this
+    /// costs" is a property of the act and not of the creature. It is also the
+    /// first place in this project where a primitive carries a *quantity*, which
+    /// is what the empty `params` in every manifest has been quietly failing to
+    /// express — divergence D14.
+    pub fn cost(self) -> f64 {
+        match self {
+            Care::Feed => 1.0,
+            Care::Play => 1.5,
+            // Cleaning is dear because nothing you can see comes of it.
+            Care::Clean => 2.0,
+            // Sleep is free: it consumes time rather than cuante, and it is the
+            // only act available to a creature that cannot afford anything else.
+            // A broke creature can still grow.
+            Care::Sleep => 0.0,
+        }
+    }
+
+    /// How much consistent care adds to the power, per act.
+    ///
+    /// The gain is small and the *retention* is the mechanism. A rate held by
+    /// repeatedly demonstrating it is what a rate is: stop, and it falls. This is
+    /// [`LearnedRule::confidence`] applied to the creature itself, and it is why
+    /// neglect is expensive even for a creature that can still afford to act.
+    pub fn gain(self) -> f64 {
+        match self {
+            Care::Feed => 0.04,
+            Care::Play => 0.06,
+            Care::Clean => 0.05,
+            Care::Sleep => 0.08,
+        }
+    }
+
+    /// Applies an act to the economy: spends the resources, sustains the power.
+    ///
+    /// Returns whether the act was affordable, so a caller can refuse before
+    /// acting rather than after. The order is deliberate: the cost is taken
+    /// first, so an act the creature cannot afford leaves the rate untouched
+    /// rather than having been paid for by a credit it did not have.
+    pub fn apply_economy(&self, e: &mut Economy) -> bool {
+        if e.nuante < self.cost() {
+            return false;
+        }
+        e.nuante = (e.nuante - self.cost()).max(0.0);
+        // Rises toward its ceiling, and the increment shrinks as it gets there,
+        // so the last stretch of power is the hardest and there is always
+        // something left to be done about it.
+        e.cuante = (e.cuante + self.gain() * (1.0 - e.cuante)).min(Economy::MAX_CUANTE);
+        true
+    }
+
+    /// One tick with no care: the resources drain and the power decays.
+    ///
+    /// The power falls by a proportion rather than a fixed step, because a
+    /// capability you have stopped demonstrating is not one you still have at its
+    /// old strength. It decays toward a floor rather than to it, so a creature
+    /// that once learned something is never quite the creature that never did —
+    /// which is the only reason the game is winnable after a long absence.
+    pub fn decay_economy(&self, e: &mut Economy) {
+        e.nuante = (e.nuante - 0.5).max(0.0);
+        e.cuante = (e.cuante * 0.9).max(Economy::FLOOR_CUANTE);
     }
 
     /// The operation's name, as shown to a player.
@@ -480,6 +577,115 @@ impl Sense {
             Sense::Physical => "physical",
             Sense::Derived => "derived",
             Sense::Inferred => "inferred",
+        }
+    }
+}
+
+/// The two quantities a creature runs on, and the economy they make.
+///
+/// **Cuante** is *productivity* — a power. **Nuante** is *consumption* —
+/// resources. The names are deliberately crossed against their physics.
+///
+/// In quantum computing a quantum is a unit of *consumed* computing power: you
+/// spend quanta to compute. Here the word is read the other way, because a
+/// creature does not burn its capability to act. It *has* a power, sustains it
+/// by being cared for, and loses it by not being. So cuante is the power, and
+/// because that word is then taken, the thing the creature actually burns needed
+/// a name of its own: **nuante**, which in plain terms is resources.
+///
+/// The distinction is the whole of the economy, and it is not decoration because a
+/// rate and a stock fail differently:
+///
+/// - out of **nuante** is an *empty* creature — it has no resources and cannot
+///   act at all. Poverty.
+/// - out of **cuante** is a *stuck* creature — it has resources and no power, so
+///   it can act, badly, and a full stock does not help. Neglect.
+///
+/// Capability is a rate rather than a stock, which is also what
+/// [`LearnedRule::confidence`] already was: a `0.0..=1.0` that decays unless it
+/// is fed. The economy gives that number its name.
+///
+/// They are separate fields rather than one number on purpose. A single "energy"
+/// reading would make neglect and poverty the same event, and they are not: you
+/// can be rich and powerless, or powerful and destitute, and a creature that can
+/// only be one of those is not modelling anything.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Economy {
+    /// Productivity: the power the creature currently acts at. Sustained.
+    pub cuante: f64,
+    /// Consumption: the resources available to spend. A stock.
+    pub nuante: f64,
+}
+
+impl Default for Economy {
+    fn default() -> Self {
+        Economy {
+            // Enough to begin, and not enough to be comfortable: a creature that
+            // starts rich has no economy to learn.
+            nuante: 12.0,
+            // A middling power. It can be raised by being cared for and lost by
+            // not being, and it is the thing that decays, so starting high would
+            // mean starting near the end.
+            cuante: 0.5,
+        }
+    }
+}
+
+impl Economy {
+    /// The most a creature can hold. A stock needs a ceiling or there is no
+    /// reason to prefer efficiency over abundance.
+    pub const MAX_NUANTE: f64 = 24.0;
+    /// The highest power achievable. A rate needs a ceiling for the same reason:
+    /// without one, "getting better" has no end and nothing is at stake.
+    pub const MAX_CUANTE: f64 = 1.0;
+    /// The power a neglected creature decays to, and below which it cannot act.
+    ///
+    /// **This was found by playing the game, not by reading it.** The first
+    /// version floored the power at 0.1 and had `can_act()` ask only for > 0.0, so
+    /// a floored creature could still act and the `stuck` failure — the whole
+    /// reason the two quantities are separate — was *unreachable through neglect
+    /// at all*. A declared failure that cannot happen is worse than a lower floor,
+    /// because the type implies a distinction the game never offers.
+    ///
+    /// The floor is not zero on purpose: a creature that was once cared for is
+    /// never quite the creature that never was. And because it is *below the
+    /// usable threshold* rather than at it, one act of care lifts a stuck creature
+    /// clear of it, which is what makes a long absence recoverable.
+    pub const FLOOR_CUANTE: f64 = 0.1;
+
+    /// How long the creature's resources last at its current power, in ticks.
+    ///
+    /// This is the number that makes the two quantities comparable at all, and it
+    /// is why a power cannot simply be treated as a smaller stock. Resources
+    /// divided by a power is a *duration*, not an amount: the same nuante buys a
+    /// weak creature less time than a strong one.
+    pub fn endurance(&self) -> f64 {
+        if self.cuante <= 0.0 {
+            return 0.0;
+        }
+        self.nuante / self.cuante
+    }
+
+    /// Whether the creature can act at all: it needs resources *and* usable power.
+    ///
+    /// The threshold is the floor rather than zero, so a creature decayed to it
+    /// is alive and stuck rather than merely weak. See [`Economy::FLOOR_CUANTE`].
+    pub fn can_act(&self) -> bool {
+        self.nuante > 0.0 && self.cuante > Economy::FLOOR_CUANTE
+    }
+
+    /// One word for the state of the economy, for a player to read.
+    pub fn posture(&self) -> &'static str {
+        if !self.can_act() {
+            if self.nuante <= 0.0 {
+                "empty"
+            } else {
+                "stuck"
+            }
+        } else if self.endurance() < 6.0 {
+            "spending down"
+        } else {
+            "sustaining"
         }
     }
 }
@@ -916,6 +1122,26 @@ impl Pet {
             "age_ticks".into(),
             serde_json::json!({ "type": "int", "range": [0, 1000000] }),
         );
+        // The economy, with its ceilings as ranges. A ceiling that is only in the
+        // code is not a constraint, and the evaluator cannot check what it cannot
+        // see. That was the D5 lesson arriving again through a different door.
+        out.insert(
+            "cuante".into(),
+            serde_json::json!({
+                "type": "float",
+                "range": [0.0, Economy::MAX_CUANTE],
+                "unit": "power",
+                "usable_above": Economy::FLOOR_CUANTE,
+            }),
+        );
+        out.insert(
+            "nuante".into(),
+            serde_json::json!({
+                "type": "float",
+                "range": [0.0, Economy::MAX_NUANTE],
+                "unit": "resources",
+            }),
+        );
         serde_json::Value::Object(out)
     }
 
@@ -1223,6 +1449,15 @@ impl Pet {
         if self.quarantined {
             return None;
         }
+        // Affordability first. A creature with no cuante cannot act, and
+        // pretending otherwise would let it act with no power — the case the
+        // whole distinction exists to make impossible.
+        if !self.vitals.economy.can_act() && care.cost() > 0.0 {
+            return None;
+        }
+        if !care.apply_economy(&mut self.vitals.economy) {
+            return None;
+        }
         let primitives = care.apply(&mut self.vitals);
         *self.history.entry(care).or_insert(0) += 1;
         self.stage = self.earned_stage();
@@ -1232,11 +1467,49 @@ impl Pet {
         Some(primitives)
     }
 
+    /// The word for why the creature will not act, in its own terms.
+    ///
+    /// Two failures that look identical from outside and are not: a creature with
+    /// an empty tank is *broke*, and a creature whose rate has decayed is
+    /// *stuck*. A full tank fixes the first and does nothing for the second, and
+    /// saying so is the difference between an economy and a countdown.
+    pub fn why_wont_act(&self) -> Option<String> {
+        let e = &self.vitals.economy;
+        if e.can_act() {
+            return None;
+        }
+        if e.nuante <= 0.0 {
+            // Out of resources. The power is intact and irrelevant, and saying so
+            // is what distinguishes this from the other failure.
+            Some(
+                "I have no nuante left. My power is untouched, but I have nothing \
+                 to act with, so nothing I do can happen. Sleep is free — put me to \
+                 sleep and I can still grow."
+                    .to_string(),
+            )
+        } else {
+            // Out of power. A full stock of resources and no way to use them, which
+            // is the failure that spending cannot fix.
+            Some(
+                "I still have nuante, but I have lost the power. My resources are \
+                 untouched, and nothing I do is quick any more. No amount of \
+                 spending will help; only being cared for will."
+                    .to_string(),
+            )
+        }
+    }
+
     /// Lets one unit of time pass with no care at all.
     ///
     /// This is the escalation path. No intent arrived, so no primitive was
     /// dispatched, and the pet's state moved because nothing was served.
     pub fn neglect(&mut self) {
+        // Neglect is not only decay. It is the economy running down: the stock
+        // drains and the rate falls, and the rate falls faster than the stock
+        // empties, so a creature left alone becomes incapable before it becomes
+        // broke. That ordering is deliberate — the cheaper failure comes first,
+        // which is what makes a long absence recoverable and a short one cheap.
+        Care::Sleep.decay_economy(&mut self.vitals.economy);
         if self.quarantined {
             return;
         }
@@ -2210,6 +2483,7 @@ mod motivation_tests {
             happiness,
             health,
             age_ticks: 3,
+            economy: Economy::default(),
         }
     }
 
@@ -2258,6 +2532,7 @@ mod motivation_tests {
                 happiness: 0.8,
                 health: 1.0,
                 age_ticks: 0,
+                economy: Economy::default(),
             };
             assert_eq!(p.want(), None);
         }
@@ -2502,6 +2777,7 @@ mod declaration_tests {
             happiness: 0.8,
             health: 1.0,
             age_ticks: 3,
+            economy: Economy::default(),
         };
         let want = p
             .want()
@@ -2706,6 +2982,478 @@ mod identity_tests {
             fallback.address(),
             original.address(),
             "the fallback silently produced a different creature as the same one"
+        );
+    }
+}
+
+#[cfg(test)]
+mod economy_tests {
+    use super::*;
+
+    fn pet() -> Pet {
+        Pet::new("ca-e")
+    }
+
+    mod the_two_quantities {
+        use super::*;
+
+        #[test]
+        fn cuante_is_a_power_and_nuante_is_not() {
+            // The distinction stated as arithmetic, because that is what it is.
+            // Divided by a power, a stock of resources is a *duration*: the same
+            // nuante lasts a weak creature less time than a strong one.
+            let strong = Economy {
+                cuante: 1.0,
+                nuante: 10.0,
+            };
+            let weak = Economy {
+                cuante: 0.1,
+                nuante: 10.0,
+            };
+            assert_eq!(strong.endurance(), 10.0);
+            assert_eq!(weak.endurance(), 100.0);
+        }
+
+        #[test]
+        fn a_creature_needs_both_to_act() {
+            let destitute = Economy {
+                cuante: 1.0,
+                nuante: 0.0,
+            };
+            let powerless = Economy {
+                cuante: 0.0,
+                nuante: 100.0,
+            };
+            let both = Economy {
+                cuante: 0.5,
+                nuante: 5.0,
+            };
+            assert!(
+                !destitute.can_act(),
+                "full power and no resources is nothing"
+            );
+            assert!(
+                !powerless.can_act(),
+                "full resources and no power is nothing"
+            );
+            assert!(both.can_act());
+        }
+
+        #[test]
+        fn the_two_failures_have_different_names() {
+            // Conflating them would make the economy a countdown, which is not
+            // what it is.
+            assert_eq!(
+                Economy {
+                    cuante: 1.0,
+                    nuante: 0.0
+                }
+                .posture(),
+                "empty"
+            );
+            assert_eq!(
+                Economy {
+                    cuante: 0.0,
+                    nuante: 5.0
+                }
+                .posture(),
+                "stuck"
+            );
+        }
+
+        #[test]
+        fn a_stock_has_a_ceiling_or_there_is_no_reason_to_be_efficient() {
+            let mut e = Economy::default();
+            for _ in 0..100 {
+                e.nuante = (e.nuante + 5.0).min(Economy::MAX_NUANTE);
+            }
+            assert_eq!(e.nuante, Economy::MAX_NUANTE);
+        }
+
+        #[test]
+        fn a_rate_has_a_ceiling_or_getting_better_has_no_end() {
+            // Topped up each time, because the interesting fact here is that a
+            // creature *runs out before it maxes out*. That is the economy, not a
+            // bug: capability is not something you accumulate by spending, it is
+            // something you have to keep demonstrating, and the tank runs dry
+            // before the rate is full.
+            let mut e = Economy::default();
+            for _ in 0..500 {
+                e.nuante = Economy::MAX_NUANTE;
+                Care::Play.apply_economy(&mut e);
+            }
+            // To a tolerance, because the increment shrinks with the distance to
+            // the ceiling and a float approaches 1.0 without landing on it. An
+            // exact equality here would have been a test that could only ever
+            // fail, which is a way of saying nothing.
+            assert!(
+                (e.cuante - Economy::MAX_CUANTE).abs() < 1e-9,
+                "power settled at {} rather than at the ceiling {}",
+                e.cuante,
+                Economy::MAX_CUANTE
+            );
+        }
+
+        #[test]
+        fn a_creature_runs_out_before_it_maxes_out() {
+            // The consequence, stated as a measurement. Play costs 1.5 and the
+            // starting tank is 12, so the first act the creature cannot afford is
+            // the ninth — at a power nowhere near its ceiling.
+            let mut e = Economy::default();
+            let start_power = e.cuante;
+            let mut acts = 0;
+            while Care::Play.apply_economy(&mut e) {
+                acts += 1;
+            }
+            assert_eq!(acts, 8, "12 nuante at 1.5 each");
+            assert!(
+                e.cuante < Economy::MAX_CUANTE,
+                "power reached {} which is its ceiling, so the resources were not the binding constraint",
+                e.cuante
+            );
+            assert!(
+                e.cuante > start_power,
+                "and it did get stronger before stopping"
+            );
+        }
+    }
+
+    mod spending {
+        use super::*;
+
+        #[test]
+        fn an_act_costs_what_it_is_declared_to_cost() {
+            assert!(Care::Clean.cost() > Care::Play.cost());
+            assert!(Care::Play.cost() > Care::Feed.cost());
+            assert_eq!(Care::Sleep.cost(), 0.0, "sleep is free");
+        }
+
+        #[test]
+        fn acting_spends_the_stock_and_sustains_the_rate() {
+            let mut p = pet();
+            let before = p.vitals.economy.clone();
+            assert!(p.tend(Care::Feed).is_some());
+            assert!(p.vitals.economy.nuante < before.nuante, "spent resources");
+            assert!(p.vitals.economy.cuante > before.cuante, "sustained power");
+        }
+
+        #[test]
+        fn an_unaffordable_act_is_refused_and_changes_nothing() {
+            // Not just refused: the rate must not be paid for by a credit the
+            // creature did not have, or being broke would make it better.
+            let mut p = pet();
+            p.vitals.economy.nuante = 0.5;
+            let before = p.vitals.economy.clone();
+            assert!(p.tend(Care::Clean).is_none(), "clean costs 2.0");
+            assert_eq!(p.vitals.economy, before, "nothing moved");
+        }
+
+        #[test]
+        fn a_broke_creature_can_still_sleep_and_grow() {
+            // The one escape from an empty tank, and the reason the game is
+            // winnable after a long absence.
+            let mut p = pet();
+            p.vitals.economy.nuante = 0.0;
+            assert!(p.tend(Care::Feed).is_none());
+            assert!(p.tend(Care::Sleep).is_some(), "sleep is free");
+            assert_eq!(p.vitals.economy.nuante, 0.0, "and still costs nothing");
+        }
+
+        #[test]
+        fn a_stuck_creature_cannot_act_even_with_a_full_tank() {
+            let mut p = pet();
+            p.vitals.economy = Economy {
+                cuante: 0.0,
+                nuante: Economy::MAX_NUANTE,
+            };
+            assert!(p.tend(Care::Feed).is_none(), "a full tank changes nothing");
+            assert!(
+                p.why_wont_act().unwrap().contains("lost the power"),
+                "it must be able to say which failure it is before it escapes it"
+            );
+
+            // Sleep is still available, and that turns out to be the way out of
+            // being stuck: it costs nothing and it has the highest gain, so a
+            // stuck creature that is put to sleep becomes capable again. An
+            // earlier version of this test asserted it could not sleep, which
+            // would have made the game unwinnable for exactly the players who
+            // most need it not to be. The symmetry with being broke is
+            // deliberate: both failures leave sleep as the answer.
+            assert!(p.tend(Care::Sleep).is_some(), "sleep is free and always is");
+            assert!(
+                p.vitals.economy.cuante > 0.0,
+                "and sleeping is how a stuck creature climbs out"
+            );
+        }
+    }
+
+    mod decay {
+        use super::*;
+
+        #[test]
+        fn neglect_drains_the_stock_and_falls_the_rate() {
+            let mut p = pet();
+            let before = p.vitals.economy.clone();
+            p.neglect();
+            assert!(p.vitals.economy.nuante < before.nuante, "resources drained");
+            assert!(p.vitals.economy.cuante < before.cuante, "power fell");
+        }
+
+        #[test]
+        fn a_creature_becomes_incapable_before_it_becomes_broke() {
+            // The ordering is the design. The cheaper failure arrives first, so a
+            // long absence is recoverable and a short one is not much of a
+            // punishment.
+            let mut p = pet();
+            let mut ticks = 0;
+            loop {
+                let e = p.vitals.economy;
+                if e.cuante <= 0.1 && e.nuante > 0.0 {
+                    break;
+                }
+                if ticks > 100 {
+                    panic!("neither failure ever arrived");
+                }
+                p.neglect();
+                ticks += 1;
+            }
+            let e = p.vitals.economy;
+            assert!(e.cuante <= 0.1, "power collapsed at tick {ticks}");
+            assert!(
+                e.nuante > 0.0,
+                "but it still had resources, at tick {ticks}"
+            );
+        }
+
+        #[test]
+        fn a_rate_decays_toward_a_floor_and_never_to_nothing() {
+            // So a creature that once learned something is never quite the
+            // creature that never did, which is the only thing making the game
+            // winnable after a long absence.
+            let mut p = pet();
+            for _ in 0..200 {
+                p.neglect();
+            }
+            assert_eq!(
+                p.vitals.economy.cuante,
+                Economy::FLOOR_CUANTE,
+                "the floor is a floor"
+            );
+        }
+
+        #[test]
+        fn a_neglected_creature_says_which_failure_it_is() {
+            let mut broke = pet();
+            broke.vitals.economy = Economy {
+                cuante: 0.5,
+                nuante: 0.0,
+            };
+            assert!(broke.why_wont_act().unwrap().contains("no nuante"));
+
+            let mut stuck = pet();
+            stuck.vitals.economy = Economy {
+                cuante: 0.0,
+                nuante: 9.0,
+            };
+            assert!(stuck.why_wont_act().unwrap().contains("lost the power"));
+        }
+    }
+
+    mod declared {
+        use super::*;
+
+        #[test]
+        fn both_quantities_are_declared_state_and_published() {
+            let v = Vitals::default();
+            let state = Vitals::state(&v);
+            assert!(state.contains_key("cuante"));
+            assert!(state.contains_key("nuante"));
+
+            let declared: Vec<&str> = Vitals::declared_state().iter().map(|(n, _)| *n).collect();
+            for field in ["cuante", "nuante"] {
+                assert!(declared.contains(&field), "{field} is not declared");
+                assert!(state.contains_key(field), "{field} is not published");
+            }
+        }
+
+        #[test]
+        fn the_manifest_states_the_ceilings_as_ranges() {
+            // A ceiling that is not in the declaration is not a constraint, and
+            // the evaluator cannot check it.
+            let space = Pet::state_space_manifest();
+            assert_eq!(
+                space["cuante"]["range"][1],
+                serde_json::json!(Economy::MAX_CUANTE)
+            );
+            assert_eq!(
+                space["nuante"]["range"][1],
+                serde_json::json!(Economy::MAX_NUANTE)
+            );
+        }
+
+        #[test]
+        fn the_economy_is_state_and_does_not_move_the_address() {
+            // The rule that keeps holding: what has happened to a creature is not
+            // what it is. A broke one is still the same creature.
+            let mut p = pet();
+            let a = p.address();
+            p.vitals.economy = Economy {
+                cuante: 0.1,
+                nuante: 0.0,
+            };
+            assert_eq!(p.address(), a);
+        }
+
+        #[test]
+        fn a_creature_saved_before_the_existed_still_loads() {
+            let p = pet();
+            let mut as_value: serde_json::Value =
+                serde_json::from_str(&p.to_json()).expect("round-trips");
+            let vitals = as_value
+                .get_mut("vitals")
+                .and_then(|v| v.as_object_mut())
+                .expect("vitals");
+            vitals.remove("economy");
+            let restored = Pet::from_json("ca-e", &as_value.to_string()).expect("still loads");
+            assert_eq!(restored.vitals.economy, Economy::default());
+            assert_eq!(restored.address(), p.address());
+        }
+    }
+}
+
+#[cfg(test)]
+mod floor_tests {
+    use super::*;
+
+    /// The hole the playing found, held shut.
+    ///
+    /// A declared failure that cannot happen is worse than no such failure,
+    /// because the type implies a distinction the game never offers. The first
+    /// version floored the power at 0.1 and asked only for > 0.0, so neglect could
+    /// never produce a stuck creature and the whole reason the two quantities are
+    /// separate was never exercised by the game itself.
+    #[test]
+    fn neglect_alone_can_make_a_creature_stuck() {
+        let mut p = Pet::new("ca-f");
+        assert!(p.vitals.economy.can_act());
+
+        let mut ticks = 0;
+        while p.vitals.economy.can_act() {
+            p.neglect();
+            ticks += 1;
+            assert!(ticks < 200, "neglect never produced a stuck creature");
+        }
+
+        // It must be *stuck*, not *empty*: the point is that the resources were
+        // still there and could not be used.
+        assert_eq!(p.vitals.economy.posture(), "stuck");
+        assert!(
+            p.vitals.economy.nuante > 0.0,
+            "it became stuck with no resources, which is the other failure"
+        );
+    }
+
+    #[test]
+    fn the_floor_is_below_the_usable_threshold_not_at_zero() {
+        let at_floor = Economy {
+            cuante: Economy::FLOOR_CUANTE,
+            nuante: 100.0,
+        };
+        assert!(
+            !at_floor.can_act(),
+            "the floor is where it stops being usable"
+        );
+
+        // And it is a floor, not an abyss: a creature that was cared for is never
+        // quite the creature that never was.
+        let mut e = Economy::default();
+        for _ in 0..500 {
+            Care::Sleep.decay_economy(&mut e);
+        }
+        assert_eq!(e.cuante, Economy::FLOOR_CUANTE);
+    }
+
+    #[test]
+    fn one_act_of_care_lifts_a_stuck_creature_clear() {
+        // The reason the floor is not zero, and the reason a long absence is
+        // recoverable rather than terminal.
+        //
+        // The economy is set directly rather than reached by neglecting, because
+        // neglect *kills* first — see the ordering test below, which records that
+        // and was written because this one failed without saying why.
+        let mut p = Pet::new("ca-f");
+        p.vitals.economy = Economy {
+            cuante: Economy::FLOOR_CUANTE,
+            nuante: 20.0,
+        };
+        assert_eq!(p.vitals.economy.posture(), "stuck");
+
+        p.tend(Care::Sleep);
+        assert!(
+            p.vitals.economy.can_act(),
+            "sleep is free, so it is the one act a stuck creature can still take"
+        );
+    }
+
+    #[test]
+    fn neglect_kills_the_creature_before_either_economic_failure_arrives() {
+        // A finding, recorded because it is not what the design intended.
+        //
+        // Three things race, and death wins: health reaches zero in about ten
+        // ticks, the power falls to its floor in about sixteen, and the resources
+        // run out in about twenty-four. So a creature left alone is *dead* long
+        // before it is ever poor or powerless, and both economic failures are
+        // reachable only on a creature that no longer exists.
+        //
+        // Which means the two-failure economy is currently unobservable through
+        // the game, and only through the code. That is a tuning problem rather
+        // than a modelling one, and it is the next thing to decide: slow the
+        // vitals, speed the economy, or accept that the economy is legible only
+        // before death.
+        let mut p = Pet::new("ca-f");
+        let mut death_tick = None;
+        let mut stuck_tick = None;
+        let mut empty_tick = None;
+
+        for tick in 1..=200 {
+            p.neglect();
+            if death_tick.is_none() && p.quarantined {
+                death_tick = Some(tick);
+            }
+            if stuck_tick.is_none() && p.vitals.economy.nuante > 0.0 && !p.vitals.economy.can_act()
+            {
+                stuck_tick = Some(tick);
+            }
+            if empty_tick.is_none() && p.vitals.economy.nuante <= 0.0 {
+                empty_tick = Some(tick);
+            }
+            if death_tick.is_some() && stuck_tick.is_some() && empty_tick.is_some() {
+                break;
+            }
+        }
+
+        let death = death_tick.expect("it must die eventually");
+        let stuck = stuck_tick.expect("it must become stuck eventually");
+        let empty = empty_tick.expect("it must run out eventually");
+
+        assert!(
+            death < stuck,
+            "death at {death} should precede stuck at {stuck}"
+        );
+        assert!(
+            stuck < empty,
+            "stuck at {stuck} should precede empty at {empty}"
+        );
+    }
+
+    #[test]
+    fn the_usable_threshold_is_declared_rather_than_hidden_in_a_comparison() {
+        // A threshold the verifier cannot see is a threshold nobody can check,
+        // which is the D5 lesson arriving in a new place.
+        let space = Pet::state_space_manifest();
+        assert_eq!(
+            space["cuante"]["usable_above"],
+            serde_json::json!(Economy::FLOOR_CUANTE)
         );
     }
 }

@@ -253,12 +253,14 @@ fn handle(
                 )?);
             };
             let Some(primitives) = pet.tend(care) else {
+                // Three reasons to be unable to act, and a client that is told
+                // "409" cannot tell them apart.
+                let why = pet
+                    .why_wont_act()
+                    .unwrap_or_else(|| "I am gone.".to_string());
                 return Ok(stream.write_all(
-                    json_response(
-                        409,
-                        &json!({ "acted": false, "why": "I am gone" }).to_string(),
-                    )
-                    .as_bytes(),
+                    json_response(409, &json!({ "acted": false, "why": why }).to_string())
+                        .as_bytes(),
                 )?);
             };
             *started = true;
@@ -512,7 +514,7 @@ fn trace_for(
 /// would say the pet had been shown to be worthless.
 fn state(pet: &Pet) -> String {
     format!(
-        r#"{{"id":{},"address":{},"stage":{},"age_ticks":{},"hunger":{:.3},"happiness":{:.3},"health":{:.3},"mood":{},"quarantined":{},"primitives":{},"learned":{},"summary":{}}}"#,
+        r#"{{"id":{},"address":{},"stage":{},"age_ticks":{},"hunger":{:.3},"happiness":{:.3},"health":{:.3},"mood":{},"cuante":{:.3},"nuante":{:.2},"endurance":{:.1},"posture":{},"quarantined":{},"primitives":{},"learned":{},"summary":{}}}"#,
         json_str(&pet.id),
         // The creature's content address: what it *is*, with nothing it has
         // learned and nothing it has done. Two players holding this creature
@@ -525,6 +527,14 @@ fn state(pet: &Pet) -> String {
         pet.vitals.happiness,
         pet.vitals.health,
         json_str(&pet.vitals.mood()),
+        // The economy. `cuante` is the power it acts at and `nuante` the
+        // resources it spends; `endurance` is the number that makes the two
+        // comparable at all, being a duration rather than an amount and shorter
+        // for a weaker creature.
+        pet.vitals.economy.cuante,
+        pet.vitals.economy.nuante,
+        pet.vitals.economy.endurance(),
+        json_str(pet.vitals.economy.posture()),
         pet.quarantined,
         // The spike count is what the creature has *learned*, not what it was
         // fed. Those used to be the same number, which meant the most expressive

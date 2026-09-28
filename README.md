@@ -161,7 +161,7 @@ and `... -- topology`.
 | False negatives | **0** |
 | False positives | **2** |
 | Primitive vocabulary reachable by the resolver | **16 of 16**, and it returns an error otherwise |
-| Tests | **358** |
+| Tests | **382** |
 | Corpus, hand-written | **12 patterns** on a clean tree, 0 edges, **0 denominators** |
 | Corpus, generated | **36 artifacts** → **6 denominators**, each reached by 6 artifacts |
 | Phrasings per denominator | **6 to 24** — the reach one identity acquired |
@@ -254,7 +254,7 @@ systemd user service).
 ```sh
 git clone https://github.com/dacineu/unia
 cd unia
-cargo test                                          # 358 tests
+cargo test                                          # 382 tests
 cargo run --example camaduci                        # start here
 ```
 

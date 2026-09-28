@@ -161,3 +161,40 @@ already claimed in this project — `unia`, `unia-OS`, `UPA`, `DU-UUID`, `Matter
   depend on unia as a library.
 - **Multiplayer?** Digimon's linked interaction and the mesh architecture suggest
   two pets meeting. That is the most interesting version and the most scope.
+
+## The economy: cuante and nuante
+
+Two declared quantities, and the names are crossed against their physics on
+purpose. In quantum computing a quantum is a unit of *consumed* computing power.
+Here **cuante is productivity** — a power the creature has and sustains — and
+because that word is then taken, the thing it actually spends needed a name of
+its own: **nuante**, which in plain terms is resources.
+
+| | kind | failure | means |
+| --- | --- | --- | --- |
+| **cuante** | a power, sustained | `stuck` | it has resources and no power |
+| **nuante** | a stock, spent | `empty` | it has power and no resources |
+
+They are separate because they fail differently. `endurance` — nuante divided by
+cuante — is the number that makes them comparable at all: a *duration*, not an
+amount, and shorter for a weaker creature.
+
+Actions spend nuante and raise cuante. The increment shrinks as cuante approaches
+its ceiling, so the last stretch of power is the hardest. Neglect drains nuante
+absolutely and decays cuante proportionally, toward a floor rather than to zero.
+
+**Two things that playing found, which reading did not:**
+
+The power floored at 0.1 while `can_act()` asked only for > 0.0, so a floored
+creature could still act and the `stuck` failure was **unreachable through
+neglect at all** — one of the two declared failures could not happen. The floor is
+now the usability threshold, declared in the manifest as `usable_above`, so the
+verifier can see it.
+
+And neglect **kills before either economic failure arrives**: health reaches zero
+in about ten ticks, the power falls to its floor in about sixteen, and the
+resources run out in about twenty-four. So a left-alone creature is dead long
+before it is poor or powerless, and both failures are reachable only on a creature
+that no longer exists. `floor_tests::neglect_kills_the_creature_before_either_economic_failure_arrives`
+holds the ordering. The economy is currently legible only before death, and
+deciding between slower vitals, a faster economy, or accepting that is open.
