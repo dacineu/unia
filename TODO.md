@@ -101,11 +101,30 @@ you and confusing them is how a project spends a year on the wrong one.
     every caller, or the browser path gets a blocking shim, which a single-threaded
     wasm event loop cannot honestly provide.** The trait being synchronous is the
     actual obstacle and it was chosen to keep the native path simple.
-16. **No model, no tokenizer, and `SemanticSLM::build_prompt` still has zero
-    callers.** The transport can now reach an endpoint; nothing says what to point
-    it at. A `Resolver` is a transport, not a peer — naming a model honestly means
-    a peer can tell which engine answered, and `Measured` is the field that would
-    carry its own report.
+16. **~~`SemanticSLM` could not tell an answer from a shrug.~~ Closed, and the
+    seam moved.** It returned `response.trim()`, so *any* reply became the action
+    id: a decline, an invented `close_valve_v2`, or a paraphrase all "succeeded",
+    and `available_actions` was used only to write the prompt. The injected
+    `F: Fn(String, String) -> Result<String, String>` also meant `SlmOptions` was
+    a struct no call site could fill — `temperature` and `num_predict` were
+    declared and never sent — and that a model's decline and a dead network were
+    the *same* `Err`. Now: an answer must be exactly one of the declared ids or
+    it is `Mapped::Refused` with the model's own words kept (`OffMenu` for an
+    invented action, `NotAnId` for prose, `Transport` for a dead network — three
+    different events); the fetch receives a whole `SlmRequest` and returns a whole
+    `Reply`; and the duplicate `SlmResponse` that lived beside the real one in
+    `src/slm/` is gone.
+17. **No model, no tokenizer, and nothing points at an endpoint.** The transport
+    can now reach one; no `SemanticSLM` is constructed in `src/`, `tests/` or
+    `examples/`. A `Resolver` is a transport, not a peer — naming a model honestly
+    means a peer can tell which engine answered, and `Reply::tokens_used` plus
+    `slm::Measured` are the fields that would carry its own report.
+18. **`Resolver::ask` is synchronous and `web_sys::fetch` is not.** The wasm
+    transport returns an error naming that rather than pretending. Either `ask`
+    becomes async — which propagates through `doubt::consult` and every caller —
+    or the browser gets a blocking shim a single-threaded event loop cannot
+    honestly provide. **The synchronous trait is the obstacle, and I chose it to
+    keep the native path simple.**
 15. **A shadow is fan-out
 14. **A shadow is fan-out and hotswap is a promotion, and both are implemented.**
     `UpaDispatcher::shadow_routes` is commented "for hotswapping" but `route()`
