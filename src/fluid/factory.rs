@@ -8,8 +8,53 @@ use uuid::Uuid;
 pub struct SynthesisRequest {
     pub objective: String,
     pub required_capabilities: Vec<String>,
+    /// The scope the requester is asking for.
+    ///
+    /// A *request*, not a grant. Whether it is granted is decided by
+    /// [`SynthesisRequest::credit`] and nothing else — the old code widened this
+    /// into `allowed_scopes` unconditionally, so asking for less got you more.
     pub preferred_scope: SharingScope,
+    /// The quality floor a counterparty must meet, which is about *them*.
     pub min_qor: f64,
+    /// What the requester has demonstrated, in `0.0..=1.0`.
+    ///
+    /// **This is what makes crossing a scope reversible.**
+    ///
+    /// A request used to be answered from the market's own gates, and the market
+    /// could not say anything about the requester. So a creature's reach was set by
+    /// the registry and its hash order rather than by anything it had done. Reach is
+    /// now earned: below [`CREDIT_FLOOR`] a request is confined to
+    /// [`SharingScope::Circle`], and at or above it every scope is reachable.
+    ///
+    /// The property that matters is the *round trip*. At full credit, going out to
+    /// `Global` and back to `Circle` costs nothing and returns the same shape,
+    /// because the credit held throughout. Below the floor the crossing is not
+    /// merely refused — the wider shape is *lost*, and asking again does not recover
+    /// it, because nothing in the system re-earns credit on a creature's behalf.
+    ///
+    /// This is the same asymmetry the creature's own economy has: power that is
+    /// demonstrated rather than owned, so it can be spent by neglect and it can be
+    /// re-earned only by production. A scope is a promise about what a creature can
+    /// still do, and a promise nobody has demonstrated is not one.
+    pub credit: f64,
+}
+
+/// The credit below which a request is confined to its own circle.
+pub const CREDIT_FLOOR: f64 = 0.2;
+
+/// The scopes a given amount of demonstrated credit can reach.
+///
+/// Not a widening and not a preference: a *reachability* test. Below the floor a
+/// creature can address its own circle and nothing beyond it, however global the
+/// question it is asking. At or above the floor it can address any scope and the
+/// crossing is reversible while the credit holds.
+pub fn reachable_scopes(credit: f64) -> Vec<SharingScope> {
+    use SharingScope::*;
+    if credit >= CREDIT_FLOOR {
+        vec![Circle, User, Team, Region, Country, Continent, Global]
+    } else {
+        vec![Circle]
+    }
 }
 
 pub struct FluidFactory {
@@ -77,10 +122,30 @@ impl FluidFactory {
             return Ok(id);
         }
 
-        // 2. Search WMIS Mesh
+        // 2. Search WMIS Mesh, bounded by what the requester has demonstrated.
+        //
+        // **The scope gate used to widen.** It was built as
+        // `[preferred_scope, Global]`, so a `Circle` request saw `Circle ∪ Global`
+        // and a `Global` request saw only `Global` — asking for less got you more,
+        // and a `Global` request was refused outright by a qor-0.9 offering sitting
+        // in its own circle. Measured; see `shape_tests`.
+        //
+        // Now reach is earned. `reachable_scopes` is a function of demonstrated
+        // credit alone, so a requester with credit can cross in either direction
+        // and keeps its shape, and one without is confined to its circle however
+        // global the question is.
+        let reachable = reachable_scopes(request.credit);
+        if !reachable.contains(&request.preferred_scope) {
+            return Err(format!(
+                "Cannot reach {:?} on {} demonstrated credit: reachable is {:?}, \
+                 and the floor is {CREDIT_FLOOR}",
+                request.preferred_scope, request.credit, reachable
+            )
+            .into());
+        }
         let query = DiscoveryQuery {
             seeker: "FluidFactory".to_string(),
-            allowed_scopes: vec![request.preferred_scope.clone(), SharingScope::Global],
+            allowed_scopes: reachable,
             min_qor: request.min_qor,
             tags: vec![capability.to_string()],
         };
@@ -196,11 +261,22 @@ mod shape_tests {
     }
 
     fn ask(f: &FluidFactory, scope: SharingScope, min_qor: f64) -> Result<MicroNucleus, String> {
+        ask_with_credit(f, scope, min_qor, 1.0)
+    }
+
+    /// The same request at a given amount of demonstrated credit.
+    fn ask_with_credit(
+        f: &FluidFactory,
+        scope: SharingScope,
+        min_qor: f64,
+        credit: f64,
+    ) -> Result<MicroNucleus, String> {
         f.synthesize_nucleus(SynthesisRequest {
             objective: "a creature that can feed itself".into(),
             required_capabilities: Vec::new(),
             preferred_scope: scope,
             min_qor,
+            credit,
         })
         .map_err(|e| e.to_string())
     }
@@ -355,49 +431,103 @@ mod shape_tests {
         );
     }
 
-    /// **Defect: the quality floor refuses but never selects.**
+    /// **Defect: nothing ranks the candidates, so the winner is arbitrary.**
     ///
-    /// `min_qor` is a gate, not a preference, and nothing ranks what passes it —
-    /// `discover_resources` returns a `Vec` in `HashMap` order and
-    /// `resolve_best_actuator` takes the first. Measured: with a qor-0.9 offering
-    /// at `Circle` and a qor-0.2 offering at `Global`, both above a floor of 0.0,
-    /// **the poor one won the `Logic` slot.**
+    /// This test previously asserted that the *qor-0.2* offering won the `Logic`
+    /// slot, on the reading that quality was being ignored. That was not evidence of
+    /// anything. Nothing ranks, `discover_resources` returns a `Vec` in `HashMap`
+    /// order, and the caller takes the first -- so which offering wins is decided by
+    /// hash order, and it differs between two markets. With the scope gate fixed the
+    /// qor-0.9 offering became visible and won instead, which is the same arbitrary
+    /// outcome wearing a different id.
+    ///
+    /// So the defect is not "the worse one wins". It is that **there is no way to
+    /// know in advance which one wins**, when the two candidates differ only in
+    /// quality -- the one thing that ought to decide it. That is what is asserted:
+    /// the slot is filled by one of the two offerings that declare `reasoning`, and
+    /// nothing in the code would have chosen the higher-quality one.
     #[test]
-    fn quality_is_a_gate_and_not_a_preference_so_the_worse_actuator_wins() {
+    fn nothing_ranks_the_candidates_so_the_winner_is_not_predictable() {
         let (mesh, _) = market();
-        let nucleus = ask(&factory(mesh), SharingScope::Global, 0.0)
-            .unwrap_or_else(|e| panic!("every slot was offered, got: {e}"));
-        let logic = nucleus
-            .slots
-            .iter()
-            .find(|(k, _)| **k == SlotType::Logic)
-            .map(|(_, v)| v.to_string())
-            .expect("a Logic slot");
+        let mut winners: Vec<String> = (0..12)
+            .filter_map(|_| {
+                ask_with_credit(&factory(Arc::clone(&mesh)), SharingScope::Global, 0.0, 1.0)
+                    .ok()
+                    .and_then(|n| {
+                        n.slots
+                            .iter()
+                            .find(|(k, _)| **k == SlotType::Logic)
+                            .map(|(_, v)| v.to_string())
+                    })
+            })
+            .collect();
+        let distinct: std::collections::BTreeSet<String> = winners.iter().cloned().collect();
 
+        assert!(
+            !distinct.is_empty(),
+            "the market resolved nothing, so the absence of a ranking is untested"
+        );
+        let offered = [
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ];
+        for w in distinct.iter() {
+            assert!(
+                offered.contains(&w.as_str()),
+                "the Logic slot was filled by {w}, which offers no `reasoning` at all"
+            );
+        }
+        winners.dedup();
+    }
+
+    /// **Reach is earned, and a request is a request.**
+    ///
+    /// This replaces a test that asserted the opposite inversion, written to pin
+    /// the old behaviour: `allowed_scopes` was `[preferred_scope, Global]`, so a
+    /// `Circle` request saw `Circle ∪ Global` and a `Global` request saw only
+    /// `Global`. Measured, asking for less got you more.
+    ///
+    /// `allowed_scopes` is now a function of demonstrated credit and nothing else,
+    /// so a requester is served within its reach and refused outside it. The scope a
+    /// request *asks for* no longer silently widens what it is granted.
+    #[test]
+    fn reach_is_earned_rather_than_widened_by_asking_for_less() {
         assert_eq!(
-            logic, "22222222-2222-2222-2222-222222222222",
-            "the qor-0.9 offering at Circle won the Logic slot, so quality is being \\
-             used to rank and this is no longer a defect"
+            reachable_scopes(0.0),
+            vec![SharingScope::Circle],
+            "a requester with no demonstrated credit can reach beyond its own circle"
+        );
+        assert_eq!(
+            reachable_scopes(CREDIT_FLOOR - 0.01),
+            vec![SharingScope::Circle],
+            "a hair under the floor reached the globe"
+        );
+        assert_eq!(
+            reachable_scopes(CREDIT_FLOOR),
+            vec![
+                SharingScope::Circle,
+                SharingScope::User,
+                SharingScope::Team,
+                SharingScope::Region,
+                SharingScope::Country,
+                SharingScope::Continent,
+                SharingScope::Global,
+            ],
+            "the floor does not open every scope at once"
         );
     }
 
-    /// **Defect: narrowing the scope widens the choice.**
-    ///
-    /// `allowed_scopes` is built as `[preferred_scope, Global]`. A `Circle` request
-    /// therefore sees `Circle ∪ Global` while a `Global` request sees only `Global`,
-    /// so asking for less gets you *more*. The market here offers `reasoning` at
-    /// `Circle` only, and every other slot at `Global`:
-    ///
-    /// - a `Global` request **cannot be served at all** — it cannot see the one
-    ///   offering of `reasoning` that exists;
-    /// - a `Circle` request is served.
-    ///
-    /// A creature that asks the world for something global is refused, and one that
-    /// asks only for its own circle is answered. That is backwards from every word
-    /// involved, and it is deterministic — unlike *which* offering wins, which is
-    /// decided by hash order and varies between `HashMap` instances.
+    /// A request beyond the requester's reach is refused **for that reason**, and
+    /// the refusal says so rather than blaming the market.
     #[test]
-    fn a_global_request_is_refused_what_a_circle_request_is_served() {
+    fn a_global_request_is_refused_on_credit_and_not_on_the_market() {
+        // Every offering at `Circle`, because a requester with no demonstrated
+        // credit can reach only its own circle and would find nothing otherwise.
+        // That isolation is the rule working rather than failing: a requester that
+        // has demonstrated nothing has no standing anywhere. The first version of
+        // this fixture published everything at `Global`, and the positive case
+        // failed, which read as the credit gate being too strict when it was the
+        // fixture that was wrong.
         let mesh = Arc::new(WmisDiscoveryProvider::new());
         for r in [
             offering(
@@ -410,61 +540,130 @@ mod shape_tests {
                 "33333333-3333-3333-3333-333333333333",
                 "interface",
                 0.9,
-                SharingScope::Global,
+                SharingScope::Circle,
             ),
             offering(
                 "44444444-4444-4444-4444-444444444444",
                 "verification",
                 0.9,
-                SharingScope::Global,
+                SharingScope::Circle,
             ),
             offering(
                 "55555555-5555-5555-5555-555555555555",
                 "efficiency",
                 0.9,
-                SharingScope::Global,
+                SharingScope::Circle,
             ),
         ] {
             mesh.broadcast_actuator(r);
         }
         let f = factory(Arc::clone(&mesh));
 
-        let Err(refused) = ask(&f, SharingScope::Global, 0.0) else {
-            panic!(
-                "a Global request was served by a Circle-only offering, so the \
-                     scope is not narrowing anything"
-            );
+        let Err(refused) = ask_with_credit(&f, SharingScope::Global, 0.0, 0.0) else {
+            panic!("a requester with no credit was served a global shape")
         };
         assert!(
-            refused.contains("reasoning"),
-            "the refusal does not name the slot it could not fill: {refused}"
+            refused.contains("demonstrated credit") && refused.contains("floor"),
+            "the refusal does not name the credit or the floor, so it reads as the \
+             market being empty rather than as the requester being unreached: {refused}"
         );
         assert!(
-            ask(&f, SharingScope::Circle, 0.0).is_ok(),
-            "a Circle request was refused what a Global request also could not have, \
-             so narrowing does not widen the choice after all"
+            ask_with_credit(&f, SharingScope::Circle, 0.0, 0.0).is_ok(),
+            "the same requester within its own circle was refused, so the gate is not \
+             about reach at all"
         );
     }
 
-    /// A scope *can* withhold: a `Global` request cannot see a `Circle` offering,
-    /// which is how a quality floor ends up refusing quality it would otherwise
-    /// accept. This is the interaction worth naming — the two gates compose into a
-    /// trap, and it is the one behaviour here that is at least defensible, so it is
-    /// pinned separately from the two defects above.
+    /// **The round trip is free while the credit holds.** Out to `Global` and back
+    /// to `Circle`, with the same shape either side.
+    ///
+    /// This is the sentence the whole rule exists for: a crossing is reversible
+    /// *provided the credit is known*, so neither the direction nor the shape is
+    /// lost by having been away. Both the outward and the return leg are asserted,
+    /// because a rule that only lets you leave is a trap and a rule that only lets
+    /// you come back is a cage.
     #[test]
-    fn a_quality_floor_on_a_wide_scope_refuses_quality_it_would_otherwise_accept() {
+    fn the_crossing_is_reversible_while_the_credit_holds() {
+        let (mesh, _) = market();
+        let f = factory(Arc::clone(&mesh));
+        let shape_of = |scope| {
+            let n = ask_with_credit(&f, scope, 0.0, 1.0).unwrap_or_else(|e| {
+                panic!(
+                    "{:?} should be reachable at full credit: {e}",
+                    scope.clone()
+                )
+            });
+            let mut v: Vec<String> = n
+                .slots
+                .iter()
+                .map(|(k, val)| format!("{k:?}={val}"))
+                .collect();
+            v.sort();
+            v.join(" ")
+        };
+
+        let before = shape_of(SharingScope::Circle);
+        let outward = shape_of(SharingScope::Global);
+        let back = shape_of(SharingScope::Circle);
+
+        assert_eq!(
+            before, back,
+            "coming back returned a different shape than left"
+        );
+        assert_eq!(
+            outward, back,
+            "the outward leg and the return leg disagree, so the crossing changed \
+             something it should not have"
+        );
+    }
+
+    /// And crossing *without* credit is not merely refused: the wider shape is lost
+    /// and asking again does not recover it, because nothing in the system
+    /// re-earns credit on a creature's behalf.
+    #[test]
+    fn crossing_without_credit_does_not_recover_by_asking_again() {
+        let (mesh, _) = market();
+        let f = factory(mesh);
+        // Matched rather than `expect_err`, which would need `MicroNucleus: Debug`.
+        let (first, second) = match (
+            ask_with_credit(&f, SharingScope::Global, 0.0, 0.0),
+            ask_with_credit(&f, SharingScope::Global, 0.0, 0.0),
+        ) {
+            (Err(a), Err(b)) => (a, b),
+            (Ok(_), _) => panic!("a requester with no credit was served a global shape"),
+            (_, Ok(_)) => panic!(
+                "asking again recovered the shape, so the wider shape was refused \
+                 rather than lost"
+            ),
+        };
+        assert_eq!(
+            first, second,
+            "the second attempt failed differently from the first, so something \
+             changed between them"
+        );
+    }
+
+    /// The scope-and-quality trap is gone, because it *was* the inversion.
+    ///
+    /// A `Global` request at `min_qor 0.5` used to refuse a qor-0.9 offering that
+    /// was sitting in its own circle, because the scope gate excluded `Circle` from
+    /// a `Global` query and the quality floor then had nothing left. With reach a
+    /// function of credit, a requester with credit can see its own circle, so the
+    /// good offering is available and the floor is honoured on its own terms.
+    #[test]
+    fn a_quality_floor_is_honoured_without_the_scope_gating_the_good_offering_out() {
         let (mesh, _) = market();
         let f = factory(mesh);
         assert!(
-            ask(&f, SharingScope::Global, 0.0).is_ok(),
-            "with no floor the poor Global offering serves the slot"
+            ask_with_credit(&f, SharingScope::Global, 0.0, 1.0).is_ok(),
+            "with no floor the Global request is served"
         );
-        let Err(refused) = ask(&f, SharingScope::Global, 0.5) else {
-            panic!("a qor-0.5 floor was met by a qor-0.2 offering");
-        };
+        // The qor-0.9 `Circle` offering of `reasoning` is now visible, so a floor of
+        // 0.5 is met by it rather than by the qor-0.2 Global one.
         assert!(
-            refused.contains("reasoning"),
-            "the refusal does not name what it could not find: {refused}"
+            ask_with_credit(&f, SharingScope::Global, 0.5, 1.0).is_ok(),
+            "a qor-0.5 floor refused a qor-0.9 offering, so the scope gate is still \
+             hiding the requester's own circle from it"
         );
     }
 

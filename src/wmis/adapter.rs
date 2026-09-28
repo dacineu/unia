@@ -12,7 +12,10 @@ pub enum ResourceType {
     ExternalPlatform,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// `Copy` because it is a fieldless enum that gets passed alongside `min_qor` into
+/// every discovery query, and cloning it at each of those sites obscured the one
+/// place that mattered -- the `allowed_scopes` a request was answered from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SharingScope {
     Circle,
     User,
