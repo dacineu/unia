@@ -5,6 +5,123 @@ not intentions.
 
 ---
 
+## What is not solved
+
+The list below is the one to read first. It is not the whole TODO — that is 700
+lines organised by subsystem, and a subsystem list cannot tell you which open
+items would falsify the paper and which are chores. This one is ordered by that,
+and every entry names the measurement or the decision that would close it.
+
+Grouped by *why* it is open, because the four groups need different things from
+you and confusing them is how a project spends a year on the wrong one.
+
+### A. Undecidable by me. Yours to answer.
+
+1. **The fork at `docs/unia-target-spec.md` §6.** Either the target preserves
+   ownership and `unia` is a genuine compiler target with Rust's central
+   guarantee intact, or it is a virtual machine with a heap and **the one reason
+   to compile Rust to it is gone.** The tree is already the second and it was
+   never written down: `Arc<Mutex<HashMap<String, HashMap<String, String>>>>` is
+   a heap without ownership. Decides what this project is; two projects with the
+   same name.
+2. **What happens to an act in flight when its resource is demoted.** *Complete*
+   (default; the old resource must stay alive until the count is zero), *refuse*,
+   or *reissue* (needs a replayable act, and per §2.3 a closed `Signature` is not
+   one). "Unreachable contract exit choosable by all parties." `Linker::promote`
+   reports the count rather than choosing, deliberately.
+3. **Who authors the 200-query fixture.** Someone who has not read
+   `src/bridge/primitive.rs` or `src/meet.rs`. Whoever writes it writes in the
+   matcher's vocabulary, so the escalation rate becomes a measurement of their
+   assumptions. **This gates the paper's central number.**
+4. **The name.** Trademark clearance for `ca(R)maduci` and the `(R)`, and
+   `euni.me` ownership, before anything public.
+
+### B. Blocked on a measurement nobody has made
+
+5. **Where the 11µs of an act goes.** Measured: whole act ~14,300 ns, of which
+   ~11,000 (77%) is `map_intent` and ~3,300 (23%) is dispatch. The breakdown
+   *inside* that 11µs is a reading of the code, not a profile, and my readings
+   have been wrong about a dozen times this session. A profiler, one afternoon.
+   **This is the cheapest high-value thing on the page.**
+6. **The transposition ratio.** A transposed module must be **shorter than its
+   source** and the ratio measured, stated in advance so it cannot move. First
+   candidate `src/clean.rs`. Nobody has measured it. Blocked on (1), not effort.
+7. **An escalation rate on a corpus nobody hand-authored.** Demonstrated once,
+   on a real corpus, through a test fixture. Not a trajectory, so
+   "harmony as reachable equilibrium" stays red and correctly so.
+8. **Convergence on two competing candidates.** Re-mattering is proved to reach a
+   fixpoint; convergence *between* two is not built.
+9. **Whether induced matterns can be assembled into a working system.** The
+   corpus exists. Nothing composes it. The gap between a corpus and a system is
+   unmeasured and may be impassable.
+10. **Reproducible performance figures.** `docs/perf-unia-vs-lua.md` reports one
+    machine. No multi-machine, no `criterion`, no repetition protocol.
+
+### C. Contradictions in the tree, right now
+
+11. **A shadow is fan-out and hotswap is a promotion, and both are implemented.**
+    `UpaDispatcher::shadow_routes` is commented "for hotswapping" but `route()`
+    delivers to primary **and** shadow — for a counter, the act happens twice.
+    `Linker::promote` promotes instead. The old behaviour is not removed. The two
+    disagree and only one is right.
+12. **The generated corpus is denormalised ~4.6×.** Rewriting it is 20× and
+    re-resolving is 21× against a 9.6% quality ceiling. Nobody has decided
+    whether `resolve` should, and "never use a logic/radix converter" says it
+    should not.
+13. **`DU-UUID` is content-derived and labelled v4.**
+14. **The AES-GCM fixed nonce** is a confidentiality limitation, documented
+    nowhere in the security material.
+15. **A manifest may name an action `SetValue`.** Nothing stops it; the two
+    vocabularies share one string space and the linker's only defence is looking
+    in the right field. I wrote a test for this and deleted it — it asserted
+    `true || true`. The real check is a name-space assertion over every manifest
+    in `tests/fixtures/`.
+
+### D. Impossible with the current vocabulary, not merely unfinished
+
+16. **The sixteen verbs cannot express a program.** No binding, no definition, no
+    call, no allocation, no recursion, no emission. `Signature` is
+    `primitives.join("_")` — a **closed** sequence, so there is no calling
+    convention because there is no notion of a callable thing. `credit()` is six
+    lines and lowers to *nothing*. **This caps what self-training can ever
+    produce and it is a design decision, not a missing feature.**
+17. **A second alphabet exists but is span-level.** `SourceAct` is
+    `ReplaceSpan`/`InsertSpan`/`DeleteSpan`/`AddTest`/`RunTests`. A log that
+    reproduces the source reproduces nothing *about* the source, so it is a
+    derivation, not a model.
+18. **The creature knows four acts.** `new_signatures` saturates at four, so the
+    economy equilibrium sits below the peak.
+19. **Three of five `MetaActuatorType` variants report work not done** — a
+    `Mutator` returning `"EVOLVED"` and a fabricated `"+15%"`, a `Synthesizer`
+    returning `HYBRID_CREATED` with a fresh `Uuid` and no artifact, a `Distiller`
+    returning `"10:1"`. The self-training machinery is the most declared and least
+    built part of the system.
+20. **`Action.items` 1/1** unimplemented. **`examples/camaduci.rs`**
+    reimplements the pet rather than using `unia::camaduci`. **Lattice vs
+    residuated** (phase 0) undecided, and importing it is expensive enough that
+    it must be decided before seeding.
+21. **Immutability: unanswered, and the intuition leads somewhere else.**
+    The user-visible proposal was "JSON immutable, and unia mutates immutate
+    itself to adapt". `rematter(&LearnedRule) -> LearnedRule` **already is** that:
+    self-modification by value replacement, same signature, new address, evidence
+    discarded, fixpoint proved, and a holder of the old rule is not corrupted.
+    `skeleton()` + `DuUuid` is already the immutable content-addressed identity.
+    So the *architecture* is ready.
+    But **immutability would not make this faster.** The 77% is
+    `to_lowercase()` per call, per action, and two `HashSet<String>` per
+    candidate — allocation and re-tokenisation, not aliasing. Marking the
+    manifest `&self` changes none of it, and full immutability *without*
+    structural sharing is more allocation. There is **no persistent data
+    structure in the dependencies** (`im`, `rpds`, `arc-swap`: none), so the
+    sharing machinery the idea depends on is not here.
+    What the intuition actually licenses is a **memoisation keyed on content
+    address** — `(resource_id, intent) -> PrimitivePacket`, invalidated when the
+    resource's address changes — and the addressing machinery for that already
+    exists. Blocked on (5).
+
+---
+
+
 ## Provenance and attribution
 
 - [ ] **Complete the `euni.me` ownership record.**

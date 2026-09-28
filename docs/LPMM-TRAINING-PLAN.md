@@ -45,6 +45,18 @@ Five blockers, named, with the measurement that would clear each. All five are
 the *same* missing thing seen from different directions — the trace log — and the
 plan converges on it by phase 2.
 
+**Two are now cleared and the list has been corrected rather than left standing:
+see phase 2.** The three that remain are the vocabulary (blocker 1), the act set
+(blocker 2) and the stubs (blocker 5) — and none of the three is cleared by
+writing more code. They are design decisions, which is why §4 and
+`docs/unia-target-spec.md` §6 both send them back to the author.
+
+**What the trace log was not the blocker for, and this emerged from building
+phase 2.** A caller-authored corpus fixes the *author*. It does not touch the
+target specification, the calling convention, the in-flight policy on a hotswap,
+or the twelve unmeasured numbers in `TODO.md` § "What is not solved". Phase 2 was
+the cheapest large change and it is done; the expensive ones are unchanged by it.
+
 1. **The primitive vocabulary cannot express a program.** Sixteen verbs, all state
    or flow: `GetState GetValue CheckSense SetValue Toggle Increment Reset Route
    Pipe Broadcast Delay Watch Pulse Compare Transform Validate`. No binding, no
@@ -55,12 +67,13 @@ plan converges on it by phase 2.
 2. **The creature knows four acts.** `new_signatures` saturates at four, so the
    implied economy equilibrium sits *below* the peak and a creature that has
    learned everything it can still declines. Pinned as a test.
-3. **No caller writes a trace.** `Actor::Caller` exists, `Store::record` exists,
-   every field exists — and nothing constructs one. The corpus is empty because
-   nothing is listening, not because nothing can speak.
-4. **The escalation rate is unmeasured**, and it must be per *signature* rather
-   than per address. The corpus evidence already says why: the generated corpus
-   escalates in reach and in no capability at all.
+3. ~~**No caller writes a trace.**~~ **Cleared.** `src/edit.rs` and
+   `Actor::Caller`; see phase 2. The corpus was empty because nothing was
+   listening, and it now is not.
+4. ~~**The escalation rate is unmeasured.**~~ **Measured, once, per signature.**
+   ~0.36 capability per act on a real corpus. Per *address* would have been
+   wrong: the generated corpus escalates in reach and in no capability at all,
+   because a new address for a known act is a transfer, not a capability.
 5. **Three of the five `MetaActuatorType` variants are stubs** that return
    hardcoded JSON asserting work they did not do — including a `Mutator`
    reporting `"EVOLVED"` and a fabricated `"performance_gain": "+15%"`, and a
@@ -115,6 +128,36 @@ induction run on it with no other change required.
 authored by hand, with a measured `authorship` ratio, and a measured escalation
 rate per signature. **The escalation rate stops being unmeasured here and
 nowhere earlier.**
+
+**Status: the exit condition is met, and less well than the phase deserves.**
+`src/edit.rs` supplies the second alphabet — `ReplaceSpan`, `InsertSpan`,
+`DeleteSpan`, `AddTest`, `RunTests` — deliberately not expressed in the sixteen
+runtime verbs, with a test asserting the two never merge. `Actor::Caller` finally
+has a constructor, so the corpus is no longer empty for want of a listener.
+
+Measured on this repository's real edit history: 14 caller traces, 5 confirmed
+capabilities, 2 failed runs, ~0.36 capability per act. The witness is a test
+result — `RunTests`, and a red one witnesses nothing, so its edits stay
+*attempted* and stop being *confirmed*.
+
+**Three things this does not mean, and the distinction is the phase's actual
+result:**
+
+- *Demonstrated, not finished.* One session, recorded by hand through a test
+  fixture. A corpus that grew once, by hand, has no trajectory, so
+  "harmony as reachable equilibrium" stays red.
+- *The alphabet is span-level, so it is a derivation and not a model.* A log
+  that reproduces the source reproduces nothing *about* the source. Phase 2 does
+  not touch the phase-1 vocabulary gap; it routes around it.
+- *The metric I wrote first was wrong and the test caught it at once.*
+  Capabilities over *distinct attempts* scores fifty-one identical edits at 1.0
+  and twelve distinct ones at 1.0 — the deduplicated denominator does not
+  penalise repetition, so it rated pure repetition a **perfect escalator**, which
+  is the exact failure the economy was rebuilt to forbid, reproduced in the
+  measurement rather than the currency. The denominator is now every act. A
+  measurement that cannot tell repetition from progress measures neither, and
+  the fact that it took one test run to find that is the argument for the whole
+  project standard.
 
 ### Phase 3 — Close the loop, with a verifier
 
@@ -191,7 +234,44 @@ disappears rather than being maintained.
 
 ---
 
-## 5. Two things this plan will not do
+## 5. What is not solved, and where the phases do not reach
+
+This plan is five phases and a set of blockers. Neither is the list of what is
+still open, because both are organised by *sequence* and the open items are not
+in sequence. `TODO.md` § "What is not solved" is, and it is grouped by why each
+item is open rather than by when it would be reached:
+
+- **A — undecidable by the author.** The §6 fork, the in-flight hotswap policy,
+  the fixture author, the trademark.
+- **B — blocked on a measurement nobody has made.** The 11µs breakdown, the
+  transposition ratio, multi-machine performance.
+- **C — contradictions in the tree right now.** A shadow that is fan-out and a
+  hotswap that is a promotion, both implemented; the 4.6× denormalised corpus;
+  the mislabelled DU-UUID.
+- **D — impossible with the current vocabulary, not merely unfinished.** The
+  sixteen verbs cannot express a program; the four-act ceiling; three stubs that
+  report work not done.
+
+**The honest shape of the project is that A and D are the same gap seen from the
+author's side and the machine's side, and neither is closed by effort.** A is a
+decision about what `unia` is. D is the consequence of having deferred it.
+
+**One thing this plan does not contain and should.** The user's proposal was that
+UNIA's JSON be immutable, and that UNIA mutate immutate itself to adapt. The
+*architecture* half is already here and was not recognised: `rematter` is
+self-modification by value replacement, `skeleton()` + `DuUuid` is an
+immutable content-addressed identity, and the fixpoint is proved. The *performance*
+half does not follow and was not claimed: 77% of an act is `map_intent`
+re-tokenising a string that did not change, which no `&self` touches, and there is
+no persistent data structure in the dependencies to give immutability its sharing.
+The idea's real payoff is not speed — it is that **mutation becomes invisible to
+every holder of the old value**, which is a convergence property, and one the
+project already relies on. What it licenses is a memo keyed on content address,
+and that is blocked on the profiler run.
+
+---
+
+## 6. Two things this plan will not do
 
 **It will not widen `UniversalPrimitive` to cover knowledge.** Seventeen hardware
 verbs is not an ontology. Growing that list is how the "declared, never wired"
