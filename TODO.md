@@ -84,7 +84,11 @@ not intentions.
 
 - [ ] **Measure an escalation rate.** This is the number that supports or refutes
   C1 in `docs/LARGE-PATTERN-MODELS.md`. It requires a corpus larger than two
-  artifacts and does not exist yet.
+  artifacts and does not exist yet. **Stage 4 of the plan above is what makes it
+  computable** — not because it enlarges the corpus, but because a trace that
+  records *which path served the call* is the input the number is computed from.
+  Until then the figure is asserted rather than measured, which is the state the
+  paper's §9 is written about.
 - [ ] **Build a 200-query labelled fixture authored by someone who did not build
   the matcher.** The current 30-query fixture was written by the author of the
   matcher and is a smoke test. It found a real defect, which is its purpose, but
@@ -116,6 +120,71 @@ not intentions.
   Already in `SECURITY.md`; it must also appear wherever identifiers are
   exchanged.
 
+## The creature as intermediary
+
+The plan and its projection are in
+[`docs/creature-as-intermediary.md`](./docs/creature-as-intermediary.md). This
+section is the ordered live list; the document is the argument. The stages are in
+dependency order and each has an acceptance criterion that can fail.
+
+**Measured today, and the reason the stages are in this order.** The loop closes
+— `POST /api/care` tends the pet, records a trace, re-induces, and stores the
+result — but `Pet.learned` is read in exactly two places, the `/api/pet`
+response and the test assertions. **No interaction is routed through a learned
+rule.** `Care::parse` accepts four string literals and nothing else, so there is
+no vocabulary to speak. `ExternalApi::call` returns a formatted echo and there is
+no HTTP client in the crate. Induced candidates are never written to `patterns/`,
+so a learned signature matches nothing on the next pass.
+
+- [ ] **Stage 0 — a vocabulary, with no model in it.** Replace `Care::parse`'s
+  four literals with surface → primitive sequence over what already exists: the
+  store's IDF-weighted scorer for candidates, `tokenize_id` + `PRIMITIVE_TABLE`
+  for the mapping. *Acceptance:* "give it some kibble" acts, with no model
+  configured and no network.
+- [ ] **Stage 1 — the contradiction gate.** Check every term the intent proposes
+  to set against the addressed artifact's declared `state_space`; on a
+  contradiction, ask and execute nothing. *Acceptance:* the 20-case fixture
+  reports **20/20 hit@1 with 0 false positives**, and both known
+  contradictions return a question naming the missing term. This is the smallest
+  stage and the load-bearing one — the two false positives are not a threshold
+  problem, they are provable contradictions (`brightness` is not in
+  `valve-001`'s `state_space`), and a checkable fact is the only kind of thing
+  the creature may act on.
+- [ ] **Stage 2 — the creature becomes the intermediary.** A `Mediator` in
+  `IntelligenceBridge::request`, which is already intercept → intervene → evolve.
+  The pet becomes a first-class `.ure` resource with capabilities `tend`,
+  `neglect`, `sleep`, `learn`, `explain`, `refuse`, addressed by content address
+  like any other. *Acceptance:* non-interference holds as a property test, and
+  `GET /api/pet` becomes a `search` against a manifest.
+- [ ] **Stage 3 — external transduction.** One trait, two implementations: the
+  Stage 0 matcher (default, offline, no authority) and an OpenAI-compatible
+  `POST /v1/chat/completions`, which is what makes `oc-shim`, a local server or
+  an agent reachable without a bespoke client. The external model transduces
+  only: it may choose among primitives the artifact declares and nothing else.
+  *Acceptance:* both satisfy the four properties identically, and the external one
+  cannot emit an undeclared primitive under adversarial prompting.
+- [ ] **Stage 4 — evolution from the game.** A contradiction, the player's
+  answer, and the answer is a trace. This is what `src/session.rs` has been
+  blocked on: its own doc comment says a lesson becomes a trace by one function
+  call once the vocabulary is defined, and Stage 0 defines it. Then make induced
+  rules addressable. *Acceptance:* a creature corrected N times routes the N+1th
+  request through a learned rule, the trace records it, and the escalation rate
+  is computable rather than asserted.
+- [ ] **Stage 5 — two creatures.** Convergence over the existing relay, mediated
+  by the creature. Handover carries its refusals as well as its rules.
+  *Acceptance:* the motto's answer is produced by the system, not asserted.
+
+### Properties the stages must not lose
+
+Four checks, because "the creature does not interfere" is otherwise a promise
+rather than a design. **P1** with no learned rules, no external model and no
+contradiction, the creature's output is byte-identical to the architecture's own.
+**P2** it can only emit primitives that exist; an unknown primitive is an error,
+never a guess. **P3** interception fires only on a checkable fact — a term absent
+from a declared `state_space`, an unmet constraint — and never on a score.
+**P4** a learned rule is consulted before the models and the trace records it, or
+there is no escalation rate to measure.
+
 ## ca(R)maduci — the digital pet
 
 A runnable core exists (`cargo run --example camaduci`, 15 tests): the care loop,
@@ -128,14 +197,16 @@ an escalation.
 
 ### Blocking decisions
 
-- [ ] **Decide whether ca(R)maduci is a game or a test fixture.** It is currently
-  both, and they pull opposite ways: a fixture must be deterministic and
-  clock-injectable, a game must be fun. Building before this is settled produces
-  something that is neither.
-- [ ] **Decide `.ure` artifact or Rust struct for the pet's state space.** The
-  `.ure` route keeps the state space declarative and lets the existing loader
-  and matcher handle it, which is what makes the pet a demonstration rather than
-  a toy. A struct is easier to test.
+- [x] **Decide whether ca(R)maduci is a game or a test fixture.** Both, and not
+  by compromise: `src/camaduci.rs` stays a deterministic, clock-injectable core
+  with no I/O, and the game is a view over it. The renderer is the part allowed
+  to be fun; the core is not allowed to become untestable to get there.
+- [x] **Decide `.ure` artifact or Rust struct for the pet's state space.**
+  `.ure`, and it is Stage 2 of the plan above rather than a free-standing
+  question. The state space stays declarative so the existing loader, matcher and
+  contradiction gate handle it, which is what makes the pet a demonstration
+  rather than a toy. A struct is easier to test and is what `Pet` is today;
+  Stage 2 is where it stops being.
 - [ ] **Run a trademark clearance search for the name, then file.** The `(R)` is
   already used project-wide on the understanding that it marks an intended mark;
   `TRADEMARK.md` records the status as not cleared and not filed. MIT protects no
