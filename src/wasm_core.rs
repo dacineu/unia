@@ -1,6 +1,6 @@
 use crate::bridge::primitive::{PrimitiveBridge, StateType, UreAction, UreResource};
 use crate::nucleus::ActuatorNucleus;
-use crate::os::{UniaKernel, UniaSyscall};
+use crate::os::kernel::{UniaKernel, UniaSyscall};
 use crate::wmis::{
     QualityMetrics, ResourceType, SharingScope, WmisDiscoveryProvider, WmisResource,
 };
@@ -89,13 +89,13 @@ impl UniaCore {
                     "unknown"
                 };
                 let syscall = UniaSyscall::WriteDevice(res_id.to_string(), val.to_string());
-                self.kernel.handle_syscall(syscall, user)
+                self.kernel.handle_syscall(syscall, user).unwrap_or_else(|e| e)
             }
             "compute" if parts.len() >= 2 => {
                 let op = parts[1];
                 let syscall =
                     UniaSyscall::ExecuteCompute(op.to_string(), vec!["A".into(), "B".into()]);
-                self.kernel.handle_syscall(syscall, user)
+                self.kernel.handle_syscall(syscall, user).unwrap_or_else(|e| e)
             }
             "status" => self.get_status(),
             _ => format!(
@@ -109,7 +109,7 @@ impl UniaCore {
         let resource_id = "upa-virtual-01";
         let upa_meta = WmisResource {
             id: resource_id.to_string(),
-            resource_type: ResourceType::Virtual,
+            resource_type: ResourceType::Compute,
             owner: user.to_string(),
             sharing_scope: SharingScope::Global,
             capabilities: vec!["upa_compute".to_string()],

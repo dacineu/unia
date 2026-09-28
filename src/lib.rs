@@ -10,6 +10,20 @@ pub mod meet;
 pub mod meta_actuators;
 pub mod node;
 pub mod nucleus;
+/// The emulated OS layer: a syscall surface over the actuator nucleus, and
+/// a virtual filesystem mapping paths to `.ure` identities.
+///
+/// **This module was not declared anywhere and was therefore unreachable.**
+/// `src/os/` held about six kilobytes -- a kernel, a syscall enum and a VFS
+/// -- and nothing in the crate included it. The only file that tried was
+/// `src/wasm_core.rs`, which is gated to `wasm32` and imports
+/// `crate::os::{UniaKernel, UniaSyscall}`; since it had never been compiled,
+/// the dangling import was invisible. Declaring it revives the code and is
+/// what makes the `wasm` CI job able to say anything at all.
+///
+/// It is tokio-free, which is the only reason it can be part of a `wasm`
+/// build: the syscall names are emulated, and nothing here calls the host.
+pub mod os;
 pub mod orchestrator;
 pub mod pipeline;
 pub mod primitives;

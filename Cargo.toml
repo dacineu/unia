@@ -23,20 +23,48 @@ sha2 = "0.10"
 aes-gcm = "0.10"
 thiserror = "1.0"
 tempfile = "3.10"
-tokio = { version = "1.53.1", features = ["full"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 
+# **Native only, and deliberately so.**
+#
+# `tokio` with `full` pulls in `mio`, which does not build for
+# `wasm32-unknown-unknown` -- 48 errors in `mio` alone. The `wasm` CI job was red
+# for that reason and had been for long enough to be treated as pre-existing.
+#
+# The fix is not a reduced feature set; it is that **the library never uses tokio.**
+# Only `unia-mcp` and `unia-signal` do, and both are networked desktop binaries:
+# `unia-signal` opens a websocket listener and `unia-mcp` is already behind the
+# `mcp-server` feature. Neither can run on `wasm32-unknown-unknown`, which has no
+# sockets, so declaring tokio a dependency there would be declaring a dependency on
+# something that cannot work. Gating it by target removes the errors and states the
+# truth at the same time.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1.53.1", features = ["full"] }
 # Signalling for peer-to-peer ca(R)maduci sessions. tokio-tungstenite with the
 # rustls backend gives a WSS listener, which is what a browser peer requires; the
 # same binary serves plaintext on loopback for local peers that do not.
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 rustls-pemfile = "2"
-futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = ["console", "Window", "Response", "Request", "RequestInit", "RequestMode"] }
+# `uuid`'s `v4` needs randomness, and on `wasm32-unknown-unknown` the only source
+# is the host's `crypto.getRandomValues`. The feature belongs on `uuid` and not on
+# `getrandom`: `uuid` is what fails to compile, and it names the fix itself --
+# "specify a source of randomness using one of the `js`, `rng-getrandom`, or
+# `rng-rand` features". Features are additive across target sections, so this
+# merges with the `v4` and `serde` declared above rather than replacing them.
+uuid = { version = "1.7", features = ["js"] }
+# `getrandom` 0.2 arrives by a second road -- `aes-gcm` -> `crypto-common` ->
+# `rand_core` 0.6 -- and that road does not go through `uuid`, so enabling `js` on
+# `uuid` alone is not enough. Features are additive across the build, so one entry
+# covers every dependent at this version. It is a build-backend choice rather than a
+# runtime one: on `wasm32-unknown-unknown` the only source is the host's
+# `crypto.getRandomValues`, which is what a browser peer would want anyway.
+getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
 proptest = "1.11.0"

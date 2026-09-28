@@ -13,8 +13,16 @@ pub enum UniaSyscall {
     MountResource(String),
 }
 
-/// The Virtual Kernel acts as the bridge between a simulated OS userspace 
+/// The Virtual Kernel acts as the bridge between a simulated OS userspace
 /// and the unia Actuator Nucleus.
+///
+/// **This file had never been compiled.** The `os` module was not declared in
+/// `lib.rs`, so nothing in the crate included it, and the only file that tried to
+/// use it -- `src/wasm_core.rs`, gated to `wasm32` -- therefore failed on a dangling
+/// import that nothing could see. Declaring the module surfaced three borrowed-`str`
+/// signatures and one `ResourceType` variant that no longer exists. All four are
+/// recorded in the commit rather than here, because they are not properties of this
+/// code: they are what a module looks like after nobody has built it.
 pub struct UniaKernel {
     bridge: Arc<PrimitiveBridge>,
     nucleus: Arc<ActuatorNucleus>,
@@ -35,21 +43,21 @@ impl UniaKernel {
         match syscall {
             UniaSyscall::ReadDevice(dev_id) => {
                 // Map 'read' syscall to GetState primitive
-                let packet = self.create_packet(dev_id, UniversalPrimitive::GetState);
+                let packet = self.create_packet(&dev_id, UniversalPrimitive::GetState);
                 self.dispatch_to_nucleus(packet, user)
             },
             UniaSyscall::WriteDevice(dev_id, value) => {
                 // Map 'write' syscall to SetValue primitive
                 let mut args = HashMap::new();
                 args.insert("value".to_string(), value);
-                let packet = self.create_packet_with_args(dev_id, UniversalPrimitive::SetValue, args);
+                let packet = self.create_packet_with_args(&dev_id, UniversalPrimitive::SetValue, args);
                 self.dispatch_to_nucleus(packet, user)
             },
             UniaSyscall::ExecuteCompute(op_id, params) => {
                 // Map 'compute' syscall to UPA-specific primitives (e.g., Suma)
                 let mut args = HashMap::new();
                 args.insert("params".to_string(), params.join(","));
-                let packet = self.create_packet_with_args(op_id, UniversalPrimitive::Transform, args);
+                let packet = self.create_packet_with_args(&op_id, UniversalPrimitive::Transform, args);
                 self.dispatch_to_nucleus(packet, user)
             },
             UniaSyscall::MountResource(res_id) => {
@@ -91,7 +99,7 @@ impl UniaKernel {
         // In a real OS, we would lookup the WmisResource metadata from the VFS
         let meta = crate::wmis::WmisResource {
             id: packet.payload.resource_id.clone(),
-            resource_type: crate::wmis::ResourceType::Virtual,
+            resource_type: crate::wmis::ResourceType::Storage,
             owner: user.to_string(),
             sharing_scope: crate::wmis::SharingScope::Global,
             capabilities: vec![],

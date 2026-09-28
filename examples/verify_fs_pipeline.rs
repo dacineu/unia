@@ -77,6 +77,21 @@ fn main() {
         .arguments
         .insert("content".to_string(), "ERROR: Disk full".to_string());
 
+    // **Report the field the precondition reads.** This line was absent, and the
+    // `write_file` action declares `disk_space > 0` -- so the precondition gate
+    // refused the dispatch and the example panicked on `.expect`.
+    //
+    // The refusal was correct. A precondition over a field nobody has reported is
+    // unevaluable, and divergence D5's whole point is that a constraint is a gate
+    // rather than something printed for operator visibility. This example predates
+    // the gate being wired, so it had been passing by accident for as long as the
+    // constraint was decoration.
+    //
+    // Publishing the value is therefore not a workaround but the demonstration: the
+    // gate is now visible, and the example would be worthless if it satisfied the
+    // constraint by omitting it.
+    nucleus.report_state("fs-root-001", "disk_space", "4096");
+
     let result = nucleus
         .dispatch(packet_mut, "test_user", &fs_meta)
         .expect("Nucleus dispatch failed");
