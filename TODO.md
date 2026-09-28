@@ -7,6 +7,14 @@ not intentions.
 
 ## Read this first
 
+**The transducer:** [`docs/TRANSDUCER-PLAN.md`](./docs/TRANSDUCER-PLAN.md) --
+unia as a *contract* rather than a machine. The user is right that this is better
+than the transposition plan, and the reason is structural: **it does not pick a
+side on fork A, it moves the fork to somebody else`s compiler.** Arithmetic
+becomes a second verb set, not an extension of the sixteen; the backend is Rust, so
+ownership is the borrow checker and portability is `rustc`; the target spec stops
+being a memory model and becomes a portability contract.
+
 **Transposition:** [`docs/DELEGATION-PLAN.md`](./DELEGATION-PLAN.md) is the
 four delegable tasks. [`docs/TRANSPOSITION-PLAN.md`](./docs/TRANSPOSITION-PLAN.md)
 is why transposing this crate is blocked on **arithmetic, not ownership** — a
