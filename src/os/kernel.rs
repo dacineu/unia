@@ -1,8 +1,11 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use crate::bridge::primitive::{PrimitiveBridge, PrimitivePacket, UniversalPrimitive, PacketHeader, PacketPayload, PacketContext, Priority};
+use crate::bridge::primitive::{
+    PacketContext, PacketHeader, PacketPayload, PrimitiveBridge, PrimitivePacket, Priority,
+    UniversalPrimitive,
+};
 use crate::nucleus::ActuatorNucleus;
 use crate::wmis::WmisEconomicLayer;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 /// Syscall types emulated by the unia-OS kernel
 #[derive(Debug, Clone, PartialEq)]
@@ -45,25 +48,30 @@ impl UniaKernel {
                 // Map 'read' syscall to GetState primitive
                 let packet = self.create_packet(&dev_id, UniversalPrimitive::GetState);
                 self.dispatch_to_nucleus(packet, user)
-            },
+            }
             UniaSyscall::WriteDevice(dev_id, value) => {
                 // Map 'write' syscall to SetValue primitive
                 let mut args = HashMap::new();
                 args.insert("value".to_string(), value);
-                let packet = self.create_packet_with_args(&dev_id, UniversalPrimitive::SetValue, args);
+                let packet =
+                    self.create_packet_with_args(&dev_id, UniversalPrimitive::SetValue, args);
                 self.dispatch_to_nucleus(packet, user)
-            },
+            }
             UniaSyscall::ExecuteCompute(op_id, params) => {
                 // Map 'compute' syscall to UPA-specific primitives (e.g., Suma)
                 let mut args = HashMap::new();
                 args.insert("params".to_string(), params.join(","));
-                let packet = self.create_packet_with_args(&op_id, UniversalPrimitive::Transform, args);
+                let packet =
+                    self.create_packet_with_args(&op_id, UniversalPrimitive::Transform, args);
                 self.dispatch_to_nucleus(packet, user)
-            },
+            }
             UniaSyscall::MountResource(res_id) => {
                 let mut vfs = self.vfs.lock().unwrap();
                 vfs.insert(format!("/dev/unia/{}", res_id), res_id.clone());
-                Ok(format!("Resource {} mounted to /dev/unia/{}", res_id, res_id))
+                Ok(format!(
+                    "Resource {} mounted to /dev/unia/{}",
+                    res_id, res_id
+                ))
             }
         }
     }
@@ -72,7 +80,12 @@ impl UniaKernel {
         self.create_packet_with_args(res_id, primitive, HashMap::new())
     }
 
-    fn create_packet_with_args(&self, res_id: &str, primitive: UniversalPrimitive, args: HashMap<String, String>) -> PrimitivePacket {
+    fn create_packet_with_args(
+        &self,
+        res_id: &str,
+        primitive: UniversalPrimitive,
+        args: HashMap<String, String>,
+    ) -> PrimitivePacket {
         PrimitivePacket {
             header: PacketHeader {
                 timestamp: 1694430000,
@@ -103,7 +116,11 @@ impl UniaKernel {
             owner: user.to_string(),
             sharing_scope: crate::wmis::SharingScope::Global,
             capabilities: vec![],
-            quality: crate::wmis::QualityMetrics { qor: 1.0, qos: 1.0, qop: 1.0 },
+            quality: crate::wmis::QualityMetrics {
+                qor: 1.0,
+                qos: 1.0,
+                qop: 1.0,
+            },
             metadata: serde_json::json!({}),
         };
 

@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use serde::{Serialize, Deserialize};
 
 /// The Virtual File System (VFS) emulates the block-based storage seen in WebVM.
 /// It maps virtual paths to .ure resource identities.

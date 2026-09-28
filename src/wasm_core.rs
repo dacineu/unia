@@ -89,13 +89,17 @@ impl UniaCore {
                     "unknown"
                 };
                 let syscall = UniaSyscall::WriteDevice(res_id.to_string(), val.to_string());
-                self.kernel.handle_syscall(syscall, user).unwrap_or_else(|e| e)
+                self.kernel
+                    .handle_syscall(syscall, user)
+                    .unwrap_or_else(|e| e)
             }
             "compute" if parts.len() >= 2 => {
                 let op = parts[1];
                 let syscall =
                     UniaSyscall::ExecuteCompute(op.to_string(), vec!["A".into(), "B".into()]);
-                self.kernel.handle_syscall(syscall, user).unwrap_or_else(|e| e)
+                self.kernel
+                    .handle_syscall(syscall, user)
+                    .unwrap_or_else(|e| e)
             }
             "status" => self.get_status(),
             _ => format!(
