@@ -143,10 +143,23 @@ pub fn group_traces(traces: &[Trace]) -> BTreeMap<String, Induction> {
         if !intent.is_empty() {
             entry.observations.insert(intent);
         }
+        // **An exploratory loss is not a miss.** This is the exemption that
+        // removes the contradiction: `is_evidentiary` requires
+        // `failure_ratio <= MAX_FAILURE_RATIO`, and failure is the only signal
+        // induction has, so every deliberately-lossy act used to raise the
+        // failure ratio of the very group it was exploring and could disqualify
+        // it from ever becoming a mattern. The system was being asked to pay for
+        // losses that the thing learning from those losses used as evidence
+        // against them.
+        //
+        // The bar that remains is `MIN_OBSERVATIONS` distinct phrasings, and it
+        // is not weakened: the creature must have *reached for* a shape more than
+        // once, in more than one way, before it may become a mattern. Losing
+        // repeatedly proves nothing. Reaching repeatedly does.
         if t.succeeded {
             entry.hits += 1;
             entry.tokens_saved += t.tokens_in + t.tokens_out;
-        } else {
+        } else if !crate::explore::is_exploratory(&t.intent) {
             entry.misses += 1;
         }
     }

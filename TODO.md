@@ -205,6 +205,52 @@ you and confusing them is how a project spends a year on the wrong one.
 
 ---
 
+## The exploration reserve — the fourth movement
+
+The economy had exactly two movements: `apply_economy` **debits**
+`0.15·(quants−floor)` on an act, and `learn` **credits** `Production` for
+confirmed novelty. So a **deliberate loss** — an act run expecting to fail, to
+gather evidence about a shape not yet known — had nowhere to be paid from. It was
+a debit with no reachable credit, the rational strategy was never to try one, and
+the economy forbade exploration for the worst available reason: it was
+indistinguishable from waste.
+
+**And it was worse than a gap, because exploration and induction were in direct
+conflict.** `is_evidentiary` requires `failure_ratio ≤ MAX_FAILURE_RATIO`, and
+failure is the only signal induction has. Every exploratory loss raised the
+failure ratio of the very group it was exploring, and could disqualify it from
+ever becoming a mattern. *The system was being asked to pay for losses that the
+thing learning from those losses used as evidence against them.*
+
+**Built in `src/explore.rs`.** `EXPLORATION_SHARE = 0.15` of the headroom is the
+reserve; `EXPLORATION_COST = 0.02` flat is one experiment; an act is exploration
+only when its signature has **no prior evidence**; and the credit is the zero
+`Production`, whatever the witness said. Exploration is affordable and unbounded
+exploration is not.
+
+**`induce::group_traces` no longer counts an exploratory loss as a miss** —
+marked by an `explore` intent prefix, so the declaration is visible in the log
+rather than hidden in a field the persisted format does not have.
+
+**Three things this is not, each a test:**
+
+- **Not a discount.** A cheaper act is still an act; the problem was never the
+  price, it was that no debit can be earned back.
+- **Not an amnesty.** Exempt from the *count* is not counted as a *success*: a
+  group that only ever lost is still not a mattern. Reaching repeatedly proves
+  nothing; reaching repeatedly **and winning at least once** does.
+- **Not free of the floor.** Exploration stops when the reserve can no longer hold
+  one experiment, which is *above* the floor — so a creature that explored itself
+  down could still act. The first version charged a fraction of the reserve, which
+  shrinks as the reserve shrinks, so exploration approached the floor without
+  reaching it and the first test of it looped until its own guard fired. **A budget
+  whose unit of spending vanishes as the budget vanishes is not a budget.**
+
+**Open, and stated rather than papered over:** the economy cannot check novelty
+without reading the trace log, so `may_explore` trusts the caller's `no_prior_
+evidence` flag. A caller that lies gets a free act. The log is the witness, which
+is why the prefix is visible there rather than only in a boolean.
+
 ## To become a model
 
 A model is a representation plus a loop that improves the representation from

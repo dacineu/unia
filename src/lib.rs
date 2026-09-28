@@ -3,6 +3,7 @@ pub mod clean;
 pub mod doubt;
 pub mod edit;
 pub mod evolution;
+pub mod explore;
 pub mod fluid;
 pub mod harvester;
 pub mod identifiers;
