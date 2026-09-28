@@ -1,5 +1,11 @@
 # LPMM training plan: from imported origins to self-harvest
 
+**Start here if you are new to the repository:**
+[`docs/HANDOVER.md`](./HANDOVER.md) — the vision in one place, what is built and
+verified, the failures that are the most useful thing in the log, and the
+six-phase plan with an exit per phase.
+
+
 The endpoint: **the Large Patterns Matterns Model harvests and trains itself,
 with no language model in the loop, and consults a more specialised model only
 when it holds a doubt it cannot resolve from its own evidence.**

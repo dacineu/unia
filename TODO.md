@@ -5,6 +5,14 @@ not intentions.
 
 ---
 
+## Read this first
+
+`docs/HANDOVER.md` — the vision in one place, what is built and verified, the
+failures that are the most useful thing in the log, and the six-phase plan with an
+exit per phase. Everything below is detail; that is the map.
+
+---
+
 ## What is not solved
 
 The list below is the one to read first. It is not the whole TODO — that is 700
