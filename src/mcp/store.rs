@@ -295,7 +295,14 @@ fn tokenize(s: &str) -> Vec<String> {
 }
 
 pub struct Store {
-    root: PathBuf,
+    /// `None` for a store with no filesystem, which is the browser case.
+    ///
+    /// **Not a `PathBuf::new()`, which is the relative path "."** An empty root
+    /// would silently read and write the process working directory, so
+    /// "in memory" would become "in whatever directory the process happened to
+    /// start in" — the exact failure the `base_dir` doc comment in the registry
+    /// already records for a different component.
+    root: Option<PathBuf>,
     patterns: Vec<Pattern>,
     traces: Vec<Trace>,
     champions: BTreeMap<String, String>,
@@ -315,7 +322,8 @@ impl Store {
     /// contain experiments, and one bad file should not make the server
     /// unstartable for every agent connected to it.
     pub fn open(root: impl AsRef<Path>) -> Self {
-        let root = root.as_ref().to_path_buf();
+        let root = Some(root.as_ref().to_path_buf());
+
         let mut store = Store {
             root,
             patterns: Vec::new(),
@@ -329,7 +337,51 @@ impl Store {
         store
     }
 
+    /// A store with no filesystem: traces accumulate in memory and nothing is
+    /// written.
+    ///
+    /// This is what makes self-play possible in a browser. The wasm32 target has
+    /// no filesystem, so `record` could not return `Ok` there at all, and every
+    /// path that leads to a witness went through `record`. **A loop that cannot
+    /// record cannot be witnessed, and a loop that cannot be witnessed must not
+    /// pretend to learn** — so the honest browser mode is one that records in
+    /// memory and promotes nothing, which is exactly what the economy is for.
+    ///
+    /// Empty, not preloaded: there is no directory to scan. Seed it with
+    /// [`Store::declare_manifest`] or `traces` directly.
+    pub fn open_in_memory() -> Self {
+        Store {
+            root: None,
+            patterns: Vec::new(),
+            traces: Vec::new(),
+            champions: BTreeMap::new(),
+            df: HashMap::new(),
+            total_resources: 0,
+            malformed_traces: 0,
+        }
+    }
+
+    /// Whether this store has anywhere to persist to.
+    pub fn is_durable(&self) -> bool {
+        self.root.is_some()
+    }
+
+    /// A human-readable root, for a receipt. An in-memory store has no path and
+    /// says so, rather than printing an empty string that reads like a directory.
+    fn root_label(&self) -> String {
+        match &self.root {
+            Some(r) => r.display().to_string(),
+            None => "<in-memory>".to_string(),
+        }
+    }
+
+    /// Reloads from the filesystem. A no-op for an in-memory store, which
+    /// **clears nothing** — there is nothing to reload *from*, and a reload that
+    /// wiped an in-memory corpus would destroy the evidence it exists to hold.
     pub fn reload(&mut self) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
         self.patterns.clear();
         self.df.clear();
         self.total_resources = 0;
@@ -341,7 +393,7 @@ impl Store {
         // manifests in subdirectories such as resources/ and not only the
         // working-directory root.
         let mut paths = Vec::new();
-        Self::collect_ure(&self.root, &mut paths, 0);
+        Self::collect_ure(&root, &mut paths, 0);
         // Sort so the corpus order is stable across restarts and scores for
         // equal relevance do not depend on directory iteration order.
         paths.sort();
@@ -413,11 +465,17 @@ impl Store {
     }
 
     fn champions_path(&self) -> PathBuf {
-        self.root.join("champions.json")
+        self.root
+            .as_ref()
+            .expect("a path is only asked of a durable store")
+            .join("champions.json")
     }
 
     fn traces_path(&self) -> PathBuf {
-        self.root.join("traces.jsonl")
+        self.root
+            .as_ref()
+            .expect("a path is only asked of a durable store")
+            .join("traces.jsonl")
     }
 
     fn parse(path: &Path) -> Option<Pattern> {
@@ -783,13 +841,25 @@ impl Store {
     /// Appends a trace. Traces are append-only and are the raw material for
     /// induction; a corpus with no traces cannot learn anything.
     pub fn record(&mut self, trace: Trace) -> Result<(), std::io::Error> {
+        if self.root.is_none() {
+            // No filesystem: the trace still lands in the log, which is what
+            // `witnesses` and `escalation` read, so an in-memory store supports
+            // the whole measurement apparatus except durability.
+            self.traces.push(trace);
+            return Ok(());
+        }
         use std::io::Write;
-        std::fs::create_dir_all(&self.root)?;
+        let root = self
+            .root
+            .as_ref()
+            .expect("checked above; borrow ends here")
+            .clone();
+        std::fs::create_dir_all(&root)?;
         let line = serde_json::to_string(&trace).map_err(std::io::Error::other)?;
         let mut f = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(self.traces_path())?;
+            .open(root.join("traces.jsonl"))?;
         writeln!(f, "{}", line)?;
         self.traces.push(trace);
         Ok(())
@@ -799,7 +869,7 @@ impl Store {
         if !self.patterns.iter().any(|p| p.id == id) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("no pattern with id {} in {}", id, self.root.display()),
+                format!("no pattern with id {} in {}", id, self.root_label()),
             ));
         }
         self.champions
@@ -844,7 +914,7 @@ impl Store {
             .map(|t| t.tokens_in + t.tokens_out)
             .sum();
         Stats {
-            root: self.root.display().to_string(),
+            root: self.root_label(),
             patterns: self.patterns.len(),
             runnable: self
                 .patterns
@@ -860,8 +930,14 @@ impl Store {
         }
     }
 
-    pub fn root(&self) -> &Path {
-        &self.root
+    /// The root directory, when there is one.
+    ///
+    /// **Returns `None` for an in-memory store** rather than a placeholder path,
+    /// so a caller that persists cannot accidentally believe it has somewhere to
+    /// write. Nothing outside this module calls it, which was checked rather than
+    /// assumed.
+    pub fn root(&self) -> Option<&Path> {
+        self.root.as_deref()
     }
 }
 
@@ -1801,5 +1877,101 @@ mod outcome_tests {
         let net_hit = trace_with(OUTCOME_HIT, TIER_NETWORK);
         assert_eq!(net_hit.tier, TIER_NETWORK);
         assert_eq!(net_hit.outcome, OUTCOME_HIT);
+    }
+}
+
+#[cfg(test)]
+mod in_memory_tests {
+    //! The browser case. Every test here would fail on wasm32 before this, and
+    //! the failure was not a compile error — it was `record` returning an
+    //! `io::Error` and therefore the whole witness apparatus being unreachable.
+
+    use super::*;
+    use crate::edit::SourceAct;
+
+    /// **The measurement apparatus works without a filesystem.** This is the
+    /// whole claim: `record` used to write unconditionally, so on a target with
+    /// no disk every path to a witness was dead, and a loop that cannot record
+    /// cannot be witnessed.
+    #[test]
+    fn traces_accumulate_and_the_witness_apparatus_runs() {
+        let mut store = Store::open_in_memory();
+        assert!(!store.is_durable(), "and it says so rather than pretending");
+
+        let act = SourceAct::ReplaceSpan {
+            file: "src/a.rs".into(),
+            at: 1,
+            len: 1,
+        };
+        store.record(act.to_trace(0, "fix")).expect("records");
+        store
+            .record(
+                SourceAct::RunTests {
+                    passed: 7,
+                    failed: 0,
+                }
+                .to_trace(1, "fix"),
+            )
+            .expect("records");
+
+        assert_eq!(store.traces().len(), 2);
+        // The pairing the learning loop depends on is intact.
+        let w = crate::loop_train::witnesses(&store.traces());
+        assert_eq!(w.len(), 1, "an edit and the run that judged it");
+        assert!(w[0].passed, "and the run passed");
+    }
+
+    /// **A refused write is not a failure.** An in-memory store has nowhere to
+    /// persist, so `record` succeeds and the trace lands in the log. Returning
+    /// an error would make every caller treat a working browser store as broken.
+    #[test]
+    fn recording_does_not_error_merely_because_there_is_no_disk() {
+        let mut store = Store::open_in_memory();
+        assert!(store.record(Trace::default()).is_ok());
+        assert_eq!(store.traces().len(), 1, "and the trace is there");
+    }
+
+    /// **`reload` is a no-op that clears nothing.** An in-memory store has nothing
+    /// to reload *from*, and a reload that wiped the corpus would destroy the
+    /// evidence the store exists to hold. The test asserts the second half,
+    /// because the first is invisible.
+    #[test]
+    fn reload_does_not_wipe_an_in_memory_corpus() {
+        let mut store = Store::open_in_memory();
+        store.record(Trace::default()).expect("records");
+        store.reload();
+        assert_eq!(
+            store.traces().len(),
+            1,
+            "a reload cleared an in-memory corpus, which is the opposite of \\
+             reloading nothing"
+        );
+    }
+
+    /// **The root is absent, not a placeholder.** A `PathBuf::new()` root is the
+    /// relative path ".", so "in memory" would silently become "in whatever
+    /// directory the process started in" — the failure the registry's own
+    /// `base_dir` comment records for a different component.
+    #[test]
+    fn an_in_memory_store_has_no_root_at_all() {
+        let store = Store::open_in_memory();
+        assert!(store.root().is_none(), "not a path, and not an empty one");
+    }
+
+    /// And the durable store is unchanged, because a change to the shared type
+    /// that only worked in one mode is a change that only got tested in one mode.
+    #[test]
+    fn a_durable_store_still_has_a_root_and_still_writes() {
+        let dir = std::env::temp_dir().join(format!("unia-dur-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut store = Store::open(&dir);
+        assert!(store.is_durable());
+        assert!(store.root().is_some());
+        store.record(Trace::default()).expect("writes to disk");
+        assert!(
+            std::path::Path::new(&dir.join("traces.jsonl")).exists(),
+            "and the file is where it always was"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
