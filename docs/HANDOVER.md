@@ -145,31 +145,32 @@ evidence.
 Each step names its **exit**, and an exit is a test or a measured number. A step
 whose exit cannot be stated is not a step.
 
-### Phase 1 — Agree the capability key space. *Not one function.*
+### Phase 1 — Agree the capability key space. **Done.**
 
-**Correction to an earlier plan of mine:** I proposed "make `map_intent` consult
-`get_champion`, one function". That is wrong — the readers already exist. The
-defect is that the *key spaces disagree*: the loop writes under a primitive
-signature, `bridge::request` reads under free text, `resolve_best_actuator` reads
-under a capability name. A signature is never a prompt, so they cannot meet.
+The readers were never missing: `bridge::PrimitiveBridge::request` (line 55) and
+`fluid::factory::resolve_best_actuator` (line 120) both called `get_champion`. The
+*keys* disagreed — the loop wrote under a primitive signature, they read under free
+text — and **the failure was silent**, so the loop could run perfectly and change
+nothing.
 
-So the work is a decision plus a wire:
+`ActuatorRegistry::capability_key` now normalises every champion key through
+`bridge::primitive::tokenize_id` — the normaliser that already exists, because
+`resolve_primitive` is deliberately indifferent to the form of an id and a champion
+table indifferent to nothing would contradict the resolver in the same crate.
+`champion_keys()` is a diagnostic: it is the first thing to read when a promotion
+appears to have had no effect.
 
-1. **Decide the canonical key of a capability.** A primitive signature, a declared
-   action id, or a phrase — and they are not interchangeable. This is the same
-   normalisation problem as the mapper's casing, one level up: `resolve_primitive`
-   is deliberately indifferent to the form of an id, and the champion table is
-   currently indifferent to nothing.
-2. **Wire the writer to the readers** on whatever that key is, and make a promoted
-   mattern reachable through the bridge's *hot* path — `map_intent` is what
-   `unia-camaduci` calls, and `PrimitiveBridge::request` is a different entry
-   point that may not be the one in play.
+**Exit, and it now exists:** `a_promoted_signature_is_reachable_by_the_forms_
+readers_use` takes a signature the *writer* produces and asks for it the way a
+*reader* would — lower-cased, underscored, upper-cased — and requires a hit each
+time. Its negative twin, `a_signature_that_was_never_promoted_still_misses`,
+exists because the positive alone would pass against a registry that answered
+everything.
 
-**Exit:** a promoted mattern that an intent actually routes to. That test does not
-exist in the repository, it is the single highest-value assertion in this
-document, and note the failure mode it has to catch: *not finding* a champion
-falls through silently, so a broken key space looks exactly like a system that has
-learned nothing.
+**Still open within Phase 1:** whether the *hot* path is covered.
+`map_intent` is what `unia-camaduci` calls, and `PrimitiveBridge::request` is a
+different entry point. The key space is now shared; whether a promoted mattern is
+reachable through the path the running server actually takes is not yet tested.
 
 **Unblocks, all of it at once:** the creature consulting its own record (it already
 has `learned: Vec<LearnedRule>` and already has a test proving its address moves

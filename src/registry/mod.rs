@@ -41,13 +41,55 @@ impl ActuatorRegistry {
         }
     }
 
+    /// The canonical key of a capability.
+    ///
+    /// **This function is the fix for a silent gap, and its existence is the
+    /// point.** The champion table is read under free text by
+    /// `bridge::PrimitiveBridge::request` and under a capability name by
+    /// `fluid::factory::resolve_best_actuator`, while `loop_train::run` writes
+    /// under a primitive signature like `ReplaceSpan_src/a.rs_1_1`. A signature
+    /// is never a prompt, so the write and the read could never meet: the
+    /// promotion was recorded, the lookup was performed, and nothing connected
+    /// them.
+    ///
+    /// The failure was **silent** — a key mismatch returns `None`, the caller
+    /// falls through to the manifest, and the system behaves exactly as it did
+    /// before the loop existed. No error, no log line, no test failing.
+    ///
+    /// The normaliser is [`crate::bridge::primitive::tokenize_id`], not a second
+    /// one, because `resolve_primitive` is already deliberately indifferent to
+    /// the form of an id — "the format does not constrain the casing of an action
+    /// id" — and a champion table that were indifferent to nothing would
+    /// contradict the resolver in the same crate. This is the same normalisation
+    /// the intent mapper was just given, one level up.
+    pub fn capability_key(capability: &str) -> String {
+        crate::bridge::primitive::tokenize_id(capability).join("_")
+    }
+
     pub fn set_champion(&mut self, capability: &str, id: Uuid) {
-        println!("🏆 Champion set for {}: {}", capability, id);
-        self.champions.insert(capability.to_string(), id);
+        let key = Self::capability_key(capability);
+        println!("🏆 Champion set for {} (key {})", capability, key);
+        self.champions.insert(key, id);
     }
 
     pub fn get_champion(&self, capability: &str) -> Option<Uuid> {
-        self.champions.get(capability).cloned()
+        self.champions
+            .get(&Self::capability_key(capability))
+            .cloned()
+    }
+
+    /// The champion's key, so a caller can report the bucket it looked in.
+    pub fn champion_key(&self, capability: &str) -> String {
+        Self::capability_key(capability)
+    }
+
+    /// The keys currently installed, for a caller that has to report which
+    /// bucket it looked in. A diagnostic, and the first thing to read when a
+    /// promotion appears to have had no effect.
+    pub fn champion_keys(&self) -> Vec<String> {
+        let mut keys: Vec<String> = self.champions.keys().cloned().collect();
+        keys.sort();
+        keys
     }
 
     /// Removes a champion.
@@ -57,8 +99,16 @@ impl ActuatorRegistry {
     /// system that runs forever will eventually install a rule that a later run
     /// refutes. It existed with no caller for as long as promotion was manual,
     /// which is exactly the state in which nothing needs it.
+    ///
+    /// **It had this exact bug on the day it was written** — it removed the raw
+    /// string while `set_champion` inserted the normalised key, so a demotion
+    /// silently did nothing and the champion survived a refutation. Found by
+    /// `a_later_refutation_demotes_a_live_champion` the moment the keys stopped
+    /// being identical by accident. The lesson is the one this file is about: a
+    /// removal that fails quietly is indistinguishable from a removal that was
+    /// never attempted.
     pub fn clear_champion(&mut self, capability: &str) -> Option<Uuid> {
-        self.champions.remove(capability)
+        self.champions.remove(&Self::capability_key(capability))
     }
 
     /// How many champions are installed. A summary number, so a caller can check

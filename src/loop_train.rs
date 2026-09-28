@@ -190,7 +190,6 @@ pub fn run(store: &Store, registry: &mut ActuatorRegistry) -> (Vec<Outcome>, Run
                 // Refuted. If it was champion, remove it -- a registry that can
                 // install a winner and never remove one is a write-once cache.
                 if registry.get_champion(&capability) == Some(c.du_uuid) {
-                    registry.set_champion(&capability, c.du_uuid);
                     registry.clear_champion(&capability);
                     run.demoted += 1;
                     outcomes.push(Outcome::Demoted {
@@ -348,6 +347,84 @@ mod tests {
             crate::induce::MIN_OBSERVATIONS
         );
         assert_eq!(reg.champion_count(), 0);
+    }
+
+    /// **The gap, closed, and the test that did not exist.**
+    ///
+    /// This is the assertion the handover said was missing, and it is worth more
+    /// than the rest of this file put together. The promotion was written under a
+    /// primitive signature (`ReplaceSpan_src/a.rs_1_1`) while the readers looked
+    /// it up under free text, and **the failure was silent**: a key mismatch
+    /// returns `None`, the caller falls through to the manifest, and the system
+    /// behaves exactly as it did before the loop existed. No error, no failing
+    /// test — a loop that ran perfectly and changed nothing.
+    ///
+    /// So this test does not compare two functions. It takes a signature the
+    /// *writer* produces and asks for it the way a *reader* would, in every form
+    /// the resolver is indifferent to, and requires a hit each time.
+    #[test]
+    fn a_promoted_signature_is_reachable_by_the_forms_readers_use() {
+        use crate::registry::ActuatorRegistry as R;
+        let dir = Scratch::new("keyspace");
+        let mut store = Store::open(dir.path());
+        let mut reg = R::with_base_dir("none", dir.path());
+
+        for phrasing in ["green wording", "second green wording"] {
+            record_verified_edit(&mut store, &replace("src/a.rs", 1, 1), phrasing, 9, 0)
+                .expect("ok");
+        }
+        let (_, r) = run(&store, &mut reg);
+        assert_eq!(r.promoted, 1, "the loop promoted something");
+
+        // The key the writer actually used.
+        let key = reg
+            .champion_keys()
+            .first()
+            .cloned()
+            .expect("one champion key");
+        assert!(
+            key.contains("ReplaceSpan") || key.contains("replace"),
+            "the key is a normalised form of the signature, not the raw one: {key}"
+        );
+
+        // And a reader looking it up in any form the resolver is indifferent to
+        // finds it. `tokenize_id` is indifferent to case, to underscores, and to
+        // camel boundaries, so these are the same capability and must be one
+        // bucket.
+        for asked in [
+            key.clone(),
+            key.to_lowercase(),
+            key.replace('_', " "),
+            key.to_uppercase(),
+        ] {
+            assert!(
+                reg.get_champion(&asked).is_some(),
+                "a reader asking {asked:?} did not find the champion stored under \
+                 {key:?}. The key spaces disagree, the promotion is unrecorded as \
+                 far as any caller is concerned, and nothing fails."
+            );
+        }
+    }
+
+    /// **The negative, because the positive alone would not catch it.** A key the
+    /// loop never wrote must still miss, or the assertion above would pass with a
+    /// registry that returned the same answer to everything.
+    #[test]
+    fn a_signature_that_was_never_promoted_still_misses() {
+        let dir = Scratch::new("keymiss");
+        let mut store = Store::open(dir.path());
+        let mut reg = crate::registry::ActuatorRegistry::with_base_dir("none", dir.path());
+
+        for phrasing in ["green wording", "second green wording"] {
+            record_verified_edit(&mut store, &replace("src/a.rs", 1, 1), phrasing, 9, 0)
+                .expect("ok");
+        }
+        run(&store, &mut reg).1;
+
+        assert!(reg.get_champion("ReplaceSpan_src/never.rs_99_9").is_none());
+        assert!(reg
+            .get_champion("completely unrelated capability")
+            .is_none());
     }
 
     /// **A red suite does not promote.** This is the direction that matters: a
