@@ -66,8 +66,23 @@ fixture's provenance is on the log and not in a file nobody can check.
 A file, `tests/fixtures/intents-200.jsonl`, one JSON object per line:
 
 ```json
-{"id": 1, "intent": "...", "author_declares": "no source access", "read": ["docs/SPEC.md"]}
+{"id": 1, "intent": "...", "accepts": ["feed"], "difficulty": "plain", "menu_ref": "fixtures/patterns-200-menu.json", "author_declares": "docs only", "read": ["docs/FIXTURE-SPEC.md"]}
 ```
+
+### `menu_ref` — added after the first run, and it was missing
+
+**The first version of this format had no field naming what the `accepts` lists
+are anchored to**, and the author reconstructed an eight-act menu from
+`docs/camaduci.md` and the README. The real menu is only reachable from the files
+they were forbidden to read. So every `accepts` list in the first fixture is
+anchored to a *reconstruction*, and if the harness runs against a different
+manifest **the file is wrong and nothing says so** — the silent-disagreement
+failure this document exists to prevent, reproduced in its own deliverable.
+
+The menu is now a separate, reviewable artifact and every row names it. The
+harness **asserts the menu matches the manifest under test and refuses to run if
+it does not.** A fixture that cannot be silently wrong about what it is scoring is
+the whole point of declaring the menu.
 
 ### Required fields
 
@@ -130,6 +145,16 @@ over these buckets is a number that rewards a matcher for being confidently wron
   exact mapping under test.
 - **Look at the current corpus in `patterns/`.** It is what the matcher already
   handles, and matching it measures memorisation.
+- **Read `docs/SPEC.md`.** **An earlier version of this document allowed it and
+  that was a bug in the specification, not in the author.** Sections 3.2–3.3
+  describe the matching algorithm in prose — containment, then aliases, then a
+  token-overlap score — and §7 names `SemanticMapper::compute_score` and the
+  underscore normalisation. Worse, §6 of this document used `"read":
+  ["docs/SPEC.md"]` as its own worked example of a clean read-set, so an author
+  following the spec exactly was contaminated by it. **A spec that leaks through
+  its own example is worse than no spec**, because following it is the correct
+  behaviour and the result is still invalid. The menu an author needs is now a
+  field in the fixture format instead of something to go and look up.
 - **Iterate against the score.** This is the one that matters most. An author who
   runs the harness, sees the failures, and rewrites the queries has authored a
   fixture for the matcher's weaknesses *in reverse* — they have become a
