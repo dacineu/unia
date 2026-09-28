@@ -1,5 +1,6 @@
 pub mod bridge;
 pub mod clean;
+pub mod edit;
 pub mod evolution;
 pub mod fluid;
 pub mod harvester;
@@ -10,6 +11,7 @@ pub mod meet;
 pub mod meta_actuators;
 pub mod node;
 pub mod nucleus;
+pub mod orchestrator;
 /// The emulated OS layer: a syscall surface over the actuator nucleus, and
 /// a virtual filesystem mapping paths to `.ure` identities.
 ///
@@ -24,7 +26,6 @@ pub mod nucleus;
 /// It is tokio-free, which is the only reason it can be part of a `wasm`
 /// build: the syscall names are emulated, and nothing here calls the host.
 pub mod os;
-pub mod orchestrator;
 pub mod pipeline;
 pub mod primitives;
 pub mod profiler;
