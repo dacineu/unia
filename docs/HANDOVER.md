@@ -291,6 +291,54 @@ better actor. **The ceiling is the fork.**
 
 ---
 
+## 5a. What happened after this document was first written
+
+Recorded here rather than in a new file, so there is one handover.
+
+**Task 1 of the delegation plan ran: a 200-query fixture was authored by a fresh
+model whose only brief was a path to `docs/FIXTURE-SPEC.md`.** One pass, no
+iteration. Verified on receipt: 200 rows, buckets exactly 80/60/30/20/10, ids
+contiguous, 200 unique intents, 30 refusals, 16 multi-accept rows. Structurally
+sound.
+
+**And it found two bugs in the specification, both mine.**
+
+1. `docs/SPEC.md` was on the **allowed** list. Its §3.2–3.3 describe the matching
+   algorithm in prose and §7 names `SemanticMapper::compute_score` — and my own
+   worked example in the self-declaration section used it as an example of a clean
+   read-set. **A spec that leaks through its own example is worse than no spec**,
+   because following it is the correct behaviour and the result is still invalid.
+2. The format had **no field naming what `accepts` is anchored to**, so the author
+   reconstructed an eight-act menu from documentation. Now `menu_ref`, and the
+   harness must assert the menu matches the manifest and refuse otherwise.
+
+**Then the menu was checked against the tree, and four of the eight acts do not
+exist.** `get_status`, `check_health`, `give_medicine`, `set_hunger` appear
+nowhere in `src/` or `patterns/`, and `creature-001` is not a manifest — there
+are exactly two, `filesystem.ure` and `smart_valve.ure`.
+
+The real menu is four acts and they are `Care` enum variants at
+`src/camaduci.rs:272`, **so they are not in any manifest.** That reframes the
+finding:
+
+> **A creature cannot declare its own capabilities to a peer, because its
+> capabilities are not in the artefact it would declare them in.**
+
+The market exists. `Handover`/`receive` exists. The capability set is a field. And
+none of it can carry four acts. **The offering axis of the vision has no payload
+for the creature it was designed around** — and a fixture is what made it visible,
+because scoring intents requires declared acts and there was none.
+
+**So Phase 1 is not the next thing.** Putting the creature's four acts into a
+`.ure` is, because until that exists `menu::check` refuses — correctly — and
+every fixture authored in the meantime is another draft. `src/menu.rs` holds the
+menu as data with its provenance and the gate, and the gate's tests are mostly
+refusals, because a gate that has never refused anything has not been tested.
+
+**And a fourth false claim was found in the README on this commit:** it stated the
+wasm32 target does not build and its CI job is red. It has built for many commits.
+The same shape as everything above, in the public face.
+
 ## 6. Three things that look like progress and are not
 
 Each has already been mistaken once here.

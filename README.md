@@ -200,11 +200,20 @@ you have run the tests, and the two extra are synthesized mirrors.** See
 
 **What this project does not have yet**, stated plainly:
 
-- **A creature cannot learn a new power.** It can be kept, it persists across
-  restarts, and it induces its own routines. It cannot be taught to reach
-  anything it was not built to reach — not a file, not a socket, not another
-  creature. The limbs are missing, and this blocks meeting, handover, and the
-  whole primitive protocol.
+- **A creature can now learn a new power, up to a ceiling that has not moved.**
+  The learning loop is closed — propose, witness, promote, with nobody typing
+  (`src/loop_train.rs`) — and the promotion is findable, because the champion table
+  and its readers now share one key space. **The ceiling is unchanged**: the
+  sixteen verbs cannot express a program, `Signature` is a closed sequence, and
+  the pet's four acts are `Care` enum variants rather than anything in a manifest.
+  It can be taught to reach more of what it was built to reach, which is not the
+  same as reaching something new.
+- **A creature cannot offer its own capabilities to a peer**, because they are not
+  in an artefact it could offer them in. The four acts are `Care` variants in
+  `src/camaduci.rs:272`; no `.ure` declares them. The market
+  (`broadcast_actuator`, `published`, `discover_resources`) and `Handover`/`receive`
+  both exist and neither can carry them. Found by trying to score a fixture: four
+  of the eight acts its author had assumed did not exist anywhere.
 - **Nothing is translated.** A phrasing exists because somebody supplied it. No
   code infers that one word is another, on purpose: an inferred synonym that
   turns out to be an antonym is worse than a missing one. Measured: `inchide
@@ -217,87 +226,72 @@ you have run the tests, and the two extra are synthesized mirrors.** See
 - **Constraints are declared and not evaluated.** `constraints` is an array of
   free strings. This is the second pillar of the safety argument and it is
   currently a comment.
-- **The wasm32 target does not build, and the CI job that checks it is red.** The
-  crate depends on `tokio` with `features = ["full"]`, which pulls `mio`, and
-  `mio` does not support `wasm32-unknown-unknown`. `src/wasm_core.rs` is behind
-  `#[cfg(target_arch = "wasm32")]` and has therefore never been compiled. Fixing
-  it means gating `tokio` and the signalling relay's `tokio-tungstenite`,
-  `tokio-rustls` and `rustls-pemfile` out of the wasm target, so the library
-  would build and the two network binaries would not. The wasm build was removed
-  from the quick start rather than left as a command that fails.
-
-## What is implemented
-
-Twenty-eight modules in five layers. This is a working prototype, not a product,
-and [`docs/SPEC.md`](./docs/SPEC.md) records every place the code and the prose
-still disagree.
-
-| Layer | Modules | Role |
-| --- | --- | --- |
-| **Declaration** | `identifiers`, `registry`, `lexicon` | skeleton hashing and content addressing, manifest resolution, surface forms |
-| **Resolution** | `bridge`, `primitives`, `router`, `slm`, `session` | intent to primitive mapping, semantic scoring, SLM routing, session extraction |
-| **Execution** | `nucleus`, `os`, `weights`, `profiler` | packet dispatch, virtual kernel and VFS, hardware abstraction, LoRA memory |
-| **Economics** | `wmis` | token metering, permissions, resource quality |
-| **Evolution** | `orchestrator`, `pipeline`, `harvester`, `learner`, `transducer`, `evolution`, `fluid`, `meta_actuators`, `induce`, `gather`, `gc` | harvest, induce, converge, transduce, retire |
-
-Cross-cutting: `camaduci` (the creature), `mcp` (Model Context Protocol
-connectors, off by default), `node` and `transducer` (the distributed fabric),
-and a `wasm32` build via `wasm_core`.
-
-Four binaries: `unia-corpus` (writes a synthetic corpus and reports its convergence),
-`unia-mcp` (the corpus over MCP), `unia-camaduci` (the playable
-server, no dependencies), `unia-signal` (the peer-to-peer relay, running as a
-systemd user service).
-
-## Quick start
-
-```sh
-git clone https://github.com/dacineu/unia
-cd unia
-cargo test                                          # 382 tests
-cargo run --example camaduci                        # start here
-```
-
-Requires a stable Rust toolchain, 1.75 or later.
-
-```sh
-cargo check --all-targets
-
-# the corpus, over MCP
-cargo run --features mcp-server --bin unia-mcp -- search "purge the temp storage"
-cargo run --features mcp-server --bin unia-mcp -- eval
-cargo run --features mcp-server --bin unia-mcp -- topology
-
-# the creature, playable
-cargo run --bin unia-camaduci -- --port 7731
-cargo run --bin unia-signal -- --port 8787
-cargo run --bin unia-corpus -- --out /tmp/corpus   # a synthetic corpus, and what it converges on
-```
-
-### Examples
-
-| Example | Shows |
-| --- | --- |
-| `camaduci` | A creature whose vitals are a declared state space and whose care is recorded as traces. Start here. |
-| `full_system_demo` | Provisioning, orchestration, SLM execution and learning, end to end |
-| `verify_fs_pipeline` | Bridge to nucleus with economic accounting on each actuation |
-| `formal_verification_demo` | Property-based verification of the actuation contract |
-| `benchmark_unia` | Decoupled intent mapping against a coupled baseline |
-| `universal_demo` | Several resource categories through one pipeline |
-
-## Status
-
-**Pre-1.0. Experimental.** Known limitations are tracked as divergences in
-[`docs/SPEC.md`](./docs/SPEC.md) and, in prose, in
-[`docs/DISCUSSION-evolution-and-identity.md`](./docs/DISCUSSION-evolution-and-identity.md)
-— which also records the claims that were **withdrawn**, and why, including three
-that were wrong in this project's own favour. Two of the more expensive lessons:
-
+- **~~The wasm32 target does not build, and the CI job that checks it is red.~~ CORRECTED.
+  It builds.** The claim was true when written and false now, which is worse than
+  being wrong: it is the public face asserting a broken build over a green one.
+  `tokio` is `cfg(not(target_arch = "wasm32"))`, the signalling relay is gated out
+  of the wasm target, and `cargo check --lib --target wasm32-unknown-unknown`
+  passes. All seven CI jobs are green.
 - Ancestry was modelled as a hash chain. A chain asserts a tree; the data is a
   DAG, and the most informative event is independent convergence. Withdrawn.
 - "Convergence makes a growing corpus better" was asserted before the
   denominator was ever served by retrieval. Disproved by the code: the
   denominator is computed and then ignored.
+
+## State of the work, measured
+
+Everything below is a number this repository produced. Nothing here is a
+projection, and the items that are *not* done are listed as plainly as the ones
+that are.
+
+### Closed in the last stretch
+
+| | measured |
+| --- | --- |
+| **The learning loop is closed** | propose → witness → promote, no human in it. `src/loop_train.rs` |
+| **A promotion is findable** | the champion table and both its readers share one key space, via `tokenize_id` |
+| **An act can be refused** | the intent mapper returns three typed refusals — `OffMenu`, `NotAnId`, `Transport` — and the menu is enforced |
+| **The model boundary cannot lie** | `Measured` exists and only an engine fills it; a mock returns `None` |
+| **A doubt can leave the machine** | end to end over a real socket, refusals recorded as first-class outcomes |
+| **The quantics are real** | a signed Pauli algebra and a 2ⁿ witness vector, with a Bell pair reached and measured |
+| **Loss can be deliberate** | an exploration reserve, so a system can afford to find out |
+| **565 tests**, wasm target builds, all seven CI jobs green | |
+
+### Not done, and not claimed
+
+- **The escalation rate for the matcher is unmeasured.** A 200-query fixture was
+  authored by a fresh model in one pass; it turned out to be scored against a menu
+  that does not exist. See [`docs/FIXTURE-SPEC.md`](./docs/FIXTURE-SPEC.md).
+- **The transposition ratio is unmeasured, and the thing that would make it
+  computable does not exist.** The numerator is 21,607 lines; the denominator is
+  "distinct matterns" and there is no procedure for counting it. The sixteen verbs
+  cannot express the shapes — a `Signature` is a flat sequence, so two occurrences
+  of one shape at two site are indistinguishable from two shapes.
+- **No language model is wired.** There is no tokenizer, no model, and no HTTP
+  client beyond the dependency-free consultation route.
+- **Harmony as a reachable equilibrium is not demonstrated.** A system that cannot
+  afford to lose can only reach a local maximum; the mechanism for affording it now
+  exists and the trajectory does not.
+- **The §6 fork is undecided** and it is the author's: whether this is a compiler
+  target or a virtual machine changes what everything else is for.
+
+### The failures are the interesting part
+
+Roughly a third of [`docs/HANDOVER.md`](./docs/HANDOVER.md) §3 is bugs this
+project's own author introduced and its tests caught — a fabricated benchmark, an
+escalation metric that rated pure repetition a perfect escalator, a Pauli
+multiplication that was wrong for every non-commuting pair **while still being
+associative**, a mock that reported `tokens_used: 450` for a `format!` call, and a
+fixture specification that leaked the scoring algorithm through its own worked
+example.
+
+The recurring lesson is one line, and it is why the checks are cheap:
+
+> **Closure is not evidence. Plausibility is not correctness.**
+
+A fourth instance was found in this file, on this commit: it claimed the wasm32
+target did not build and that its CI job was red. It has built for many commits. A
+stale claim in the public face is worse than a missing one.
 
 ## Documentation
 
