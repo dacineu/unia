@@ -200,10 +200,30 @@ impl SemanticSLM {
     /// and so the rule is stated in exactly one place. Every other path into this
     /// module goes through here, which is what makes "an off-menu answer cannot
     /// become an action" a property rather than a hope.
+    ///
+    /// **The menu match is case-insensitive and the returned id is the declared
+    /// spelling.** The rest of the system already decided this:
+    /// `bridge::primitive::resolve_primitive` is indifferent to casing and says
+    /// why — *"the format does not constrain the casing of an action id, so the
+    /// resolver has to be indifferent to it"* — and `PrimitiveBridge::map_intent`
+    /// lowercases both sides. An exact-match menu here made this crate hold **two
+    /// incompatible answers to "what is an action id"**, and the mapper's was the
+    /// stricter one, so it was the component that refused correct intents.
+    ///
+    /// The diagnosis matters as much as the acceptance. `EMERGENCY_SHUTDOWN` is
+    /// not the model inventing an action, and reporting it as `OffMenu` says so —
+    /// which sends whoever debugs it looking for a model problem instead of a
+    /// one-character fix. Normalising to the declared spelling fixes the caller's
+    /// value and mislabels nothing.
     pub fn judge(&self, reply: Reply, available_actions: &[String]) -> Mapped {
         let text = reply.response.trim().to_string();
-        if available_actions.iter().any(|a| *a == text) {
-            return Mapped::Action { id: text };
+        if let Some(declared) = available_actions
+            .iter()
+            .find(|a| a.eq_ignore_ascii_case(&text))
+        {
+            return Mapped::Action {
+                id: declared.clone(),
+            };
         }
         // An answer that is *nearly* an id is an off-menu answer, not a formatting
         // problem: `close_valve_v2` is the model telling us about an action that
@@ -409,9 +429,53 @@ mod tests {
     #[test]
     fn a_prefix_of_a_declared_action_is_not_it() {
         let m = mapper();
-        for wrong in ["emergency", "read", "set", "EMERGENCY_SHUTDOWN"] {
+        for wrong in ["emergency", "read", "set", "set_val"] {
             let out = m.map("q", &menu(), |_| Ok(reply(wrong)));
             assert_eq!(out.action(), None, "{wrong:?} is not on the menu");
+        }
+    }
+
+    /// **Casing is not an invention.** The bridge resolved `SET_VALUE` and
+    /// `set_value` to the same act and said why; this module was the odd one
+    /// out, and a correct intent arriving as `EMERGENCY_SHUTDOWN` was being
+    /// refused. It is now accepted and **normalised to the declared spelling**,
+    /// because a caller that receives the model's casing has a string it cannot
+    /// compare against the menu it just sent.
+    #[test]
+    fn casing_is_normalised_to_the_declared_spelling() {
+        let m = mapper();
+        for cased in [
+            "EMERGENCY_SHUTDOWN",
+            "Emergency_Shutdown",
+            "eMeRgEnCy_ShUtDoWn",
+        ] {
+            let out = m.map("q", &menu(), |_| Ok(reply(cased)));
+            assert_eq!(
+                out.action(),
+                Some("emergency_shutdown"),
+                "{cased:?} is the same act in another casing, and the caller must \
+                 receive the spelling it declared"
+            );
+        }
+    }
+
+    /// A genuinely off-menu id is still refused, *after* a case-insensitive pass.
+    /// Normalising the comparison must not widen what counts as on the menu.
+    #[test]
+    fn an_invented_id_is_refused_even_though_the_comparison_ignores_case() {
+        let m = mapper();
+        let out = m.map("q", &menu(), |_| Ok(reply("CLOSE_VALVE_V2")));
+        assert!(out.is_refused());
+        match out {
+            Mapped::Refused { why, .. } => {
+                assert_eq!(
+                    why,
+                    Refusal::OffMenu {
+                        offered: "CLOSE_VALVE_V2".into()
+                    }
+                )
+            }
+            _ => unreachable!(),
         }
     }
 

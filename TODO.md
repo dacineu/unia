@@ -114,7 +114,16 @@ you and confusing them is how a project spends a year on the wrong one.
     different events); the fetch receives a whole `SlmRequest` and returns a whole
     `Reply`; and the duplicate `SlmResponse` that lived beside the real one in
     `src/slm/` is gone.
-17. **No model, no tokenizer, and nothing points at an endpoint.** The transport
+17. **No model, no tokenizer, and nothing points at an endpoint.** Closed the
+    half that was a real inconsistency: the mapper's menu match was
+    case-*sensitive* while `resolve_primitive` and `map_intent` are explicitly
+    indifferent ("the format does not constrain the casing of an action id"), so
+    the crate held two answers to "what is an action id" and the mapper's was the
+    stricter one — refusing correct intents. Matching is now case-insensitive and
+    **normalises to the declared spelling**, because reporting `EMERGENCY_SHUTDOWN`
+    as `OffMenu` would say the model invented an action and send a debugger
+    looking for a model problem instead of a one-character fix. The other half
+    stands: The transport
     can now reach one; no `SemanticSLM` is constructed in `src/`, `tests/` or
     `examples/`. A `Resolver` is a transport, not a peer — naming a model honestly
     means a peer can tell which engine answered, and `Reply::tokens_used` plus
