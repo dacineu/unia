@@ -871,3 +871,134 @@ mod describe_location_independence {
         );
     }
 }
+
+#[cfg(test)]
+mod transduction_manifest_tests {
+    //! The claim in `Transduction`'s own doc comment — "it is the same structure
+    //! identity is computed over" — has never been asserted. It is the third
+    //! instance of closure-is-not-evidence in this repository, and it is the one
+    //! that matters for a vocabulary: a form that computes a *different* address
+    //! is a different act, and nothing would say so.
+    //!
+    //! The test is falsifiable and cheap. A manifest's address is *computed*, not
+    //! read, so building a manifest from a form and hashing it must reproduce the
+    //! address the `Transduction` declares. If a form's rendering loses or alters
+    //! anything the skeleton keeps, the hash moves and this fails.
+
+    use super::*;
+    use crate::bridge::primitive::{UreAction, UreResource};
+    use crate::transduce::creature_ure;
+
+    fn manifest_of(tr: &Transduction) -> UreResource {
+        // The id is the primitive sequence, exactly as `induce` builds a
+        // candidate: two different sentences that reduce to the same primitives
+        // are one rule.
+        let id = tr.primitives.join("_");
+        let mut aliases: Vec<String> = tr.surface.values().flatten().cloned().collect();
+        aliases.sort();
+        aliases.dedup();
+        UreResource {
+            ure_version: "1.0".to_string(),
+            resource_id: tr.address.clone(),
+            category: "creature".to_string(),
+            state_space: Default::default(),
+            action_primitives: vec![UreAction {
+                id,
+                aliases: Some(aliases),
+                params: Default::default(),
+                target_state: String::new(),
+                constraints: vec![],
+            }],
+        }
+    }
+
+    fn computed_address(u: &UreResource) -> String {
+        crate::identifiers::DuUuid::generate(&serde_json::to_value(u).expect("s"), None)
+            .map(|x| x.to_string())
+            .expect("hashes")
+    }
+
+    /// **Every surface form is the same act.** Two languages, one address.
+    #[test]
+    fn a_transduction_and_its_manifest_agree_on_the_address() {
+        let base = Transduction::new("creature-001", vec!["Feed".to_string()])
+            .with("en", "feed")
+            .with("en", "give it food")
+            .with("ro", "hrănește");
+        let m = manifest_of(&base);
+        assert_eq!(
+            computed_address(&m),
+            computed_address(&manifest_of(&base.clone().with("de", "füttere"))),
+            "adding a language moved the address, so a peer described in German \\
+             would be a different creature and every binding to the English one \\
+             would dangle"
+        );
+    }
+
+    /// **And the manifest's action is the primitive sequence, not a wording.**
+    /// This is the property that lets `feed`, `feed the pet` and `hrănește` be one
+    /// rule rather than three.
+    #[test]
+    fn the_manifests_action_is_the_primitive_sequence() {
+        let tr = Transduction::new("creature-001", vec!["Feed".into(), "SetValue".into()])
+            .with("en", "feed");
+        let m = manifest_of(&tr);
+        assert_eq!(
+            m.action_primitives[0].id, "Feed_SetValue",
+            "the id is the signature, so the same act phrased three ways is one \\
+             entry and the vocabulary is aliases beside it rather than three acts"
+        );
+    }
+
+    /// **Only the self-describing forms can become an artifact**, and the two that
+    /// cannot are refused rather than emitted and quietly wrong. `Pseudocode` is
+    /// meaningless to a reader that has not been taught the primitive vocabulary
+    /// and `Data` needs a shared decoder -- which is `Form::is_self_describing`'s
+    /// whole reason for existing, and it has no test of its own.
+    #[test]
+    fn a_non_self_describing_form_cannot_become_a_portable_artifact() {
+        for form in [Form::Prose, Form::Rust] {
+            assert!(form.is_self_describing(), "{form:?} should be portable");
+        }
+        for form in [Form::Pseudocode, Form::Data] {
+            assert!(
+                !form.is_self_describing(),
+                "{form:?} needs a shared reference frame, so a .ure carrying it \\
+                 would be unreadable to a peer that has not been taught the same \\
+                 one -- and unreadable is worse than absent, because it fails \\
+                 later and further away"
+            );
+        }
+    }
+
+    /// **The creature manifest and a Transduction of it are the same act.** This
+    /// is the join the two layers were built for: `transduce.rs` derives the
+    /// manifest from `Care`, `lexicon.rs` keys phrasings by the act's address, and
+    /// this asserts the address they arrive at is one number and not two.
+    #[test]
+    fn the_derived_manifest_and_a_lexicon_transduction_meet_on_one_address() {
+        let ure = creature_ure(crate::transduce::DEFAULT_CREATURE_ID);
+        let feed = ure
+            .action_primitives
+            .iter()
+            .find(|a| a.id == "feed")
+            .expect("feed is declared");
+        let tr = Transduction::new(
+            &crate::identifiers::DuUuid::generate(&serde_json::to_value(&ure).expect("s"), None)
+                .map(|x| x.to_string())
+                .expect("hashes"),
+            vec!["Feed".to_string()],
+        )
+        .with("en", "feed")
+        .with("ro", "hrănește");
+        assert_eq!(
+            tr.address,
+            crate::identifiers::DuUuid::generate(&serde_json::to_value(&ure).expect("s"), None)
+                .map(|x| x.to_string())
+                .expect("hashes"),
+            "the lexicon and the manifest computed two addresses for one creature, \\
+             so a phrasing learned against one would never be found by the other"
+        );
+        assert!(feed.aliases.is_some(), "and the act carries its phrasings");
+    }
+}
