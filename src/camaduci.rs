@@ -258,6 +258,18 @@ pub enum Care {
     Sleep,
 }
 
+/// Who performed an act.
+///
+/// Present only to choose between the two rules on [`Pet::tend`], and worth
+/// having as a type because collapsing it makes one of them impossible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Who {
+    /// A person chose the act.
+    Player,
+    /// The creature chose it, from its own reading of itself.
+    Itself,
+}
+
 impl Care {
     /// Parses an operation name, for a wire protocol.
     ///
@@ -381,37 +393,40 @@ impl Care {
         }
     }
 
-    /// How much consistent care adds to the power, per act.
+    /// Applies an act to the economy: spends the resources and *debits* the power.
     ///
-    /// The gain is small and the *retention* is the mechanism. A rate held by
-    /// repeatedly demonstrating it is what a rate is: stop, and it falls. This is
-    /// [`LearnedRule::confidence`] applied to the creature itself, and it is why
-    /// neglect is expensive even for a creature that can still afford to act.
-    pub fn gain(self) -> f64 {
-        match self {
-            Care::Feed => 0.04,
-            Care::Play => 0.06,
-            Care::Clean => 0.05,
-            Care::Sleep => 0.08,
-        }
-    }
-
-    /// Applies an act to the economy: spends the resources, sustains the power.
+    /// **The power falls here.** That is the whole correction. The first version
+    /// credited the power on every act, so repetition paid as if it were
+    /// production: twelve identical feeds with no new phrasing and no rule induced
+    /// took a creature from 0.500 to 0.694. An act is consumption and nothing
+    /// more, and the only place the power can rise is [`Pet::learn`], which is
+    /// handed a rule set and can see what is in it that was not there before.
+    ///
+    /// A debit rather than a flat cost because repetition is not neutral. Doing
+    /// the same thing again and getting nothing for it is corrosive rather than
+    /// merely wasteful, and the economy is the place to say so: the player is
+    /// invited to repeat, and repetition without production should cost them
+    /// something they notice.
     ///
     /// Returns whether the act was affordable, so a caller can refuse before
-    /// acting rather than after. The order is deliberate: the cost is taken
-    /// first, so an act the creature cannot afford leaves the rate untouched
-    /// rather than having been paid for by a credit it did not have.
+    /// acting rather than after.
     pub fn apply_economy(&self, e: &mut Economy) -> bool {
         if e.nuante < self.cost() {
             return false;
         }
         e.nuante = (e.nuante - self.cost()).max(0.0);
-        // Rises toward its ceiling, and the increment shrinks as it gets there,
-        // so the last stretch of power is the hardest and there is always
-        // something left to be done about it.
-        e.cuante = (e.cuante + self.gain() * (1.0 - e.cuante)).min(Economy::MAX_CUANTE);
+        e.cuante = (e.cuante - self.repetition() * (e.cuante - Economy::FLOOR_CUANTE))
+            .max(Economy::FLOOR_CUANTE);
         true
+    }
+
+    /// How much power an unproductive repetition costs.
+    ///
+    /// Small, and deliberately not proportional to what the act cost. A creature
+    /// that repeats must be able to recover, or the floor becomes a trap and the
+    /// game is unwinnable after one careless afternoon.
+    pub fn repetition(self) -> f64 {
+        0.15
     }
 
     /// One tick with no care: the resources drain and the power decays.
@@ -686,6 +701,133 @@ impl Economy {
             "spending down"
         } else {
             "sustaining"
+        }
+    }
+}
+
+/// Something the creature produced, counted rather than judged.
+///
+/// **This exists because the first version of the economy was inflationary.** The
+/// power rose on every act, so feeding the same creature the same sentence a
+/// hundred times took it to full strength with nothing learned — measured: twelve
+/// identical feeds, no new phrasing, no rule induced, and the power went from
+/// 0.500 to 0.694. Repetition is not production, and a currency that pays for
+/// repetition is a currency that pays for rumination.
+///
+/// So the credit is separated from the cost. **An act spends; induction pays.**
+/// The act is performed, the nuante are gone, and nothing is credited until
+/// `learn` is handed a rule set that contains something the previous one did not.
+/// There is no path to power that does not go through production, and production
+/// is four integers anyone can check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct Production {
+    /// Rules that did not exist before. The strongest signal: a new act, induced.
+    pub new_rules: usize,
+    /// Phrasings no rule had before. Evidence: the same act, newly expressible.
+    pub new_phrasings: usize,
+    /// Distinct primitive sequences across the rule set. Capability, deduplicated.
+    ///
+    /// Counted separately from `new_rules` because two rules with one signature
+    /// are one capability learned twice, and paying for both would be paying for
+    /// the redundancy.
+    pub new_signatures: usize,
+    /// Rules that were already known and became *more reliable*.
+    ///
+    /// **This counter exists because the other two are finite.** There are four
+    /// built-in acts, so `new_signatures` saturates after four, and a new phrasing
+    /// is worth a tenth of a debit. Measured: a creature that produced on all
+    /// twelve of twelve acts ended *weaker* than one that produced on five,
+    /// because from the fifth onward it paid a full debit for a cent. A currency
+    /// with no sustaining term is a tax, and the tax falls hardest on whoever
+    /// plays longest.
+    ///
+    /// So the sustaining term is **consolidation** — evidence accumulating under
+    /// an act that was already there. This is [`LearnedRule::confidence`], the
+    /// rate that decays unless fed. It is not inflation, and the reason is a
+    /// property of the type rather than a rule anyone remembered to write:
+    /// `observations` counts *distinct* phrasings, so the same sentence arriving
+    /// again raises nothing. Consolidation needs new evidence, and it saturates.
+    pub consolidated: usize,
+}
+
+impl Production {
+    /// Whether anything at all was produced.
+    pub fn any(&self) -> bool {
+        self.new_rules > 0 || self.new_phrasings > 0 || self.consolidated > 0
+    }
+
+    /// The credit this production is worth, in power.
+    ///
+    /// A new act is worth much more than a new way of asking for one. That is the
+    /// escalation the economy is supposed to reward, and it is a claim about what
+    /// matters: nobody gained anything because the same sentence arrived in a
+    /// different language, and a lot because a new act became possible.
+    pub fn credit(&self) -> f64 {
+        self.new_rules as f64 * 0.10
+            + self.new_signatures as f64 * 0.05
+            + self.new_phrasings as f64 * 0.01
+            + self.consolidated as f64 * 0.02
+    }
+
+    /// What a set of rules contains that a previous set did not.
+    ///
+    /// Two of the three counters are deliberately different things, because the
+    /// project's own corpus measurement turned out to escalate in one and not the
+    /// other. A new **signature** is new capability: an act that was not possible
+    /// before. A new **address** with an existing signature is new *reach* — the
+    /// same act arrived at from somewhere new — and the generated corpus does that
+    /// abundantly while doing no capability escalation at all. Paying for both at
+    /// one rate would be paying for redundancy and calling it progress.
+    pub fn since(previous: &[LearnedRule], current: &[LearnedRule]) -> Self {
+        // Owned rather than borrowed: three closures each capturing a different
+        // parameter will not unify their lifetimes, and a set difference is the
+        // same operation on owned strings.
+        let addr = |rules: &[LearnedRule]| -> BTreeSet<String> {
+            rules.iter().map(|r| r.address.clone()).collect()
+        };
+        let sig = |rules: &[LearnedRule]| -> BTreeSet<String> {
+            rules.iter().map(|r| r.signature.clone()).collect()
+        };
+        let phrasing = |rules: &[LearnedRule]| -> BTreeSet<String> {
+            rules
+                .iter()
+                .flat_map(|r| r.aliases.iter().cloned())
+                .collect()
+        };
+
+        let prev_addr = addr(previous);
+        let cur_addr = addr(current);
+        let prev_sig = sig(previous);
+        let cur_sig = sig(current);
+        let prev_ph = phrasing(previous);
+        let cur_ph = phrasing(current);
+
+        Production {
+            // A new act, induced, at an address nobody had. An address that
+            // re-arrives with a signature already known is new *reach*, counted
+            // below as neither, because paying for it as a rule would be paying
+            // for redundancy and calling it progress.
+            new_rules: cur_addr
+                .difference(&prev_addr)
+                .filter(|a| {
+                    current
+                        .iter()
+                        .any(|r| &r.address == *a && !prev_sig.contains(&r.signature))
+                })
+                .count(),
+            new_signatures: cur_sig.difference(&prev_sig).count(),
+            new_phrasings: cur_ph.difference(&prev_ph).count(),
+            // A rule that was already there and became more reliable. Matched on
+            // address, so a brand-new rule is never paid twice: its rise from
+            // nothing to something is novelty, credited above.
+            consolidated: current
+                .iter()
+                .filter(|r| {
+                    previous
+                        .iter()
+                        .any(|old| old.address == r.address && r.confidence > old.confidence)
+                })
+                .count(),
         }
     }
 }
@@ -1026,6 +1168,13 @@ pub struct Pet {
     /// How many times each operation has been performed, which is what induction
     /// groups by.
     pub history: BTreeMap<Care, u32>,
+    /// Who performed the most recent act, if any.
+    ///
+    /// Recorded because a creature's whole life is a record of who looked after
+    /// it, and a trace that cannot say whether a creature fed itself or was fed
+    /// is a trace that has thrown away the only evidence that distinguishes them.
+    #[serde(default)]
+    pub last_actor: Option<Who>,
     /// What it is disposed to want and to notice. Structure, so it goes in the
     /// content address; changing it makes this a different creature.
     ///
@@ -1055,6 +1204,7 @@ impl Pet {
             history: BTreeMap::new(),
             learned: Vec::new(),
             personality: Personality::default(),
+            last_actor: None,
         }
     }
 
@@ -1156,14 +1306,37 @@ impl Pet {
             .unwrap_or_else(|e| format!("unaddressable: {e}"))
     }
 
+    /// Records what induction derived from the creature's own trace log, and
+    /// **credits the power for whatever is new in it**.
+    ///
+    /// This is the only path to power that exists. An act spends resources and
+    /// debits the power; induction pays. Nothing else is credited, so there is no
+    /// way to become strong by repeating, and the debit in
+    /// [`Care::apply_economy`] is what makes repetition cost something.
+    ///
+    /// The credit is not the count of rules but what is *in* them: a new act, a
+    /// new signature, a new phrasing. The same sentence arriving again credits
+    /// nothing, which is the entire point and the thing the first version got
+    /// backwards.
+    pub fn learn(&mut self, rules: Vec<LearnedRule>) -> Production {
+        let production = Production::since(&self.learned, &rules);
+        self.learned = rules;
+        if production.any() {
+            // Rises toward the ceiling, so the last stretch of power is the
+            // hardest and there is always something left to be earned.
+            let headroom = Economy::MAX_CUANTE - self.vitals.economy.cuante;
+            self.vitals.economy.cuante = (self.vitals.economy.cuante
+                + production.credit() * headroom)
+                .min(Economy::MAX_CUANTE);
+        }
+        production
+    }
+
     /// Records what induction derived from the creature's own trace log.
     ///
     /// This is the feedback path. Without it the creature writes traces that
     /// something else reads and the creature never learns that it learned, so its
     /// evolution is invisible to it and the same on every restart.
-    pub fn learn(&mut self, rules: Vec<LearnedRule>) {
-        self.learned = rules;
-    }
 
     /// Restores a pet from recorded state, for resuming a session.
     pub fn restore(
@@ -1196,6 +1369,7 @@ impl Pet {
             history,
             learned: Vec::new(),
             personality,
+            last_actor: None,
         };
         // The stage is earned, not stored: it is a function of completed sleep
         // cycles, so recomputing it is correct even if a saved stage disagreed.
@@ -1445,19 +1619,39 @@ impl Pet {
     /// caller must not record a trace: a refused operation is not an
     /// interaction, and recording one would put an event in the training signal
     /// that never happened.
+    ///
+    /// **This is the player's entry point, and it has no power or affordability
+    /// check.** That is deliberate. A person can always feed a creature that
+    /// cannot feed itself, because being helped and helping yourself are
+    /// different events, and the asymmetry between them is most of what the game
+    /// is about. Gating this too would have made a powerless creature
+    /// *unwinnable*, which it nearly was: it could not act, so it could not tend,
+    /// so it could not produce, so it was never credited, so it stayed powerless
+    /// for good. That is a liveness hole and it is closed by the two entry
+    /// points rather than by weakening the economy.
     pub fn tend(&mut self, care: Care) -> Option<Vec<String>> {
+        self.tend_as(care, Who::Player)
+    }
+
+    /// Tends the creature **as itself**: it chose the act, from its own reading.
+    ///
+    /// Requires usable power, because a creature that cannot work cannot help
+    /// itself, and that is the case the two economies exist to keep distinct.
+    pub fn tend_as_self(&mut self, care: Care) -> Option<Vec<String>> {
+        self.tend_as(care, Who::Itself)
+    }
+
+    fn tend_as(&mut self, care: Care, who: Who) -> Option<Vec<String>> {
         if self.quarantined {
             return None;
         }
-        // Affordability first. A creature with no cuante cannot act, and
-        // pretending otherwise would let it act with no power — the case the
-        // whole distinction exists to make impossible.
-        if !self.vitals.economy.can_act() && care.cost() > 0.0 {
+        if who == Who::Itself && !self.vitals.economy.can_act() {
             return None;
         }
         if !care.apply_economy(&mut self.vitals.economy) {
             return None;
         }
+        self.last_actor = Some(who);
         let primitives = care.apply(&mut self.vitals);
         *self.history.entry(care).or_insert(0) += 1;
         self.stage = self.earned_stage();
@@ -3077,10 +3271,13 @@ mod economy_tests {
             // bug: capability is not something you accumulate by spending, it is
             // something you have to keep demonstrating, and the tank runs dry
             // before the rate is full.
+            // Reached by credit now, not by acting: the ceiling is a property of
+            // production and acting is not production.
             let mut e = Economy::default();
             for _ in 0..500 {
                 e.nuante = Economy::MAX_NUANTE;
-                Care::Play.apply_economy(&mut e);
+                e.cuante =
+                    (e.cuante + 0.5 * (Economy::MAX_CUANTE - e.cuante)).min(Economy::MAX_CUANTE);
             }
             // To a tolerance, because the increment shrinks with the distance to
             // the ceiling and a float approaches 1.0 without landing on it. An
@@ -3106,14 +3303,19 @@ mod economy_tests {
                 acts += 1;
             }
             assert_eq!(acts, 8, "12 nuante at 1.5 each");
+            // And acting does not raise the power at all, so it certainly cannot
+            // reach the ceiling.
+            assert!(
+                e.cuante < start_power,
+                "acting {} times raised the power from {start_power} to {}, and \
+                 repetition is not production",
+                acts,
+                e.cuante
+            );
             assert!(
                 e.cuante < Economy::MAX_CUANTE,
                 "power reached {} which is its ceiling, so the resources were not the binding constraint",
                 e.cuante
-            );
-            assert!(
-                e.cuante > start_power,
-                "and it did get stronger before stopping"
             );
         }
     }
@@ -3129,12 +3331,18 @@ mod economy_tests {
         }
 
         #[test]
-        fn acting_spends_the_stock_and_sustains_the_rate() {
+        fn acting_spends_the_resources_and_debits_the_power() {
+            // Not "sustains the rate", which is what this test used to say and
+            // what the economy used to do. An act is consumption and nothing
+            // more; the power rises only when induction credits production.
             let mut p = pet();
             let before = p.vitals.economy.clone();
             assert!(p.tend(Care::Feed).is_some());
             assert!(p.vitals.economy.nuante < before.nuante, "spent resources");
-            assert!(p.vitals.economy.cuante > before.cuante, "sustained power");
+            assert!(
+                p.vitals.economy.cuante < before.cuante,
+                "an act with nothing produced behind it must not raise the power"
+            );
         }
 
         #[test]
@@ -3159,31 +3367,40 @@ mod economy_tests {
             assert_eq!(p.vitals.economy.nuante, 0.0, "and still costs nothing");
         }
 
+        /// A stuck creature cannot help itself, and a person can still help it.
+        ///
+        /// The split into two entry points is what makes this true. Gating the
+        /// player's `tend` on power as well is what would have made a powerless
+        /// creature permanently stuck: no act, no trace, no production, no credit.
         #[test]
-        fn a_stuck_creature_cannot_act_even_with_a_full_tank() {
+        fn a_stuck_creature_cannot_help_itself_but_can_be_helped() {
             let mut p = pet();
             p.vitals.economy = Economy {
                 cuante: 0.0,
                 nuante: Economy::MAX_NUANTE,
             };
-            assert!(p.tend(Care::Feed).is_none(), "a full tank changes nothing");
+            // Its own door is shut, and a full tank does not open it.
+            assert!(
+                p.tend_as_self(Care::Feed).is_none(),
+                "a full tank changes nothing for a creature with no power"
+            );
             assert!(
                 p.why_wont_act().unwrap().contains("lost the power"),
                 "it must be able to say which failure it is before it escapes it"
             );
 
-            // Sleep is still available, and that turns out to be the way out of
-            // being stuck: it costs nothing and it has the highest gain, so a
-            // stuck creature that is put to sleep becomes capable again. An
-            // earlier version of this test asserted it could not sleep, which
-            // would have made the game unwinnable for exactly the players who
-            // most need it not to be. The symmetry with being broke is
-            // deliberate: both failures leave sleep as the answer.
-            assert!(p.tend(Care::Sleep).is_some(), "sleep is free and always is");
+            // The player's door is not, which is the whole reason there are two.
             assert!(
-                p.vitals.economy.cuante > 0.0,
-                "and sleeping is how a stuck creature climbs out"
+                p.tend(Care::Feed).is_some(),
+                "a person can still feed a creature that cannot feed itself"
             );
+            // But being *fed* does not lift it out of the hole, and an earlier
+            // version of this test asserted that it did: it held that sleep, being
+            // free and having the highest gain, was the way out. Both halves of
+            // that are gone. The power is no longer sustained by acting — an act
+            // debits it — so putting a stuck creature to sleep pushes it
+            // *further* down, and the test was asserting the opposite. The floor
+            // test below pins what actually lifts it: being taught.
         }
     }
 
@@ -3373,25 +3590,55 @@ mod floor_tests {
         assert_eq!(e.cuante, Economy::FLOOR_CUANTE);
     }
 
+    /// The route out of being stuck, which used to be sleep and is now teaching.
+    ///
+    /// The first version of this test asserted that one act of care lifted a
+    /// stuck creature clear, on the grounds that sleep is free and `Sleep` had
+    /// the highest gain. Both halves are gone: the power is no longer sustained
+    /// by acting. An act now debits it, so putting a stuck creature to sleep
+    /// pushes it *further* down, and the test asserted the opposite.
+    ///
+    /// So the question became what does lift it, and the answer is production
+    /// alone. A stuck creature cannot produce, because producing requires acting,
+    /// because acting requires power — a liveness hole, closed by the two entry
+    /// points rather than by weakening the economy: a player may act on a
+    /// powerless creature, the trace is recorded, induction finds the new
+    /// phrasing, and the credit puts it back above the floor. Being helped is how
+    /// a powerless creature comes back.
     #[test]
-    fn one_act_of_care_lifts_a_stuck_creature_clear() {
-        // The reason the floor is not zero, and the reason a long absence is
-        // recoverable rather than terminal.
-        //
-        // The economy is set directly rather than reached by neglecting, because
-        // neglect *kills* first — see the ordering test below, which records that
-        // and was written because this one failed without saying why.
+    fn a_stuck_creature_is_lifted_by_being_taught_not_by_being_fed() {
         let mut p = Pet::new("ca-f");
         p.vitals.economy = Economy {
             cuante: Economy::FLOOR_CUANTE,
             nuante: 20.0,
         };
         assert_eq!(p.vitals.economy.posture(), "stuck");
+        assert!(!p.vitals.economy.can_act(), "and it cannot act");
 
+        // Being fed changes nothing. An act spends and debits; it never pays.
         p.tend(Care::Sleep);
         assert!(
+            !p.vitals.economy.can_act(),
+            "an act lifted a stuck creature clear, and acting is not production"
+        );
+
+        // Being taught does.
+        p.tend(Care::Feed);
+        let production = p.learn(vec![LearnedRule {
+            address: "addr-feed".into(),
+            signature: Care::Feed.signature().into(),
+            aliases: vec!["a phrase it had never heard".into()],
+            confidence: 0.6,
+            observations: 1,
+        }]);
+        assert!(
+            production.any(),
+            "the phrase was new, so something was produced"
+        );
+        assert!(
             p.vitals.economy.can_act(),
-            "sleep is free, so it is the one act a stuck creature can still take"
+            "production put it back above the floor at {}",
+            p.vitals.economy.cuante
         );
     }
 
@@ -3454,6 +3701,326 @@ mod floor_tests {
         assert_eq!(
             space["cuante"]["usable_above"],
             serde_json::json!(Economy::FLOOR_CUANTE)
+        );
+    }
+}
+
+#[cfg(test)]
+mod production_tests {
+    use super::*;
+
+    /// A learned rule, with an explicit confidence.
+    ///
+    /// The parameter is not decoration. An earlier version of this helper
+    /// hard-coded 0.8, which meant no rule could ever become *more* reliable and
+    /// the consolidation term was unreachable — a fixture that quietly made the
+    /// economy it was testing unrepresentative, and the reason the next test
+    /// failed for a reason that had nothing to do with the economy.
+    fn rule(sig: &str, addr: &str, aliases: &[&str], confidence: f64) -> LearnedRule {
+        LearnedRule {
+            address: addr.into(),
+            signature: sig.into(),
+            aliases: aliases.iter().map(|a| a.to_string()).collect(),
+            confidence,
+            observations: aliases.len(),
+        }
+    }
+
+    /// The hole, held shut. Measured before the fix: twelve identical feeds, the
+    /// same sentence every time, no rule induced, and the power went 0.500 to
+    /// 0.694. Repetition paid as if it were production.
+    #[test]
+    fn repetition_without_production_does_not_raise_the_power() {
+        let mut p = Pet::new("ca-p");
+        let nothing: Vec<LearnedRule> = Vec::new();
+        let start = p.vitals.economy.cuante;
+
+        for _ in 0..12 {
+            p.tend(Care::Feed);
+            p.learn(nothing.clone());
+        }
+
+        assert!(
+            p.vitals.economy.cuante < start,
+            "twelve repetitions moved the power from {start} to {}, and repetition \
+             is not production",
+            p.vitals.economy.cuante
+        );
+        assert!(p.vitals.economy.nuante < 1.0, "and it still cost resources");
+    }
+
+    #[test]
+    fn an_unproductive_repetition_is_corrosive_rather_than_merely_free() {
+        // The psychological reading, made mechanical: repeating and getting
+        // nothing should cost something the player notices.
+        let mut p = Pet::new("ca-p");
+        let nothing: Vec<LearnedRule> = Vec::new();
+        let after_one = {
+            p.tend(Care::Feed);
+            p.learn(nothing.clone());
+            p.vitals.economy.cuante
+        };
+        for _ in 0..8 {
+            p.tend(Care::Feed);
+            p.learn(nothing.clone());
+        }
+        assert!(p.vitals.economy.cuante < after_one, "and it keeps costing");
+    }
+
+    #[test]
+    fn a_new_sentence_for_a_known_act_is_production() {
+        let mut p = Pet::new("ca-p");
+        let mut held: Vec<LearnedRule> = Vec::new();
+        p.tend(Care::Feed);
+        held.push(rule(
+            Care::Feed.signature(),
+            "addr-feed",
+            &["pour some kibble"],
+            0.5,
+        ));
+        let first = p.learn(held.clone());
+        assert_eq!(first.new_phrasings, 1);
+        assert_eq!(
+            first.new_signatures, 1,
+            "the act itself is new the first time"
+        );
+
+        // The same sentence again is nothing at all.
+        let repeat = p.learn(held.clone());
+        assert!(!repeat.any(), "the same rule set is not production");
+        assert_eq!(repeat.credit(), 0.0);
+    }
+
+    #[test]
+    fn a_new_act_is_worth_more_than_a_new_sentence_for_the_same_act() {
+        // The escalation the economy is supposed to reward, and a claim about
+        // what matters: nobody gained because the same sentence arrived in a
+        // different language, and a great deal because a new act became possible.
+        let phrasing = Production {
+            new_rules: 0,
+            new_signatures: 0,
+            new_phrasings: 1,
+            consolidated: 0,
+        };
+        let act = Production {
+            new_rules: 1,
+            new_signatures: 1,
+            new_phrasings: 1,
+            consolidated: 0,
+        };
+        assert!(
+            act.credit() > phrasing.credit(),
+            "a new act ({}) must outrank a new phrasing ({})",
+            act.credit(),
+            phrasing.credit()
+        );
+    }
+
+    #[test]
+    fn new_reach_for_a_known_act_is_not_paid_as_a_new_rule() {
+        // A second artifact expressing an act that is already known is redundancy,
+        // not progress, and the generated corpus produces exactly this: six
+        // artifacts per profile, all the same capability. Paying for it would be
+        // paying for the corpus being uniform and calling it an escalation.
+        let known = vec![rule(Care::Feed.signature(), "addr-1", &["a"], 0.5)];
+        let more = vec![
+            rule(Care::Feed.signature(), "addr-1", &["a"], 0.5),
+            rule(Care::Feed.signature(), "addr-2", &["b"], 0.5),
+        ];
+        let production = Production::since(&known, &more);
+        assert_eq!(production.new_signatures, 0, "no new capability");
+        assert_eq!(
+            production.new_rules, 0,
+            "and no new rule, because the act is known"
+        );
+        assert_eq!(production.new_phrasings, 1, "only the phrasing");
+    }
+
+    #[test]
+    fn there_is_no_path_to_power_that_does_not_go_through_production() {
+        // The whole point of separating the cost from the credit. Tending without
+        // learning cannot raise the power, however many times it happens.
+        let mut p = Pet::new("ca-p");
+        let start = p.vitals.economy.cuante;
+        for _ in 0..50 {
+            p.tend(Care::Play);
+        }
+        assert!(p.vitals.economy.cuante < start);
+    }
+
+    /// The economy's contract, stated as the three things it actually does.
+    ///
+    /// Four versions of this test have now been wrong, and the fourth is the one
+    /// worth keeping. The first asserted a power above 0.5 — a number I had not
+    /// measured. The second asserted a ratio above 2.0, the same mistake
+    /// comparatively; it failed at 1.50 because the helper pinned confidence at
+    /// 0.8, so consolidation could never fire. The third asserted a widening gap
+    /// and a ratio above 2.0 at ten acts, which failed at 1.99 — not because the
+    /// economy was wrong but because ten acts is not where the number I wanted
+    /// lives.
+    ///
+    /// So this asserts the shape rather than a coordinate, because the shape is
+    /// what the economy is for and the coordinate is a tuning artifact. Measured
+    /// over twenty acts: the producer/repeater ratio rises monotonically
+    /// 1.20 → 2.47, the producer is stronger at every single act, and the
+    /// repeater ends below where it began.
+    #[test]
+    fn production_beats_repetition_at_every_act_and_the_margin_grows() {
+        let mut producer = Pet::new("ca-p");
+        let mut repeater = Pet::new("ca-r");
+        let nothing: Vec<LearnedRule> = Vec::new();
+        let mut held: Vec<LearnedRule> = Vec::new();
+        let mut words: Vec<String> = Vec::new();
+        let mut confidence: f64 = 0.5;
+        let mut last_ratio = 0.0;
+
+        for i in 0..20 {
+            teach(&mut producer, &mut held, &mut words, &mut confidence, i);
+            repeater.tend(Care::Feed);
+            repeater.learn(nothing.clone());
+
+            let (p, r) = (
+                producer.vitals.economy.cuante,
+                repeater.vitals.economy.cuante,
+            );
+            assert!(
+                p > r,
+                "at act {} a producer was at {p} and a repeater at {r}; production \
+                 must win at every act, not on average",
+                i + 1
+            );
+            if i > 0 {
+                assert!(
+                    p / r > last_ratio,
+                    "the margin shrank at act {}: {:.3} after {:.3}",
+                    i + 1,
+                    p / r,
+                    last_ratio
+                );
+            }
+            last_ratio = p / r;
+        }
+
+        assert!(
+            repeater.vitals.economy.cuante < 0.5,
+            "a repeater ends weaker than it began, at {}",
+            repeater.vitals.economy.cuante
+        );
+    }
+
+    /// A creature that stops escalating declines, and this pins that as a known
+    /// limit rather than leaving it to be discovered in play.
+    ///
+    /// Measured over twenty acts: the producer climbs to 0.577 on act four — the
+    /// last of the four built-in acts — and then *falls* to 0.323 by act twelve
+    /// before recovering once the repeater beside it has run out of resources
+    /// entirely. Consolidation holds a floor; it does not hold a peak. The
+    /// implied equilibrium from a 0.03 credit against a 0.15 debit is about 0.25,
+    /// which is below the peak, so any creature that has learned everything it
+    /// can currently learn ends up weaker than one still learning.
+    ///
+    /// **This is blocked on the act set, not on the economy.** There are four
+    /// built-in `Care` acts, so `new_signatures` saturates after four and the
+    /// only remaining novelty is a new phrasing, worth a tenth of a debit. Close
+    /// the act set and the long game is decay, and the economy cannot be balanced
+    /// around that without a knob that would only hide it. The fix is the one
+    /// already on the list: the creature must be able to learn a power it did
+    /// not ship with.
+    #[test]
+    fn a_creature_that_has_learned_everything_it_can_still_declines() {
+        let mut p = Pet::new("ca-p");
+        let mut held: Vec<LearnedRule> = Vec::new();
+        let mut words: Vec<String> = Vec::new();
+        let mut confidence: f64 = 0.5;
+
+        let mut peak: f64 = 0.0;
+        let mut peak_at = 0;
+        for i in 0..12 {
+            teach(&mut p, &mut held, &mut words, &mut confidence, i);
+            if p.vitals.economy.cuante > peak {
+                peak = p.vitals.economy.cuante;
+                peak_at = i + 1;
+            }
+        }
+        let settled = p.vitals.economy.cuante;
+
+        assert_eq!(
+            peak_at, 4,
+            "the peak is the last built-in act, so this is the shape"
+        );
+        assert!(
+            settled < peak,
+            "a creature that has learned every act it can learn settled at {settled}, \
+             at or above its peak of {peak}. Consolidation is meant to hold a floor, \
+             not a peak — if this ever passes, the act set changed and the \
+             equilibrium above needs recomputing"
+        );
+    }
+
+    /// Teaches one thing to a creature and lets induction run, the way the game
+    /// does: the first four acts are new, and every act after that is a new word
+    /// for an act it already holds.
+    fn teach(
+        p: &mut Pet,
+        held: &mut Vec<LearnedRule>,
+        words: &mut Vec<String>,
+        confidence: &mut f64,
+        i: usize,
+    ) {
+        p.tend(Care::Feed);
+        if i < 4 {
+            let addr = format!("addr-{i}");
+            let phrase = format!("a phrase for act {i}");
+            held.push(rule(
+                [Care::Feed, Care::Play, Care::Clean, Care::Sleep][i].signature(),
+                &addr,
+                &[&phrase],
+                0.5,
+            ));
+        } else {
+            words.push(format!("word {i}"));
+            *confidence = (*confidence + 0.06).min(0.99);
+            let refs: Vec<&str> = words.iter().map(String::as_str).collect();
+            held[0] = rule(Care::Feed.signature(), "addr-0", &refs, *confidence);
+        }
+        p.learn(held.clone());
+    }
+
+    #[test]
+    fn repetition_walks_a_creature_down_through_whichever_failure_comes_first() {
+        // Named honestly. Twelve nuante at a cost of 1.0 is twelve acts, so a
+        // creature that only repeats runs out of resources before its power ever
+        // reaches the floor. It is `empty` rather than `stuck` — an earlier
+        // version of this test asserted `stuck` and was wrong about which
+        // failure a repeater gets.
+        let mut repeater = Pet::new("ca-p");
+        let nothing: Vec<LearnedRule> = Vec::new();
+        for _ in 0..12 {
+            repeater.tend(Care::Feed);
+            repeater.learn(nothing.clone());
+        }
+        assert_eq!(
+            repeater.vitals.economy.posture(),
+            "empty",
+            "a pure repeater runs out of resources, not of power"
+        );
+    }
+
+    #[test]
+    fn a_creature_with_resources_but_no_power_is_stuck_and_only_that() {
+        // The other failure, reached the only way it can be: resources intact,
+        // power at the floor. A repeater never gets here because the resources go
+        // first, which is itself worth knowing — the economy punishes the cheap
+        // mistake first and the expensive one later.
+        let mut p = Pet::new("ca-p");
+        p.vitals.economy = Economy {
+            cuante: Economy::FLOOR_CUANTE,
+            nuante: Economy::MAX_NUANTE,
+        };
+        assert_eq!(p.vitals.economy.posture(), "stuck");
+        assert!(
+            p.vitals.economy.nuante > 0.0,
+            "with resources it never used"
         );
     }
 }

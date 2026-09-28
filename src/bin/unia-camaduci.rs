@@ -252,7 +252,12 @@ fn handle(
                     .as_bytes(),
                 )?);
             };
-            let Some(primitives) = pet.tend(care) else {
+            // The creature's own door, not the player's. This endpoint is the
+            // creature acting on its own reading, so it must go through the
+            // affordability and power gate — a stuck creature cannot feed
+            // itself, and letting it try and succeed would quietly delete the
+            // distinction between being helpless and being unhelped.
+            let Some(primitives) = pet.tend_as_self(care) else {
                 // Three reasons to be unable to act, and a client that is told
                 // "409" cannot tell them apart.
                 let why = pet
