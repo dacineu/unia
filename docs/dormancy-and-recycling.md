@@ -72,6 +72,42 @@ chain of who found it does not. Concretely:
 - `contributors` becomes a **census of the current generation**, not a lineage.
   It answers "who has reached this lately", never "who found it first".
 
+### The three relations, and why there are three
+
+Recycling is not sharing, and running them together is what kept the prose
+unclear. They are now three named mechanisms:
+
+| relation | what it is | provenance | where |
+| --- | --- | --- | --- |
+| **handover** | I give you *this* artifact | **preserved** — that is the act | `clean::receive` |
+| **convergence** | we arrived at the same capability independently | **severed**, by design | `clean::clean` |
+| **matching** | I think that artifact might fit this call | provisional, and scored | `Store::search` |
+
+Keeping both of the first two is what makes the third measurable. An escalation
+rate computed per address counts a handover as escalation, which is a transfer and
+not a capability; computed per signature it counts a convergence, which is. The
+difference cannot be told apart without the record — which is the argument for
+recording the handover, and the reason it is not redundant with cleaning.
+
+### A gift arrives as a fresh claim
+
+`receive` hands the artifact over **re-mattered**, the same operation the cleaner
+performs. The first version passed the rule through verbatim and two tests caught
+what that does: the recipient arrived holding the *sender's* confidence, so
+sharing transferred demonstrated power rather than vocabulary, and the artifact's
+address was the sender's rather than the capability's — which would have made the
+address depend on how a capability was arrived at, contradicting the meet.
+
+So the giver conveys the act and the words for it, and nothing else. The power is
+not transferable because the holder has demonstrated nothing. This is the
+"knowledge brings power but also responsibilities" asymmetry with the bookkeeping
+made explicit: **the knowledge travels and the proof does not.**
+
+It also means a lineage is a record of a *relationship still in force* rather than
+of a claim once made. Dormancy forgets the rules and keeps the lineage, because
+what was given to a creature is a historical fact and does not become untrue when
+the creature can no longer show it.
+
 ### Why this is not a loss but a measurement
 
 The project has never run the convergence test it most wants: *creatures that

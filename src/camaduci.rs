@@ -1353,6 +1353,14 @@ pub struct Pet {
     /// evidence, not identity.
     #[serde(default)]
     pub dormant: bool,
+    /// Everything this creature was given, and by whom.
+    ///
+    /// The counterpart to a corpus that has been *cleaned*, where capabilities
+    /// survive with no lineage at all. A creature can hold both: a capability it
+    /// reached itself and a capability it was handed, and the record is what keeps
+    /// the two apart. See [`crate::clean::Provenance`].
+    #[serde(default)]
+    pub provenance: crate::clean::Provenance,
     /// Who performed the most recent act, if any.
     ///
     /// Recorded because a creature's whole life is a record of who looked after
@@ -1391,6 +1399,7 @@ impl Pet {
             personality: Personality::default(),
             dormant: false,
             forgotten: 0,
+            provenance: crate::clean::Provenance::default(),
             last_actor: None,
         }
     }
@@ -1585,6 +1594,7 @@ impl Pet {
             personality,
             dormant: false,
             forgotten: 0,
+            provenance: crate::clean::Provenance::default(),
             last_actor: None,
         };
         // The stage is earned, not stored: it is a function of completed sleep

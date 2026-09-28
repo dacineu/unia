@@ -51,11 +51,11 @@
 //!   readiness has gone, and `Readiness` is a maximum over evidence rather than a
 //!   sum, so evidence that has stopped arriving stops counting immediately.
 
-use crate::camaduci::LearnedRule;
+use crate::camaduci::{LearnedRule, Production};
 use crate::identifiers::DuUuid;
 use crate::mcp::store::{Actor, Trace};
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One mattern that was replaced, and what replaced it.
 ///
@@ -628,6 +628,133 @@ mod tests {
     }
 }
 
+/// One mattern given by one creature to another, and the record of it.
+///
+/// **The third relation, and the only one of the three that keeps a genealogy.**
+///
+/// | relation | what it is | provenance |
+/// | --- | --- | --- |
+/// | share / handover | I give you my artifact | preserved — this is it |
+/// | convergence | we arrived at the same capability independently | severed, by design |
+/// | matching | I think your artifact might fit this call | provisional, and scored |
+///
+/// Convergence and handover are not the same act and were being run together in
+/// the prose. [`crate::clean::clean`] severs provenance on purpose, because a
+/// capability that outlives six creatures and cannot be traced to any of them is
+/// the convergence the project wanted to measure. A handover is the opposite
+/// gesture — I am giving you *this* artifact, and the fact that it came from me is
+/// the point of the act. Both are real, and neither subsumes the other.
+///
+/// The two together are what make the metric honest. An escalation rate computed
+/// per address counts a handover as escalation, which is a transfer and not a
+/// capability; computed per signature it counts a convergence, which is. Recording
+/// the handover is what lets the difference be told apart at all.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Handover {
+    /// The content address of the creature that gave this.
+    pub from: String,
+    /// The content address of the creature that received it.
+    pub to: String,
+    /// The mattern as it was handed over, unaltered.
+    ///
+    /// Held whole rather than as a reference, because a reference would have to
+    /// resolve and the sender may be culled before it does. A handover is a gift of
+    /// a specific artifact, not a promise that the artifact will still exist.
+    pub mattern: LearnedRule,
+}
+
+impl Handover {
+    /// Builds a handover from a sender and a rule.
+    pub fn of(from: &str, rule: &LearnedRule) -> Self {
+        Handover {
+            from: from.to_string(),
+            to: String::new(),
+            mattern: rule.clone(),
+        }
+    }
+}
+
+/// A creature's record of what it was given, and by whom.
+///
+/// The counterpart to [`crate::clean`]'s severance: a store that has been cleaned
+/// holds capabilities with no lineage, and a store that has been handed things
+/// holds capabilities with a lineage. Keeping both in the same type is the point,
+/// because a corpus that only ever recycles can measure convergence and a corpus
+/// that only ever shares cannot.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Provenance {
+    /// Everything this creature was given, in the order it arrived.
+    ///
+    /// Ordered rather than a set: a second handover of a capability already held is
+    /// still an event, and an event that leaves no trace is indistinguishable from
+    /// one that never happened.
+    given: Vec<Handover>,
+}
+
+impl Provenance {
+    /// The lineage of one capability, in arrival order.
+    ///
+    /// Empty for a capability this creature reached on its own, which is the
+    /// answer the convergence tests depend on: no handover means no genealogy, and
+    /// an artifact in a cleaned corpus has exactly none.
+    pub fn lineage(&self, signature: &str) -> Vec<&Handover> {
+        self.given
+            .iter()
+            .filter(|h| h.mattern.signature == signature)
+            .collect()
+    }
+
+    /// Every capability that arrived by handover rather than by reaching it.
+    pub fn borrowed_capabilities(&self) -> BTreeSet<&str> {
+        self.given
+            .iter()
+            .map(|h| h.mattern.signature.as_str())
+            .collect()
+    }
+
+    /// Whether anything was ever given.
+    pub fn is_empty(&self) -> bool {
+        self.given.is_empty()
+    }
+
+    /// Records a gift, addressed to the creature that received it.
+    pub fn record(&mut self, gift: Handover) {
+        self.given.push(gift);
+    }
+}
+
+/// Records a handover against a creature and applies it.
+///
+/// Returns the production the gift produced, so a caller can see what it was worth
+/// in the same currency as everything else. **A gift is not free**, and that is
+/// deliberate: the recipient gains a capability and pays the debit, exactly as if
+/// it had worked it out, because a capability handed over has not been demonstrated
+/// by the creature holding it. `learn` then restores it to the strength its
+/// phrasings support, and no further.
+///
+/// The address does not move. Learning a language must not move it, and being given
+/// one is learning's cousin.
+pub fn receive(pet: &mut crate::camaduci::Pet, mut gift: Handover) -> Production {
+    gift.to = pet.address();
+    // **Re-mattered, and that is the whole design of the act.** The first version
+    // handed the rule over verbatim and two tests caught what that does: the
+    // recipient arrived holding the *sender's* confidence, so sharing transferred
+    // demonstrated power rather than vocabulary, and the artifact's address was the
+    // sender's rather than the capability's — which made the address depend on how
+    // a capability was arrived at, contradicting the meet.
+    //
+    // Going through the same operation the cleaner uses fixes both at once, and the
+    // symmetry is the point: **a gift arrives as a fresh claim, exactly as a
+    // re-mattered artifact does.** The giver conveys the act and the words for it.
+    // The power is not transferable, because the holder has demonstrated nothing.
+    // This is the "knowledge brings power but also responsibilities" asymmetry with
+    // the bookkeeping made explicit — the knowledge travels and the proof does not.
+    let arrived = rematter(&gift.mattern);
+    let production = pet.learn(vec![arrived]);
+    pet.provenance.record(gift);
+    production
+}
+
 #[cfg(test)]
 mod convergence_tests {
     //! The measurement this design exists to make possible, and the one the
@@ -827,5 +954,238 @@ mod convergence_tests {
             survivors.len()
         );
         assert_eq!(again, survivors, "and it did not return the same artifacts");
+    }
+}
+
+#[cfg(test)]
+mod handover_tests {
+    //! The third relation, and the contrast that makes the three of them mean
+    //! different things.
+    //!
+    //! Convergence severs provenance on purpose. A handover preserves it, because
+    //! giving is the opposite gesture. Both are real, and a corpus that only ever
+    //! does one of them can measure only one of them.
+
+    use super::*;
+    use crate::camaduci::{Care, Pet};
+
+    fn act(aliases: &[&str]) -> LearnedRule {
+        LearnedRule {
+            address: format!("addr-{}", aliases.join("_")),
+            signature: "SetValue_CheckSense".into(),
+            aliases: aliases.iter().map(|a| a.to_string()).collect(),
+            confidence: 0.8,
+            observations: aliases.len(),
+        }
+    }
+
+    /// A handover gives the capability, and records who gave it.
+    #[test]
+    fn a_handover_gives_the_capability_and_records_who_gave_it() {
+        let mut receiver = Pet::new("ca-receiver");
+        let address_before = receiver.address();
+        assert!(
+            receiver.provenance.is_empty(),
+            "a new creature already has a lineage"
+        );
+
+        let gift = Handover::of("ca-sender", &act(&["toarna porumb"]));
+        let production = receive(&mut receiver, gift);
+
+        assert_eq!(receiver.learned.len(), 1, "the gift did not arrive");
+        assert!(
+            production.any(),
+            "and it was worth nothing, which would make sharing a way to skip the \\
+             economy entirely"
+        );
+        let lineage = receiver.provenance.lineage("SetValue_CheckSense");
+        assert_eq!(lineage.len(), 1, "the gift left no lineage");
+        assert_eq!(lineage[0].from, "ca-sender");
+        assert_eq!(lineage[0].to, receiver.address());
+        assert_eq!(
+            address_before,
+            receiver.address(),
+            "receiving a capability made the creature a different creature"
+        );
+    }
+
+    /// A capability reached on its own has no lineage, and that empty answer is
+    /// what the convergence measurement depends on. If a creature that worked
+    /// something out for itself carried a lineage, the two would be
+    /// indistinguishable and the rate could not be told from a transfer count.
+    #[test]
+    fn a_capability_reached_on_its_own_carries_no_lineage() {
+        let mut p = Pet::new("ca-solo");
+        p.learn(vec![act(&["pour some kibble"])]);
+        assert!(
+            p.provenance.lineage("SetValue_CheckSense").is_empty(),
+            "a self-reached capability came with a genealogy"
+        );
+        assert!(p.provenance.borrowed_capabilities().is_empty());
+    }
+
+    /// **The contrast, side by side.** Two creatures reaching the same capability
+    /// independently hold the same artifact and neither can say where the other
+    /// came from. Two creatures handed it hold the same artifact and both can.
+    ///
+    /// This is the whole reason the project has two mechanisms rather than one. A
+    /// single relation would have to choose, and either choice would lose the thing
+    /// the other measures.
+    #[test]
+    fn convergence_severs_provenance_and_a_handover_keeps_it() {
+        // Convergence: six generations, no records, one address.
+        let mut corpus: Vec<LearnedRule> = Vec::new();
+        let mut carried: Option<LearnedRule> = None;
+        for generation in 0..6usize {
+            let phrasings: Vec<String> = (0..=generation)
+                .map(|k| format!("g{generation}-w{k}"))
+                .collect();
+            let refs: Vec<&str> = phrasings.iter().map(String::as_str).collect();
+            let mut held: Vec<LearnedRule> = Vec::new();
+            if let Some(inherited) = carried.clone() {
+                held.push(inherited);
+            }
+            held.push(LearnedRule {
+                address: format!("culled-{generation}"),
+                signature: "SetValue_CheckSense".into(),
+                aliases: phrasings,
+                confidence: 0.9,
+                observations: 9,
+            });
+            let failing: Vec<Trace> = (0..=generation)
+                .map(|_| Trace {
+                    primitives: vec!["SetValue".into(), "CheckSense".into()],
+                    succeeded: false,
+                    ..crate::mcp::store::new_trace(
+                        "last attempt".into(),
+                        Some("ca".into()),
+                        "miss",
+                        0,
+                        0,
+                    )
+                })
+                .collect();
+            let (_, kept) = clean(&held, &failing);
+            carried = kept.last().cloned();
+            corpus.extend(kept);
+        }
+        let (_, survivors) = clean(&corpus, &[]);
+        let converged_on: BTreeSet<&str> = survivors.iter().map(|r| r.address.as_str()).collect();
+
+        // Handover: the same capability, arriving from somewhere.
+        let mut receiver = Pet::new("ca-receiver");
+        receive(
+            &mut receiver,
+            Handover::of("ca-sender", &act(&["toarna porumb"])),
+        );
+        let handed = &receiver.learned[0].address;
+
+        // Same capability, same address — the meet does not care where it came
+        // from.
+        assert_eq!(
+            converged_on.len(),
+            1,
+            "the six generations did not converge on one artifact"
+        );
+        assert!(
+            converged_on.contains(handed.as_str()),
+            "and the handed artifact has a different address from the converged one, \\
+             so the meet is not independent of how the capability was arrived at"
+        );
+
+        // And the difference is entirely in the record: one has a lineage, the
+        // other has none, and neither can be derived from the artifact.
+        assert_eq!(
+            receiver.provenance.lineage("SetValue_CheckSense").len(),
+            1,
+            "the handover left no lineage"
+        );
+        assert!(
+            survivors.iter().all(|r| r.address != "culled-0"),
+            "a converged artifact names a culled one, so convergence is keeping a \\
+             genealogy after all"
+        );
+    }
+
+    /// A gift is not free, and that is the mechanism.
+    ///
+    /// A capability handed over has not been demonstrated by the creature holding
+    /// it, so the recipient pays the same debit it would have paid for working it
+    /// out, and the credit restores it to the strength its phrasings support. Share
+    /// the vocabulary of a whole language and you have shared no power, because
+    /// power here is *demonstrated*, not owned.
+    #[test]
+    fn a_gift_is_not_free_because_the_recipient_has_not_demonstrated_it() {
+        let mut receiver = Pet::new("ca-receiver");
+        let before = receiver.vitals.economy.quants;
+
+        receive(&mut receiver, Handover::of("ca-sender", &act(&["a"])));
+
+        // The credit is real, but strictly less than the producer's: a handed rule
+        // starts at the strength of its phrasings, not at the sender's confidence.
+        let handed = &receiver.learned[0];
+        assert!(
+            handed.confidence < 0.8,
+            "a gift arrived carrying the sender's confidence of {}, so sharing \\
+             transferred demonstrated power rather than vocabulary",
+            handed.confidence
+        );
+        assert!(
+            receiver.vitals.economy.quants > before,
+            "and it was worth nothing at all, which would make sharing a way to \\
+             skip the economy"
+        );
+    }
+
+    /// A second gift of the same capability is still an event.
+    ///
+    /// Not idempotent on purpose: an act that leaves no trace is indistinguishable
+    /// from one that never happened, and a lineage is supposed to be a record of
+    /// what was done rather than of what changed.
+    #[test]
+    fn giving_the_same_capability_twice_is_two_events() {
+        let mut receiver = Pet::new("ca-receiver");
+        receive(&mut receiver, Handover::of("ca-first", &act(&["a"])));
+        receive(&mut receiver, Handover::of("ca-second", &act(&["b"])));
+
+        let lineage = receiver.provenance.lineage("SetValue_CheckSense");
+        assert_eq!(lineage.len(), 2, "a repeated gift was recorded once");
+        assert_eq!(lineage[0].from, "ca-first");
+        assert_eq!(lineage[1].from, "ca-second");
+    }
+
+    /// Dormancy does not erase a lineage, because the lineage is a record of what
+    /// was *done* and dormancy is about what can currently be shown.
+    ///
+    /// The distinction is the same one that makes the handover worth recording at
+    /// all: a cleaned corpus discards the evidence and keeps the capability, and a
+    /// forgotten creature does the same. What was given to it is a historical fact
+    /// and does not become untrue when the creature can no longer demonstrate it.
+    #[test]
+    fn forgetting_a_gift_does_not_rewrite_who_gave_it() {
+        let mut receiver = Pet::new("ca-receiver");
+        receive(
+            &mut receiver,
+            Handover::of("ca-sender", &act(&["toarna porumb"])),
+        );
+        assert_eq!(receiver.provenance.lineage("SetValue_CheckSense").len(), 1);
+
+        receiver.go_dormant();
+        assert!(receiver.learned.is_empty(), "it kept the rules");
+        assert_eq!(
+            receiver.provenance.lineage("SetValue_CheckSense").len(),
+            1,
+            "forgetting rewrote the record of what it was given"
+        );
+
+        // And it is still held when the creature is taught again, so the lineage
+        // describes a relationship that is still in force.
+        receiver.tend(Care::Feed);
+        receiver.learn(vec![act(&["futter es"])]);
+        assert_eq!(
+            receiver.provenance.lineage("SetValue_CheckSense").len(),
+            1,
+            "the record was dropped on waking"
+        );
     }
 }

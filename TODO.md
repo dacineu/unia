@@ -507,6 +507,22 @@ never as anything that determines identity.
   for OS"`, which reads as a lookup miss; it now says it is known and unfunded,
   which is the distinction a caller actually needs between *never heard of this* and
   *knows this and cannot call it*.
+- [x] **The handover — the one relation that keeps a genealogy.** Done, in
+  `clean::{Handover, Provenance, receive}`. A creature can now be given an artifact
+  by another, and records who gave it. The three relations are now separate
+  mechanisms rather than three phrasings of one: handover preserves provenance,
+  convergence severs it, matching is provisional and scored.
+  The gift is **re-mattered on arrival**, which two tests forced. Passed through
+  verbatim, the recipient arrived holding the *sender's* confidence — so sharing
+  transferred demonstrated power rather than vocabulary — and the artifact's address
+  was the sender's rather than the capability's, which would have made the address
+  depend on how a capability was arrived at and contradicted the meet. So a gift
+  arrives as a fresh claim, exactly as a re-mattered artifact does: the giver
+  conveys the act and the words for it, the power is not transferable because the
+  holder has demonstrated nothing, and the address stays the capability's whichever
+  way the capability arrived.
+  A lineage survives dormancy, because what was given is a historical fact and does
+  not become untrue when the creature can no longer demonstrate it.
 - [ ] **The bridge this declares is still not the one that runs.** Two types share
   the name: `bridge::primitive::PrimitiveBridge` is a `.ure` resource loader and is
   what `wasm_core`, `os::kernel` and `orchestrator::meta` all use; `primitives::
