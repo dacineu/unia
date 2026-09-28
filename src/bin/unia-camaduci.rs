@@ -718,11 +718,17 @@ fn disposition(name: &str) -> Option<Personality> {
                     when: "age_ticks > 0".to_string(),
                 },
             ];
+            // One sensor, and it replaces the whole list rather than joining it:
+            // this is a request for a creature that notices only hunger, and
+            // keeping the others would quietly change what the player asked for.
             p.sensors = vec![Sensor {
                 name: "hunger".to_string(),
                 when: "hunger > 0.2".to_string(),
                 reads: "ravenous".to_string(),
                 sense: unia::camaduci::Sense::Derived,
+                // Derived, so it holds nothing to dispatch. A disposition that
+                // wanted an inferred sensor would name its sequence here.
+                sequence: Vec::new(),
             }];
         }
         "default" => {}

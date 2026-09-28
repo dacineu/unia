@@ -109,24 +109,28 @@ impl Vitals {
                 when: "health < 0.01".into(),
                 reads: "gone".into(),
                 sense: Sense::Derived,
+                sequence: Vec::new(),
             },
             Sensor {
                 name: "sickness".into(),
                 when: "health < 0.3".into(),
                 reads: "sick".into(),
                 sense: Sense::Derived,
+                sequence: Vec::new(),
             },
             Sensor {
                 name: "hunger".into(),
                 when: "hunger > 0.8".into(),
                 reads: "starving".into(),
                 sense: Sense::Derived,
+                sequence: Vec::new(),
             },
             Sensor {
                 name: "company".into(),
                 when: "happiness < 0.25".into(),
                 reads: "lonely".into(),
                 sense: Sense::Derived,
+                sequence: Vec::new(),
             },
         ]
     }
@@ -630,6 +634,23 @@ pub enum Sense {
     Inferred,
 }
 
+/// Where an inferred reading comes from.
+///
+/// The seam that lets a sensor be an act rather than a function call. Declared here
+/// and implemented wherever the evidence is, because a sensor that named the
+/// nucleus directly could not be evaluated in a test and a sensor that named
+/// nothing could not be evaluated at all.
+pub trait Dispatch {
+    /// Runs a primitive sequence and reports what it read.
+    ///
+    /// `None` means the sequence is not something this dispatcher can read — not
+    /// that it read false. The same three-valued discipline as
+    /// [`crate::constraints::Verdict`], and for the same reason: a sensor that
+    /// cannot be evaluated is not reporting, and a system that confuses the two
+    /// will believe anything.
+    fn dispatch(&self, sequence: &[String]) -> Option<String>;
+}
+
 impl Sense {
     pub fn label(self) -> &'static str {
         match self {
@@ -956,24 +977,46 @@ impl Default for Personality {
                     when: "health < 0.01".into(),
                     reads: "gone".into(),
                     sense: Sense::Derived,
+                    sequence: Vec::new(),
                 },
                 Sensor {
                     name: "sickness".into(),
                     when: "health < 0.3".into(),
                     reads: "sick".into(),
                     sense: Sense::Derived,
+                    sequence: Vec::new(),
                 },
                 Sensor {
                     name: "hunger".into(),
                     when: "hunger > 0.8".into(),
                     reads: "starving".into(),
                     sense: Sense::Derived,
+                    sequence: Vec::new(),
                 },
                 Sensor {
                     name: "company".into(),
                     when: "happiness < 0.25".into(),
                     reads: "lonely".into(),
                     sense: Sense::Derived,
+                    sequence: Vec::new(),
+                },
+                // The first inferred sensor the project has had, and the reason
+                // `Sense::Inferred` was worth having: whether the evidence behind
+                // this creature's own matterns still stands is not a number it
+                // holds, it is a question about the trace log, so reading it is an
+                // act against that log rather than arithmetic over the vitals.
+                //
+                // Its `when` is ordinary constraint grammar over a `reading` that
+                // only a dispatcher supplies. With no dispatcher the key is absent,
+                // the predicate is unevaluable, and the sensor is not reporting —
+                // which is the same answer a broken sensor gives, and is why
+                // "inferred" needed no special case in the evaluator.
+                Sensor {
+                    name: "readiness".into(),
+                    when: "reading < 0.5".into(),
+                    reads: "stale".into(),
+                    sense: Sense::Inferred,
+                    sequence: crate::clean::readiness_sequence(),
                 },
             ],
         }
@@ -988,9 +1031,21 @@ impl Personality {
 
     /// The readings this state produces under these sensors, in order.
     pub fn readings_of(&self, state: &Vitals) -> Vec<(String, String)> {
+        self.readings_of_with(state, None)
+    }
+
+    /// The readings, with a way to perform the acts that inferred sensors need.
+    pub fn readings_of_with(
+        &self,
+        state: &Vitals,
+        dispatch: Option<&dyn Dispatch>,
+    ) -> Vec<(String, String)> {
         self.sensors
             .iter()
-            .filter_map(|s| s.reporting(state).map(|r| (s.name.clone(), r)))
+            .filter_map(|s| {
+                s.reporting_with(state, dispatch)
+                    .map(|r| (s.name.clone(), r))
+            })
             .collect()
     }
 
@@ -1025,6 +1080,23 @@ pub struct Sensor {
     /// The reading this sensor reports when the condition holds.
     pub reads: String,
     pub sense: Sense,
+    /// The primitive sequence that produces the reading, for an inferred sensor.
+    ///
+    /// Empty for a physical or derived one, and non-empty for an inferred one —
+    /// which is the only thing that has ever distinguished them. `Sense::Inferred`
+    /// was a variant nothing inhabited and nothing dispatched, so "inferred" said
+    /// that evaluating the sensor was an act while giving no way to perform it.
+    /// This is that way, and a sensor declared inferred without a sequence is a
+    /// declaration that cannot be honoured.
+    ///
+    /// The reading lands in the evaluated state under the key `reading`, so an
+    /// inferred sensor's `when` is written in the same grammar as every other
+    /// condition. Nothing special happens at evaluation: a sensor with no
+    /// dispatcher simply has no `reading` in its state, its predicate is
+    /// unevaluable, and it is not reporting — the same answer a malformed sensor
+    /// gets, arrived at without a special case.
+    #[serde(default)]
+    pub sequence: Vec<String>,
 }
 
 impl Sensor {
@@ -1034,6 +1106,16 @@ impl Sensor {
     /// cannot be evaluated is not reporting `false`, it is not reporting. See
     /// [`crate::constraints::Verdict`].
     pub fn reporting(&self, v: &Vitals) -> Option<String> {
+        self.reporting_with(v, None)
+    }
+
+    /// The same, with a way to perform an act for a sensor that needs one.
+    ///
+    /// The no-dispatcher form is kept rather than folded away because most
+    /// sensors are derived and most callers have nothing to dispatch with, and a
+    /// signature that demanded a dispatcher would make every derived sensor carry
+    /// a dependency it does not use.
+    pub fn reporting_with(&self, v: &Vitals, dispatch: Option<&dyn Dispatch>) -> Option<String> {
         let mut state = crate::constraints::State::new();
         for (name, value) in [
             ("hunger", v.hunger),
@@ -1041,6 +1123,16 @@ impl Sensor {
             ("health", v.health),
         ] {
             state.insert(name.to_string(), format!("{value}"));
+        }
+        if self.sense == Sense::Inferred {
+            // No sequence, no reading. A sensor declared inferred without one is
+            // not silently treated as derived; it is not reporting, and the
+            // reason is visible in the absence of `reading` below.
+            let d = dispatch?;
+            state.insert(
+                crate::clean::READING_FIELD.to_string(),
+                d.dispatch(&self.sequence)?,
+            );
         }
         match crate::constraints::Constraint::parse(&self.when) {
             Ok(c) => match c.evaluate(&state) {
@@ -3047,14 +3139,93 @@ mod motivation_tests {
             assert_eq!(p.vitals.mood(), "sick", "sickness outranks hunger");
         }
 
+        /// A derived sensor needs no dispatch, and an inferred one has no way to be
+        /// evaluated without it.
+        ///
+        /// This test used to assert that *every* declared sensor was `Derived`,
+        /// which was true only because `Sense::Inferred` had no inhabitant: the
+        /// variant existed, it was distinguishable, and nothing was ever of it. The
+        /// assertion was a way of saying "the distinction is untested" while
+        /// reading as a claim about the sensors.
+        ///
+        /// Now that a readiness sensor is declared `Inferred`, the distinction is
+        /// testable: the derived ones report with nothing to dispatch with, and the
+        /// inferred one does not.
         #[test]
-        fn a_derived_sensor_needs_no_dispatch_to_be_evaluated() {
-            // The distinction from an inferred one: evaluating this is arithmetic,
-            // not an act. If a sensor were `Inferred`, evaluating it would be a
-            // primitive sequence, and the two must not be conflated.
+        fn a_derived_sensor_needs_no_dispatch_and_an_inferred_one_does() {
+            let v = Vitals::default();
+            let mut derived = 0;
+            let mut inferred = 0;
+
             for sensor in Vitals::sensors() {
-                assert_eq!(sensor.sense, Sense::Derived, "{}", sensor.name);
+                if sensor.sense == Sense::Derived {
+                    // The claim: these are arithmetic, and no dispatcher is asked.
+                    let _ = sensor.reporting(&v);
+                    derived += 1;
+                } else {
+                    assert!(
+                        !sensor.sequence.is_empty(),
+                        "{} is inferred and names no sequence, so it is a \
+                         declaration that cannot be honoured",
+                        sensor.name
+                    );
+                    // And the claim: with nothing to dispatch with, it is not
+                    // reporting. Not `false` — absent.
+                    assert_eq!(
+                        sensor.reporting(&v),
+                        None,
+                        "{} reported without a dispatcher",
+                        sensor.name
+                    );
+                    inferred += 1;
+                }
             }
+
+            assert!(derived >= 4, "the derived sensors went missing: {derived}");
+            assert_eq!(
+                inferred, 1,
+                "expected exactly one inferred sensor, and there are {inferred}"
+            );
+        }
+
+        /// The inferred sensor reports only when a dispatcher can actually read its
+        /// sequence, and it reads the dispatched value rather than the vitals.
+        #[test]
+        fn an_inferred_sensor_reports_what_it_dispatched() {
+            let v = Vitals::default();
+            let readiness = Vitals::sensors()
+                .into_iter()
+                .find(|s| s.sense == Sense::Inferred)
+                .expect("no inferred sensor is declared");
+
+            // A well-attested creature: nothing to report.
+            let strong = crate::clean::ReadinessDispatch { readiness: 0.9 };
+            assert_eq!(readiness.reporting_with(&v, Some(&strong)), None);
+
+            // A creature whose evidence has gone: it can be told, by acting.
+            let weak = crate::clean::ReadinessDispatch { readiness: 0.1 };
+            assert_eq!(
+                readiness.reporting_with(&v, Some(&weak)).as_deref(),
+                Some("stale")
+            );
+        }
+
+        /// A dispatcher that cannot read the sequence reports nothing at all, so a
+        /// typo in a sequence cannot make a creature believe something about itself.
+        #[test]
+        fn a_dispatcher_that_cannot_read_the_sequence_reports_nothing() {
+            let v = Vitals::default();
+            let readiness = Vitals::sensors()
+                .into_iter()
+                .find(|s| s.sense == Sense::Inferred)
+                .expect("no inferred sensor is declared");
+
+            // The same low readiness, under a dispatcher pointed at another subject.
+            let elsewhere = crate::clean::ReadinessDispatch { readiness: 0.1 };
+            let mut misaddressed = readiness.clone();
+            misaddressed.sequence = vec!["Readiness".into(), "another".into()];
+
+            assert_eq!(misaddressed.reporting_with(&v, Some(&elsewhere)), None);
         }
 
         #[test]
@@ -3105,6 +3276,21 @@ mod declaration_tests {
         let published = published_fields();
         for sensor in Vitals::sensors() {
             let c = crate::constraints::Constraint::parse(&sensor.when).unwrap();
+            // A reading is published by the *dispatcher*, not by the vitals, so an
+            // inferred sensor is excused from this and is held to a stricter rule
+            // instead: it must name a sequence, so there is something to publish
+            // it. Without the exemption the readiness sensor fails here, and the
+            // failure is the test doing its job on a field the creature genuinely
+            // does not hold.
+            if c.field == crate::clean::READING_FIELD && sensor.sense == Sense::Inferred {
+                assert!(
+                    !sensor.sequence.is_empty(),
+                    "the inferred sensor {} names the reading and dispatches \
+                     nothing, so nothing can ever publish it",
+                    sensor.name
+                );
+                continue;
+            }
             assert!(
                 published.contains(&c.field),
                 "sensor {} names {:?}, which the state does not publish",
