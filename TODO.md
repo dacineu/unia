@@ -654,6 +654,48 @@ never as anything that determines identity.
   the matcher, and the 16 verbs able to express a program — per §2.3, a
   `Signature` is a closed sequence with no call, no return and no locals, so there
   is no program to run and no loop to time.
+- [x] **A linker that binds capabilities, and can be broken while running.**
+  `src/link.rs`. The tree had a hand-written routing table — `UpaDispatcher::
+  set_primary(slot, resource_id)` — and a human filled it in; nothing discovered
+  anything, and nothing checked that the named resource could do what the slot
+  needed. That is a table, not a linker. The difference is one line: **a routing
+  table binds a name to a resource, a linker binds a capability to a resource
+  that declares it, and the binding can be broken and re-made without stopping
+  the machine.** Both halves matter; the second was missing entirely.
+  A capability set is a resource's `action_primitives` and nothing else, so the
+  thing that declares a capability and the thing checked against it are the same
+  artifact and cannot drift apart. Widening it was declined: `UniversalPrimitive`
+  is 17 hardware verbs and an ontology is not that, and a second vocabulary
+  beside it is a means of confusing the two. Resolution is a meet over declared
+  acts, so `serves` and the lattice laws are the whole of the test. Primary is
+  chosen by sorted id, so the binding is a function of the declarations and not
+  of hash order — tested with opposite arrival orders.
+- [ ] **What happens to an act in flight when its resource is demoted.** The
+  linker counts them (`Inflight`) and **reports the count rather than deciding**.
+  Three policies: *complete* (finishes on the old resource, so it must stay
+  alive until the count is zero — this is the default), *refuse* (abandoned,
+  caller learns and may retry), *reissue* (restarted on the new one, which needs
+  the act to be replayable, and per target-spec §2.3 a closed `Signature` is
+  not). **It belongs to the author, and "unreachable contract exit choosable by
+  all parties" is the vocabulary for it.** Reporting rather than choosing is
+  deliberate: the old `resolve_primitive` returned `SetValue` for every
+  unrecognised action, so a typo and an unresolvable request took the same path
+  and nothing said so. A linker that unlinks a busy resource without saying what
+  happens to the act on it is that mistake in a different hat.
+- [ ] **A shadow is declared to be for hotswapping and is actually fan-out.**
+  `UpaDispatcher` has `shadow_routes` commented "for hotswapping" and `route()`
+  returns primary *and* shadow, so a packet is delivered to both. For a counter
+  that is the act happening twice. A shadow should be **promoted**, not written
+  to. `Linker::promote` does that and the old behaviour is not yet removed from
+  the dispatcher, so the two disagree and only one of them is right.
+- [ ] **A manifest may name an action `SetValue`.** Nothing stops a
+  `action_primitives` entry being spelled exactly like a `UniversalPrimitive`
+  variant. The two live in different fields so nothing is confused at the type
+  level, and `PRIMITIVE_NAMES` is not a capability vocabulary — but the names
+  overlap in the same string space, and the linker's only defence today is that
+  it looks in the right field. I wrote a test for this and deleted it: it
+  asserted `true || true`. The real check is a name-space assertion over every
+  manifest in `tests/fixtures/`, which has not been written.
 - [ ] **The 200-query fixture.** Unchanged and still the blocker for the paper.
   It has to be authored by someone who has not read the matcher, because whoever
   writes the queries will write them in the vocabulary the matcher was built to

@@ -6,6 +6,7 @@ pub mod fluid;
 pub mod harvester;
 pub mod identifiers;
 pub mod learner;
+pub mod link;
 pub mod mcp;
 pub mod meet;
 pub mod meta_actuators;
