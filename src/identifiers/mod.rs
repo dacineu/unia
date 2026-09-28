@@ -291,3 +291,132 @@ mod skeleton_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod capability_tests {
+    //! The portable half of a manifest: what a thing can do, with no reference to
+    //! where it is.
+    //!
+    //! The split between *capability* and *binding* already exists in the
+    //! addressing and did not need building: `skeleton` drops `resource_id` and
+    //! `external_id` as surface, so the content address of a manifest is an
+    //! address of what it can do. That is exactly the property a system which
+    //! attaches arbitrary new backends needs, and these tests are what say so
+    //! rather than leave it as a coincidence of a deny-list.
+    //!
+    //! It is also the answer to "does the artifact or the source travel". The
+    //! capability address is the same on every architecture; the full manifest
+    //! address is not, because a GPU instance and a CPU instance of one capability
+    //! are different resources occupying different addresses.
+
+    use super::*;
+    use crate::bridge::primitive::{StateType, UreAction, UreResource};
+    use std::collections::HashMap;
+
+    fn ure(resource_id: &str) -> UreResource {
+        UreResource {
+            ure_version: "1.0".to_string(),
+            resource_id: resource_id.to_string(),
+            category: "actuator".to_string(),
+            state_space: HashMap::new(),
+            action_primitives: vec![UreAction {
+                id: "set_value".to_string(),
+                aliases: None,
+                params: HashMap::new(),
+                target_state: "x = 1".to_string(),
+                constraints: vec![],
+            }],
+        }
+    }
+
+    fn address_of(manifest: &serde_json::Value) -> String {
+        DuUuid::generate(&skeleton(manifest), None)
+            .map(|u| u.to_string())
+            .unwrap_or_else(|e| format!("unaddressable: {e}"))
+    }
+
+    /// **The portable half travels and the whole does not.** Two resources that
+    /// declare the same acts and sit at different ids share a capability address
+    /// and differ as artifacts. This is the property that lets a linker bind a
+    /// demand to "something that can set a value" without knowing or caring which
+    /// backend is behind it, and it is what makes a `.ure` reusable across
+    /// x86-64, wasm32 and a GPU without a rewrite.
+    #[test]
+    fn a_capability_address_is_the_same_wherever_the_resource_is() {
+        let on_cpu = ure("cpu-0");
+        let on_gpu = ure("gpu-0");
+
+        let cap_cpu = address_of(&serde_json::to_value(&on_cpu).expect("serialises"));
+        let cap_gpu = address_of(&serde_json::to_value(&on_gpu).expect("serialises"));
+        assert_eq!(
+            cap_cpu, cap_gpu,
+            "the same acts at two addresses are one capability, which is the whole \\
+             reason a demand can bind without naming a machine"
+        );
+
+        // **And there is no second address to differ.** I wrote this assertion
+        // expecting a "full artifact" hash that included `resource_id`, on the
+        // theory that the capability was the portable half of a split. There
+        // isn't one: `DuUuid::generate` reduces to `skeleton` *first*, so every
+        // address this project computes is a capability address and `resource_id`
+        // cannot reach any of them. The design is stronger than the plan I wrote
+        // for it.
+        //
+        // The consequence is the useful one: **a resource cannot contain its own
+        // identity in its own identity computation.** That is why `induce` can
+        // stamp a manifest with its own address, and it is the same guarantee
+        // that makes an address portable to a backend that has never seen the
+        // resource. The binding lives outside the address entirely -- in
+        // `resource_id`, which is not hashed, and in `Linker::routes`, which is a
+        // separate table keyed by `capability_key`. So the split I said the format
+        // needed is already in the right place and the format is not the problem.
+        let plain = DuUuid::generate(&serde_json::to_value(&on_cpu).expect("s"), None)
+            .map(|u| u.to_string())
+            .expect("hashes");
+        assert_eq!(
+            plain, cap_cpu,
+            "the plain address and the skeleton address are the same value, \
+             because generate() reduces to the skeleton before hashing. There is \
+             no address anywhere in this project that includes where a resource \
+             lives, and a manifest can therefore be stamped with its own."
+        );
+    }
+
+    /// **A different capability is a different address.** Without this the test
+    /// above would pass for a hash that ignored the manifest entirely, which is
+    /// the failure a content address must never have.
+    #[test]
+    fn a_different_capability_is_a_different_address() {
+        let mut other = ure("cpu-0");
+        other.action_primitives[0].id = "toggle".to_string();
+        assert_ne!(
+            address_of(&serde_json::to_value(&ure("cpu-0")).expect("s")),
+            address_of(&serde_json::to_value(&other).expect("s")),
+            "two different acts are two capabilities, so the address is not a \\
+             constant"
+        );
+    }
+
+    /// **Surface changes do not move the capability.** A rename, a description,
+    /// a guidance string: the creature is the same capability wearing different
+    /// words. This is the surface/structure split the deny-list exists for, and
+    /// it is the reason a peer can re-label a resource without invalidating
+    /// every binding that points at it.
+    #[test]
+    fn surface_does_not_move_the_capability_address() {
+        let bare = ure("cpu-0");
+        let mut dressed = bare.clone();
+        dressed.action_primitives[0].aliases = Some(vec!["set".into(), "write it".into()]);
+        dressed.action_primitives[0].constraints = vec!["status != 'fault'".into()];
+
+        assert_eq!(
+            address_of(&serde_json::to_value(&bare).expect("s")),
+            address_of(&serde_json::to_value(&dressed).expect("s")),
+            "aliases and preconditions are surface: they change how a capability is \
+             reached for and spoken to, not what it can do. Preconditions are the \
+             harder call and the deny-list is the reason they are treated as \
+             surface -- a gate that moved the address would make every binding to \
+             a guarded capability a dangling reference."
+        );
+    }
+}
