@@ -367,14 +367,31 @@ never as anything that determines identity.
   `self_directed` 0.667. A missing actor counts as a caller, not as the
   creature — the flattering error is the one that would make the number worth
   reporting.
-- [ ] **`nuante` never regenerates, so an empty creature is dead for good.**
-  Found by playing rather than by reading. `apply_economy` and `decay_economy`
-  are the only writers outside tests and both only subtract. Splitting `tend`
-  from `tend_as_self` removed the *power* gate from the player's door and left
-  the *affordability* gate on both, so it looked like help was possible and was
-  not: three teaching phrasings against a creature at `nuante: 0.00` were all
-  refused, and nothing can raise it. Reached in about eight acts.
-  The obvious fix needs a decision rather than a patch — see below.
+- [x] **Feeding brings nuants.** Done, and the game is passable again. The
+  direction of the stock depends on who acted: a person feeding a creature hands
+  it something to act with, a creature feeding itself uses what it had. Only
+  `Feed` does this — if every act were free to the player there would be no
+  economy, if none were the player could rescue nothing. A person feeding also
+  does not debit the power, because the debit is for a creature repeating itself
+  and someone holding a bowl is not that.
+  Verified in play, and the economy became visible doing it: feeding carried the
+  resources 12 → 13 → 14, and the power went 0.500 → 0.585 because two new
+  phrasings induced a rule and `learn` paid for it. Bring food, teach a new
+  word, production, power rises. That is the loop.
+- [ ] **A creature that spends everything is still dead, by neglect rather than
+  by emptiness.** Left alone it starves — `health` reaches zero in about ten
+  ticks — while the power floor is around sixteen and the resources run out
+  around twenty-four, so both economic failures are reachable only on a creature
+  that no longer exists. Feeding refills it now, but the ordering still means
+  the economy is legible only before death. Slow the vitals, speed the economy,
+  or accept it; that choice is still open.
+- [ ] **`nuants` never regenerate, so an empty creature is dead for good.**
+  Found by playing rather than by reading: `apply_economy` and
+  `decay_economy` were the only writers outside tests and both only
+  subtracted, so three teaching phrasings against a creature at `nuants: 0.00`
+  were all refused with nothing able to raise it. Reached in about eight acts.
+  **Resolved by the item above** — feeding now brings resources, so the player's
+  door actually opens. The dead end was real and is closed.
 - [ ] **The creature cannot learn a power it did not ship with.** Four built-in
   `Care` acts, so `new_signatures` saturates at four. This is now *blocking*
   rather than merely noted, because the implied economy equilibrium (about
