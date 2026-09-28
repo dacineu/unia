@@ -162,9 +162,9 @@ and `... -- topology`.
 | False positives | **2** |
 | Primitive vocabulary reachable by the resolver | **16 of 16**, and it returns an error otherwise |
 | Tests | **249** |
-| Corpus | **12 patterns** on a clean tree, 0 edges, 0 denominators |
-| Capability matches across the corpus | **0** |
-| Corpus after a test run | **14** — the two extra are synthesized mirrors, now written to `.unia/out` rather than the repository root |
+| Corpus, hand-written | **12 patterns** on a clean tree, 0 edges, **0 denominators** |
+| Corpus, generated | **36 artifacts** → **6 denominators**, each reached by 6 artifacts |
+| Phrasings per denominator | **6 to 24** — the reach one identity acquired |
 
 Two of those rows are the interesting ones.
 
@@ -173,8 +173,15 @@ positive of 0.2041.** No threshold separates them. They need a capability check
 against the declared state space, not a better score — which is why the honest
 answer here is "not fixed" and not "tune the constant".
 
-**The corpus has 12 artifacts and zero shared capabilities.** So there is no
-escalation rate to report, and this repository does not report one. The gather
+**The hand-written corpus has 12 artifacts and zero shared capabilities.** So
+there is no escalation rate to report from it, and this repository does not
+report one from it. What *is* measurable is the machinery, on a generated corpus
+that shares primitives on purpose: 36 artifacts over 6 profiles converge onto 6
+denominators, each reached independently by 6 artifacts carrying between 6 and 24
+distinct phrasings. That is the shape of the claim — *one act, many ways to ask,
+independently arrived at* — measured on a fiction. `cargo run --bin unia-corpus`
+reproduces it, and every generated manifest says in its own `guidance` field that
+it is synthetic. The gather
 machinery converges on common denominators; on this corpus it has 12
 participants and finds nothing, which is a real measurement and is printed as
 one. Everything downstream of that — the research claim, the paper's central
@@ -237,7 +244,8 @@ Cross-cutting: `camaduci` (the creature), `mcp` (Model Context Protocol
 connectors, off by default), `node` and `transducer` (the distributed fabric),
 and a `wasm32` build via `wasm_core`.
 
-Three binaries: `unia-mcp` (the corpus over MCP), `unia-camaduci` (the playable
+Four binaries: `unia-corpus` (writes a synthetic corpus and reports its convergence),
+`unia-mcp` (the corpus over MCP), `unia-camaduci` (the playable
 server, no dependencies), `unia-signal` (the peer-to-peer relay, running as a
 systemd user service).
 
@@ -263,6 +271,7 @@ cargo run --features mcp-server --bin unia-mcp -- topology
 # the creature, playable
 cargo run --bin unia-camaduci -- --port 7731
 cargo run --bin unia-signal -- --port 8787
+cargo run --bin unia-corpus -- --out /tmp/corpus   # a synthetic corpus, and what it converges on
 ```
 
 ### Examples

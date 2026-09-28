@@ -27,6 +27,14 @@ pub mod weights;
 /// `docs/arch-decoupling-strategy.md` for how it relates to the nucleus.
 pub mod wmis;
 
+/// Generation of a synthetic `.ure` corpus.
+///
+/// The shipped corpus had twelve artifacts and zero shared capabilities, so
+/// convergence had nothing to converge on and the escalation rate could not be
+/// computed. This generates one that shares primitives on purpose, seeded so a
+/// regression is a regression. It is a fiction, and every manifest says so.
+pub mod corpus;
+
 /// Evaluation of a manifest's declared `constraints`. This is the verifier: with
 /// it absent, `constraints` was printed for operator visibility and never
 /// checked, which left the learning loop with no reward signal. See

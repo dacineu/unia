@@ -68,3 +68,10 @@ path = "src/lib.rs"
 name = "unia-mcp"
 path = "src/bin/unia-mcp.rs"
 required-features = ["mcp-server"]
+
+# Writes a synthetic corpus and reports what it converges on. No feature gate: it
+# depends only on the library, and a corpus nobody can regenerate is a measurement
+# nobody can repeat.
+[[bin]]
+name = "unia-corpus"
+path = "src/bin/unia-corpus.rs"

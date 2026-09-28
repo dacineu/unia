@@ -200,6 +200,48 @@ impl Care {
         }
     }
 
+    /// The state the creature declares, as `(field, description)`.
+    ///
+    /// The same list `Vitals` carries, kept beside the acts that change it so
+    /// that a refusal can be assembled from declarations rather than from a
+    /// hand-written sentence about them.
+    pub fn declared_state() -> [(&'static str, &'static str); 3] {
+        [
+            ("hunger", "rises when I am not fed"),
+            ("happiness", "falls when I am not played with"),
+            ("health", "falls when the other two bottom out"),
+        ]
+    }
+
+    /// The acts that change a declared field, by name.
+    ///
+    /// Note what is absent: no act *sets* a field to a value. Every one of them
+    /// moves it as a side effect of doing something else, which is the fact the
+    /// creature's question is about.
+    pub fn changes(field: &str) -> Vec<&'static str> {
+        // Probed from a mid-range reading rather than from `Vitals::default`.
+        // From the default, `health` is already 1.0 and feeding it cannot raise
+        // it, so the probe reported that nothing changes health — which is a
+        // property of the starting value and not of the act. A reader asking
+        // "what changes my health" must not be told "nothing" because the default
+        // happened to be at the ceiling.
+        let baseline = Vitals {
+            hunger: 0.5,
+            happiness: 0.5,
+            health: 0.5,
+            age_ticks: 0,
+        };
+        let mut out = Vec::new();
+        for care in Care::all() {
+            let mut probe = baseline;
+            care.apply(&mut probe);
+            if field_moved(field, &baseline, &probe) {
+                out.push(care.label());
+            }
+        }
+        out
+    }
+
     /// The act a primitive sequence corresponds to, if it is one the creature
     /// knows how to perform.
     pub fn from_signature(signature: &str) -> Option<Care> {
@@ -267,6 +309,30 @@ impl Care {
     }
 }
 
+/// Joins a list as prose: "a", "a and b", "a, b and c".
+fn join_and(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [first, second] => format!("{first} and {second}"),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// Reads one declared field out of a vitals reading.
+fn field_value(field: &str, v: &Vitals) -> f64 {
+    match field {
+        "hunger" => v.hunger,
+        "happiness" => v.happiness,
+        "health" => v.health,
+        _ => 0.0,
+    }
+}
+
+fn field_moved(field: &str, before: &Vitals, after: &Vitals) -> bool {
+    (field_value(field, before) - field_value(field, after)).abs() > f64::EPSILON
+}
+
 /// Terms too common to carry meaning about which act is meant.
 ///
 /// Deliberately short and deliberately English-only. A Romanian request would
@@ -302,6 +368,21 @@ pub enum Understanding {
         known: Vec<String>,
         learned_examples: Vec<String>,
     },
+    /// The request named one of the creature's own declared fields, and no act
+    /// sets it to a value.
+    ///
+    /// This is the creature asking *why*, and it is the one refusal that is a
+    /// statement about the architecture rather than about vocabulary. The field
+    /// is declared, the creature can report it, and something changes it — but
+    /// only as a side effect of a whole act. "Set its hunger to 0.2" is not a
+    /// mis-phrasing of "feed it"; it is a request the declarations cannot
+    /// satisfy, and the honest answer is to say so rather than to guess which of
+    /// the two the player meant.
+    Contradicted {
+        field: String,
+        declared: Vec<String>,
+        changed_by: Vec<String>,
+    },
     /// Nothing matches, and none of the wording is recognisable either. The
     /// creature says so as a fact rather than as a score, and still says what it
     /// has: being told "no" and nothing else is the same as not answering.
@@ -325,8 +406,47 @@ impl Understanding {
     pub fn is_refusal(&self) -> bool {
         matches!(
             self,
-            Understanding::NeedsDifferentWords { .. } | Understanding::NeverHeardOf { .. }
+            Understanding::NeedsDifferentWords { .. }
+                | Understanding::NeverHeardOf { .. }
+                | Understanding::Contradicted { .. }
         )
+    }
+
+    /// Whether the refusal is about the architecture rather than about wording.
+    ///
+    /// The distinction matters to whoever is reading it. A phrasing miss is
+    /// fixed by saying it differently. A contradiction is not, and answering it
+    /// with a list of phrasings would be answering a question nobody asked.
+    pub fn is_contradiction(&self) -> bool {
+        matches!(self, Understanding::Contradicted { .. })
+    }
+
+    /// The question the creature puts to the player, in its own terms.
+    ///
+    /// Two branches, because there are exactly two things that could be wrong:
+    /// either the player meant a different field, or they think the creature can
+    /// do something it cannot. A player can answer either in one word.
+    pub fn why(&self) -> Option<String> {
+        match self {
+            Understanding::Contradicted {
+                field,
+                declared,
+                changed_by,
+            } => {
+                let changers = if changed_by.is_empty() {
+                    "nothing I do changes it".to_string()
+                } else {
+                    format!("what I do instead is {}", join_and(changed_by))
+                };
+                Some(format!(
+                    "You asked me to set my {field}. I have {}. Nothing I do sets one \
+                     of them to a value — {changers}. So either you mean one of those, \
+                     or you have me confused with something else. Which?",
+                    declared.join(", "),
+                ))
+            }
+            _ => None,
+        }
     }
 }
 
@@ -479,6 +599,26 @@ impl Pet {
         // never been shown either, and with no model it cannot tell that one is
         // a request for something it does and the other is not. Pretending
         // otherwise would be a guess wearing the costume of a distinction.
+        // Before the vocabulary questions, the one that is about the
+        // architecture rather than about wording. A request that names a declared
+        // field is not a mis-phrasing; it is a request the declarations cannot
+        // satisfy, because nothing here *sets* a field to a value.
+        for (field, _) in Care::declared_state() {
+            if terms.iter().any(|t| t == field) {
+                return Understanding::Contradicted {
+                    field: field.to_string(),
+                    declared: Care::declared_state()
+                        .iter()
+                        .map(|(f, d)| format!("{f} ({d})"))
+                        .collect(),
+                    changed_by: Care::changes(field)
+                        .into_iter()
+                        .map(str::to_string)
+                        .collect(),
+                };
+            }
+        }
+
         let vocabulary = self.vocabulary_terms();
         let heard_any = terms.iter().any(|t| vocabulary.contains(t));
 
@@ -1392,5 +1532,138 @@ mod primitive_vocabulary_tests {
                 care.label()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod contradiction_tests {
+    use super::*;
+
+    fn pet() -> Pet {
+        let mut p = Pet::new("ca-c");
+        p.learn(vec![LearnedRule {
+            address: "addr".into(),
+            signature: Care::Feed.signature().into(),
+            aliases: vec!["pour some kibble".into(), "feed the ca maduci".into()],
+            confidence: 0.7,
+            observations: 2,
+        }]);
+        p
+    }
+
+    #[test]
+    fn naming_a_declared_field_asks_why_rather_than_listing_phrasings() {
+        // The question, not a clarification. "Set its hunger to 0.2" is not a
+        // mis-phrasing of "feed it", and answering it with a list of ways to say
+        // feed would be answering a question nobody asked.
+        let p = pet();
+        let u = p.understand("set its hunger to 0.2");
+
+        assert!(u.is_contradiction());
+        assert!(u.is_refusal());
+        assert_eq!(u.acts(), None);
+
+        let why = u.why().expect("a contradiction always has a question");
+        assert!(why.contains("set my hunger"), "{why}");
+        assert!(why.contains("Nothing I do sets"), "{why}");
+        assert!(why.contains("Which?"), "ends with a question: {why}");
+    }
+
+    #[test]
+    fn the_question_names_both_branches_a_player_could_mean() {
+        // Two things could be wrong — the wrong field, or the wrong creature —
+        // and a player can answer either in one word.
+        let p = pet();
+        let why = p.understand("set its health to 1").why().unwrap();
+        assert!(why.contains("you mean one of those"), "{why}");
+        assert!(why.contains("confused with something else"), "{why}");
+    }
+
+    #[test]
+    fn the_question_is_assembled_from_the_declarations() {
+        // Built from what the creature declares, not from a hand-written sentence
+        // about it, so a change to the state space changes the question.
+        let p = pet();
+        let why = p.understand("set its happiness to 0.9").why().unwrap();
+        for (field, _) in Care::declared_state() {
+            assert!(why.contains(field), "{why} does not name {field}");
+        }
+    }
+
+    #[test]
+    fn the_question_names_the_acts_that_do_change_the_field() {
+        let p = pet();
+        let why = p.understand("set its hunger to 0.2").why().unwrap();
+        let changers = Care::changes("hunger");
+        assert!(!changers.is_empty(), "something must change hunger");
+        for label in changers {
+            assert!(why.contains(label), "{why} omits {label}");
+        }
+    }
+
+    #[test]
+    fn no_act_accepts_a_value_and_that_is_the_point() {
+        // The contradiction rests on a structural fact, not on a measurement:
+        // `apply` takes no parameter, so no act can put a field where a caller
+        // asked. The assignment below compiles *only* while that holds, so
+        // adding a value to any act breaks the build here rather than quietly
+        // making the creature's question wrong.
+        //
+        // This is the right way to say it because the first version of this test
+        // tried to measure "did the act set the field" by probing, and produced a
+        // predicate that was simply wrong: feeding left health at 1.0, which a
+        // naive reading called a set. The fact is in the signature.
+        let _unparameterised: fn(Care, &mut Vitals) -> Vec<String> = Care::apply;
+    }
+
+    #[test]
+    fn every_declared_field_is_changed_by_at_least_one_act() {
+        // If a field were changed by nothing, the creature could not maintain
+        // it and the state space would be describing a fiction. This is the
+        // check that the declared state and the act vocabulary agree.
+        for (field, _) in Care::declared_state() {
+            let changers = Care::changes(field);
+            assert!(
+                !changers.is_empty(),
+                "{field} is declared but no act changes it"
+            );
+        }
+    }
+
+    #[test]
+    fn a_contradiction_is_not_a_phrasing_miss() {
+        // The distinction the type exists to keep: one is fixed by saying it
+        // differently, the other is not.
+        let p = pet();
+        let contradiction = p.understand("set its hunger to 0.2");
+        let phrasing = p.understand("pour the kibble in the bowl");
+
+        assert!(contradiction.is_contradiction());
+        assert!(!phrasing.is_contradiction());
+        assert_eq!(contradiction.why().is_some(), true);
+        assert_eq!(phrasing.why().is_some(), false);
+        assert_ne!(contradiction, phrasing);
+    }
+
+    #[test]
+    fn a_word_that_merely_contains_a_field_name_is_not_a_contradiction() {
+        // `healthcare` contains `health`. Treating it as a request to set health
+        // would fire the gate on ordinary words, which is the D6 trap again.
+        let p = pet();
+        assert!(!p
+            .understand("the healthcare system is broken")
+            .is_contradiction());
+    }
+
+    #[test]
+    fn an_undeclared_field_is_not_detected_and_that_is_recorded() {
+        // `brightness` is a real thing the creature does not have, and the
+        // valve-manifest case is exactly this. It is indistinguishable from
+        // gibberish without a model, so it falls through to NeverHeardOf rather
+        // than being guessed at. Documented as a limit rather than papered over.
+        let p = pet();
+        let u = p.understand("set its brightness to eighty");
+        assert!(!u.is_contradiction());
+        assert!(matches!(u, Understanding::NeverHeardOf { .. }), "{u:?}");
     }
 }

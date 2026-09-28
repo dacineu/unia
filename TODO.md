@@ -153,7 +153,12 @@ so a learned signature matches nothing on the next pass.
   (nanochat discussion #164), and the analogue is a *manifest generator* emitting
   artifacts with declared state spaces and overlapping primitives. It unblocks the
   cold start, the escalation measurement and convergence at once, which is why it
-  belongs here rather than at the end.
+  belongs here rather than at the end. **Done** — `src/corpus.rs` and
+  `cargo run --bin unia-corpus`. 36 artifacts over 6 profiles, converging on 6
+  denominators with 6 to 24 phrasings each. The generator is organised by
+  *profile* rather than by overlapping kind because `gather` converges on exact
+  equality of the action set: two artifacts sharing two of three actions do not
+  interpenetrate, and a corpus built on overlap would have found nothing.
 - [ ] **Give mutation a behavioural effect or remove it from the address.**
   `MutationEngine::mutate` appends a marker to `guidance` and adds a `provenance`
   block, which changes the content address while leaving actions and state space

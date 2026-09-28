@@ -281,10 +281,18 @@ fn handle(
             // been refused is told what would have worked, and a player whose
             // wording simply is not one the creature has heard is not told the
             // same thing as a player who asked for something impossible.
-            Err(understanding) => json_response(
-                400,
-                &serde_json::to_string(&understanding).unwrap_or_default(),
-            ),
+            Err(understanding) => {
+                // A contradiction carries its question with it, because the
+                // question is the whole of the response. Returning the outcome
+                // alone would make the player reconstruct what it meant, and a
+                // refusal that does not say what would work is the same as no
+                // answer.
+                let mut body = serde_json::to_value(&understanding).unwrap_or_default();
+                if let (Some(why), Some(obj)) = (understanding.why(), body.as_object_mut()) {
+                    obj.insert("why".to_string(), serde_json::json!(why));
+                }
+                json_response(409, &body.to_string())
+            }
         },
         _ => json_response(404, r#"{"error":"not found"}"#),
     };
