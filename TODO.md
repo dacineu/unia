@@ -7,6 +7,13 @@ not intentions.
 
 ## Read this first
 
+**Transposition:** [`docs/DELEGATION-PLAN.md`](./DELEGATION-PLAN.md) is the
+four delegable tasks. [`docs/TRANSPOSITION-PLAN.md`](./docs/TRANSPOSITION-PLAN.md)
+is why transposing this crate is blocked on **arithmetic, not ownership** — a
+second fork the target spec did not have — and what the first measurement is.
+
+
+
 **Work handed to another model:** [`docs/DELEGATION-PLAN.md`](./DELEGATION-PLAN.md)
 — four delegable tasks, each with its read-set, its excluded files, its
 deliverable, what verifies it, and the failure mode to name. Task 1 (the fixture)

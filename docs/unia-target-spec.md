@@ -150,6 +150,39 @@ First candidate: `src/clean.rs`. ~500 lines, small surface — `rematter`, `serv
 (1) matterns the semantics decomposes into, (2) occurrences of each in the
 source, (3) the ratio.
 
+## 5a. A second fork, found by trying to transpose the crate
+
+**Added after §6 was written, because §6 is incomplete and the omission is
+material.** See `docs/TRANSPOSITION-PLAN.md` §2.
+
+§6 frames the choice as ownership or nothing. That is one fork, and it is not the
+binding one. `Production::credit` and `clean::rematter` were both confirmed not to
+lower, in two sessions, and the reason is **not** aliasing:
+
+> **The sixteen verbs were drawn from actuators, not from a processor.** A valve's
+> verbs are open, close, read, write. A CPU's also include add, multiply, compare
+> and load. `UniversalPrimitive` has `Compare` and `Increment` -- arithmetic *by
+> two* -- and no `Add`, no `Multiply`, and no way to combine two values.
+
+A target without arithmetic cannot be a compiler target for Rust, and not because
+of ownership: `f64` has no representation in a store of untyped strings, so a port
+fails before the borrow checker is consulted. **This is a larger obstacle than the
+one §6 documents, and it is independent of it.**
+
+**So the specification has two forks, not one:**
+
+| | fork A: memory | fork B: arithmetic |
+| --- | --- | --- |
+| option 1 | scoped, aliasing-checked | a value kind, or an encoding for numbers |
+| option 2 | heap, no ownership promises | strings only |
+| consequence of 2 | a virtual machine | **not a language target at all** |
+
+Neither row-2 is negotiable if Rust is to compile. And behind both sits the
+sentence §2.3 already contains: **binding and definition are not features to add;
+definition is what a function *is*.** A `Signature` cannot be invoked, so a
+computation is expressible but unnameable — and `LARGE-PATTERN-MODELS` claims
+compression by *reuse*.
+
 ## 6. The fork, which is not this document's to close
 
 x86-64 was a specified, stable, decades-old contract. The unia target is not
