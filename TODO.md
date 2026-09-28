@@ -488,6 +488,33 @@ never as anything that determines identity.
   `primitives` field on `Action` so the sequence stops depending on an id
   convention. A persisted-schema change, and not something to slip in beside a
   measurement.
+- [x] **The commons says which promises are funded.** Done, in
+  `src/primitives/mod.rs`, which had **no tests at all** and seeded exactly one
+  nucleus, so fifteen of the sixteen primitives could not be called and nothing said
+  so. Every primitive now has a binding where a command genuinely exists and a
+  recorded `unfunded_reason` where none does. Measured: **10 of 16 on Linux, 8 of 16
+  on macOS, 6 of 16 on Windows.** Six are unfunded everywhere and the reason is
+  the same in each: they are not operations on a machine. `Toggle` is inversion,
+  `Increment` is arithmetic, `Pipe` is shell syntax, `Broadcast` is networking,
+  `Pulse` is a scheduled signal, and `Validate` would need a dependency rather than
+  a standard tool. Binding those to plausible strings would issue bonds that default
+  on first use, which is worse than a visible gap.
+  Two bugs the new tests caught. A `GenericLinux` binding was a fallback for *every*
+  platform, so `cat` resolved on Windows — a bond quietly holding on the wrong
+  machine, which is the failure the catalogue exists to prevent. The fallback is now
+  restricted to the Linux family by explicit list, so a new `OsVariant` defaults to
+  *not* inheriting a Linux promise. And an unfunded primitive returned `"No mapping
+  for OS"`, which reads as a lookup miss; it now says it is known and unfunded,
+  which is the distinction a caller actually needs between *never heard of this* and
+  *knows this and cannot call it*.
+- [ ] **The bridge this declares is still not the one that runs.** Two types share
+  the name: `bridge::primitive::PrimitiveBridge` is a `.ure` resource loader and is
+  what `wasm_core`, `os::kernel` and `orchestrator::meta` all use; `primitives::
+  PrimitiveBridge` is the OS mapper and **nothing references it**. So execution goes
+  through drivers, not commands, and the catalogue above is a truthful statement
+  about the vocabulary rather than a description of the running system. Wiring it in
+  would be speculative, so it is not wired. The real binding question is therefore
+  *which primitives have a registered driver*, and that is not measured yet.
 - [ ] **The 200-query fixture.** Unchanged and still the blocker for the paper.
   It has to be authored by someone who has not read the matcher, because whoever
   writes the queries will write them in the vocabulary the matcher was built to
