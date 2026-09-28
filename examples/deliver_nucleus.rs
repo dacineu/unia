@@ -41,13 +41,13 @@ fn main() {
         obj.insert("resource_id".to_string(), json!(id.to_string()));
     }
 
-    let filename = format!("{}.ure", id);
+    let filename = unia::outdir::manifest_path(&id.to_string());
     fs::write(
         &filename,
         serde_json::to_string_pretty(&final_manifest).unwrap(),
     )
     .expect("Failed to write .ure file");
 
-    println!("SUCCESS: Delivered Nucleus at {}", filename);
+    println!("SUCCESS: Delivered Nucleus at {}", filename.display());
     println!("DU-UUID: {}", id);
 }

@@ -1,10 +1,9 @@
-use crate::bridge::primitive::{PrimitivePacket, UniversalPrimitive};
-use crate::nucleus::{ActuatorNucleus, ValveDriver};
-use crate::wmis::{ResourceType, SharingScope, WmisEconomicLayer, WmisResource};
-use std::collections::HashMap;
+use crate::bridge::primitive::PrimitivePacket;
+use crate::nucleus::ActuatorNucleus;
+use crate::wmis::{ResourceType, SharingScope, WmisResource};
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
+use std::net::TcpListener;
+use std::sync::Arc;
 
 /// A simple unia-node that listens for remote PrimitivePackets and executes them locally.
 pub struct UniaNode {

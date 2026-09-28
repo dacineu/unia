@@ -161,9 +161,10 @@ and `... -- topology`.
 | False negatives | **0** |
 | False positives | **2** |
 | Primitive vocabulary reachable by the resolver | **16 of 16**, and it returns an error otherwise |
-| Tests | **242** |
-| Corpus | **63 patterns**, 0 edges, 0 denominators |
+| Tests | **249** |
+| Corpus | **12 patterns** on a clean tree, 0 edges, 0 denominators |
 | Capability matches across the corpus | **0** |
+| Corpus after a test run | **14** — the two extra are synthesized mirrors, now written to `.unia/out` rather than the repository root |
 
 Two of those rows are the interesting ones.
 
@@ -172,13 +173,23 @@ positive of 0.2041.** No threshold separates them. They need a capability check
 against the declared state space, not a better score — which is why the honest
 answer here is "not fixed" and not "tune the constant".
 
-**The corpus has 63 artifacts and zero shared capabilities.** So there is no
+**The corpus has 12 artifacts and zero shared capabilities.** So there is no
 escalation rate to report, and this repository does not report one. The gather
-machinery converges on common denominators; on this corpus it has 63
+machinery converges on common denominators; on this corpus it has 12
 participants and finds nothing, which is a real measurement and is printed as
 one. Everything downstream of that — the research claim, the paper's central
 figure — is waiting on a corpus with shared primitives in it. Building one is
 the next piece of work, not a footnote.
+
+**The corpus is the same size for you as it is here.** That was not true until
+this restructure. Synthesis used to write manifests to the process working
+directory, so running the tests added to the corpus: 63 locally against 12 in a
+fresh clone, on the same commit, with the retrieval numbers unchanged at 20/20.
+The two sides of resolution agreed only because both happened to be the working
+directory. Synthesis output now has one home, `.unia/out`, and both the
+transducer and the registry default to it. **If you measure 14 rather than 12,
+you have run the tests, and the two extra are synthesized mirrors.** See
+[`docs/SPEC.md`](./docs/SPEC.md) §6.
 
 **What this project does not have yet**, stated plainly:
 
@@ -210,7 +221,7 @@ the next piece of work, not a footnote.
 
 ## What is implemented
 
-Twenty-seven modules in five layers. This is a working prototype, not a product,
+Twenty-eight modules in five layers. This is a working prototype, not a product,
 and [`docs/SPEC.md`](./docs/SPEC.md) records every place the code and the prose
 still disagree.
 
@@ -235,7 +246,7 @@ systemd user service).
 ```sh
 git clone https://github.com/dacineu/unia
 cd unia
-cargo test                                          # 242 tests
+cargo test                                          # 249 tests
 cargo run --example camaduci                        # start here
 ```
 
@@ -290,9 +301,10 @@ that were wrong in this project's own favour. Two of the more expensive lessons:
 | [`docs/camaduci.md`](./docs/camaduci.md) | Creature mechanics and the prior art they draw on |
 | [`docs/signalling.md`](./docs/signalling.md) | The peer-to-peer relay |
 | [`docs/whitepaper/whitepaper_unia.tex`](./docs/whitepaper/whitepaper_unia.tex) | LaTeX source of the whitepaper (compiles to 8pp) |
-| [`docs/arch_decoupling_strategy.md`](./docs/arch_decoupling_strategy.md) | Why the decoupling layer exists |
+| [`docs/arch-decoupling-strategy.md`](./docs/arch-decoupling-strategy.md) | Why the decoupling layer exists |
 | [`docs/PROVENANCE.md`](./docs/PROVENANCE.md) | Publication dates, authorship, prior art |
 | [`docs/cognition-log.md`](./docs/cognition-log.md) | Design rationale, including the Patten/Mattern distinction |
+| [`docs/history/`](./docs/history/README.md) | Working papers from the predecessor `amater` project, where `.ure` came from |
 | [`TODO.md`](./TODO.md) | The live, ranked list of what is not done |
 
 ## Using unia

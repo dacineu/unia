@@ -11,7 +11,7 @@ mod tests {
     #[tokio::test]
     async fn test_evolutionary_pipeline_flow() {
         let registry = Arc::new(ActuatorRegistry::new("simulated_db"));
-        let router = Arc::new(RouterSlm::new("phi-3-router"));
+        let _router = Arc::new(RouterSlm::new("phi-3-router"));
         let transducer = Arc::new(SynapticTransducer::new(TransductionLayer::LocalSovereign));
         let learner = Arc::new(Learner::new(TrainingBackend::Local("ollama".to_string())));
         let harvester = Arc::new(ExplorerHarvester::new(

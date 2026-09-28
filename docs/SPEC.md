@@ -255,12 +255,24 @@ insufficient. A principal is granted a 100-token balance on first use.
 `ActuatorRegistry` resolves manifests by `{resource_id}.ure` inside a base
 directory.
 
-- `ActuatorRegistry::new(conn)` uses the process working directory.
-- `ActuatorRegistry::with_base_dir(conn, dir)` uses an explicit directory.
+- `ActuatorRegistry::new(conn)` scans the synthesis output directory,
+  `.unia/out` under the working directory, or `UNIA_OUT_DIR` when set. Its
+  `conn` argument is a connection string and is recorded, not interpreted: this
+  crate resolves manifests from the filesystem, so **it is not a directory**.
+- `ActuatorRegistry::with_base_dir(conn, dir)` scans an explicit directory.
 
-`find_matching_actuators` scans the same base directory. Both should be
-configured explicitly outside tests; depending on the working directory makes a
-programme behave differently depending on where it was launched from.
+`find_matching_actuators` scans the same base directory.
+
+**Why the default is not the working directory.** Resolution used to follow the
+process working directory on both sides, which made the two agree by accident
+rather than by construction. The cost was that a manifest written by the
+transducer was found only by a process launched from the same directory, and
+running the tests littered the repository root with one `.ure` per synthesis.
+That in turn meant the corpus measured locally was not the corpus a cloner
+gets: 63 patterns against 12, on the same commit. Synthesis output now has one
+documented home in `src/outdir.rs`, both sides default to it, and the two
+cannot drift apart again.
+
 
 ## 7. Known divergences
 
@@ -275,7 +287,7 @@ Recorded rather than fixed, because each needs a design decision.
 | D9 | The formal specification's packet is `{ resource_id, primitive, params }` where `primitive` is the action name. The code resolves it to a generic `UniversalPrimitive` (see D6). | The Nucleus receives a coarser instruction than the specification describes, and loses the action identity on the way. |
 | ~~D4~~ **CLOSED** | Intent matching normalised underscores for action `id` but not for `aliases`. **Fixed:** `tokenize` in `src/mcp/store.rs` now splits on any non-alphanumeric character, so `write_file` and `write file` produce the same terms. | Was: an intent using underscores silently fell through to score-based matching, and `write output to results.txt` matched nothing at all. Now consistent with the underscore normalisation in `src/bridge/primitive.rs` and `src/induce/mod.rs`. |
 | D5 | Action `constraints` are printed for operator visibility but not evaluated. | A manifest can declare a precondition that the system ignores. |
-| D6 | `resolve_primitive` resolves by substring on the action `id`, so `SetValue` is the fallback for every unrecognised action. | Most of the §3.3 vocabulary is unreachable through the bridge today. |
+| ~~D6~~ **CLOSED** | `resolve_primitive` resolved by substring on the action `id` and returned `SetValue` for everything it did not recognise, so 13 of the 16 declared primitives were unreachable. **Fixed:** it now covers the whole vocabulary and returns `Err` for anything else, so an unresolvable action is refused rather than silently misrouted. | Was: a request to broadcast, wait or watch was dispatched as a plain assignment, and nothing said so. Residual: an action `id` is free text the format does not constrain, so the table guesses less badly rather than not at all. A grammar for action ids is the same work as the constraint grammar. |
 | D7 | `quality_of_product` appears as a manifest key in tests, but `QualityMetrics` is constructed in code rather than read from the manifest. | The mapping from manifest to metrics is not implemented. |
 
 ## 8. Contributing to this specification

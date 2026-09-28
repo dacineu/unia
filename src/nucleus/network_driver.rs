@@ -1,4 +1,4 @@
-use crate::bridge::primitive::{PrimitivePacket, UniversalPrimitive};
+use crate::bridge::primitive::PrimitivePacket;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;

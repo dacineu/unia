@@ -1,4 +1,4 @@
-use crate::bridge::primitive::{PrimitiveBridge, PrimitivePacket};
+use crate::bridge::primitive::PrimitiveBridge;
 use crate::meta_actuators::MetaActuatorType;
 use crate::nucleus::ActuatorNucleus;
 use crate::profiler::{AgentProfile, Profiler};

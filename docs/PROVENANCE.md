@@ -34,7 +34,7 @@ authoritative record of first public disclosure.
 | The `ure_RES_CAT_LOC_UNIQ` identifier scheme | 2026-09-14 | Documented only; not implemented |
 | UPA, the United Processor Architecture | 2026-09-13 | `src/bridge/upa.rs` |
 | unia-OS, the virtual kernel and VFS | 2026-09-13 | `src/os/` |
-| The actuator evolution path, OS-dependent to actuator-driven | 2026-09-13 | `docs/arch_decoupling_strategy.md` |
+| The actuator evolution path, OS-dependent to actuator-driven | 2026-09-13 | `docs/arch-decoupling-strategy.md` |
 | A written `.ure` specification | 2026-09-27 | [`docs/SPEC.md`](./SPEC.md), version 0.1.0 |
 
 The whitepaper predates the repository. A rendered

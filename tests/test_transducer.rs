@@ -29,8 +29,8 @@ mod tests {
             .transduce(external_id, None)
             .expect("Transduction failed");
 
-        // 3. Verify .ure file exists
-        let file_path = format!("{}.ure", mirror_id);
+        // 3. Verify the manifest landed where synthesis is documented to put it
+        let file_path = unia::outdir::manifest_path(&mirror_id.to_string());
         assert!(fs::metadata(&file_path).is_ok());
 
         // 4. Mirroring Pattern Verification

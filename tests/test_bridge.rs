@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    
     use unia::bridge::IntelligenceBridge;
     use unia::registry::ActuatorRegistry;
     use unia::router::RouterSlm;

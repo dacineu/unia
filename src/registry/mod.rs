@@ -9,17 +9,24 @@ pub struct ActuatorRegistry {
     _db_connection_string: String,
     champions: HashMap<String, Uuid>,
     /// Directory that `.ure` manifests are resolved from and scanned in.
-    /// Defaults to the process working directory so existing callers keep the
-    /// previous behaviour; `with_base_dir` makes resolution explicit instead.
+    /// Defaults to the synthesis output directory rather than the process
+    /// working directory, so a manifest written by the transducer is found by
+    /// the registry that is meant to serve it. The two used to agree only
+    /// because both happened to be the working directory, which meant any
+    /// process launched from elsewhere saw an empty mesh.
     base_dir: PathBuf,
 }
 
 impl ActuatorRegistry {
+    /// `conn_str` is a connection string and is recorded, not interpreted: this
+    /// crate resolves manifests from the filesystem, so there is no database to
+    /// connect to. The argument is **not** a directory, and a caller that wants
+    /// a specific scan root must say so with [`ActuatorRegistry::with_base_dir`].
     pub fn new(conn_str: &str) -> Self {
         Self {
             _db_connection_string: conn_str.to_string(),
             champions: HashMap::new(),
-            base_dir: PathBuf::from("."),
+            base_dir: crate::outdir::out_dir(),
         }
     }
 
@@ -93,5 +100,82 @@ impl ActuatorRegistry {
             }
         }
         matches
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// A manifest with the structure a real one has, minus everything the
+    /// address deliberately ignores.
+    fn manifest() -> Value {
+        json!({
+            "resource_id": "should-not-affect-the-address",
+            "category": "actuator",
+            "complexity_score": 0.3,
+            "guidance": "Standard income generation path."
+        })
+    }
+
+    #[test]
+    fn a_manifest_registers_under_a_content_address() {
+        // Registration is the step that turns a file on disk into something the
+        // rest of the system can name, and the name has to come from the
+        // manifest's content rather than from its filename.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_actuator.ure");
+        fs::write(&path, serde_json::to_string(&manifest()).unwrap()).unwrap();
+
+        let registry = ActuatorRegistry::with_base_dir("mock", dir.path());
+        let id = registry.register_ure_file(&path, None).unwrap();
+
+        assert!(!id.is_nil(), "a nil address is not an address");
+    }
+
+    #[test]
+    fn the_same_manifest_registers_under_the_same_address() {
+        // Two files, one act. If this fails, two people describing the same
+        // thing differently get two artifacts, which is the defect the
+        // skeleton hash exists to prevent.
+        let dir = tempfile::tempdir().unwrap();
+        let registry = ActuatorRegistry::with_base_dir("mock", dir.path());
+
+        let a = dir.path().join("a.ure");
+        let b = dir.path().join("b.ure");
+        fs::write(&a, serde_json::to_string(&manifest()).unwrap()).unwrap();
+        let mut other = manifest();
+        other["resource_id"] = json!("a-different-spelling-of-the-same-thing");
+        fs::write(&b, serde_json::to_string(&other).unwrap()).unwrap();
+
+        assert_eq!(
+            registry.register_ure_file(&a, None).unwrap(),
+            registry.register_ure_file(&b, None).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_registered_manifest_resolves_from_its_base_dir() {
+        // Resolution and registration have to agree on where manifests live.
+        // This test used to pass only because both fell back to the process
+        // working directory, which meant it asserted nothing about the registry
+        // and would have failed for any process launched from anywhere else.
+        let dir = tempfile::tempdir().unwrap();
+        let registry = ActuatorRegistry::with_base_dir("mock", dir.path());
+
+        // `register_ure_file` reports an address but does not rename the file,
+        // because a manifest is content-addressed rather than filed under its
+        // address. Resolution expects the latter, so the file is written under
+        // the address the manifest actually has.
+        let id = DuUuid::generate(&manifest(), None).unwrap();
+        fs::write(
+            dir.path().join(format!("{id}.ure")),
+            serde_json::to_string(&manifest()).unwrap(),
+        )
+        .unwrap();
+
+        let resolved = registry.resolve_actuator(id).unwrap();
+        assert_eq!(resolved["complexity_score"], json!(0.3));
     }
 }

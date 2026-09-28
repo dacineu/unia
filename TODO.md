@@ -177,11 +177,35 @@ an escalation.
 
 ## Codebase hygiene
 
-- [ ] **Resolve `implementation/`.** It is a newer, richer draft of `src/`
-  containing `set_champion`/`get_champion`, a `register_ure_file` DU-UUID to
-  database pipeline, Collapse dive-depth scoring and a test module, none of which
-  exist in the compiled crate. Two divergent copies of the registry and
-  orchestrator are in the repository.
+- [x] **Resolve `implementation/`.** It was recorded here as "a newer, richer
+  draft of `src/` containing `set_champion`/`get_champion`, a `register_ure_file`
+  DU-UUID to database pipeline, Collapse dive-depth scoring and a test module,
+  none of which exist in the compiled crate". **Every clause of that was
+  backwards**, and the directory is now deleted:
+  - It is **earlier**, not newer. Its `DuUuid::generate` hashes the manifest
+    directly; `src/` hashes the skeleton. It has no `skeleton()` at all.
+  - `set_champion`, `get_champion`, `with_base_dir` and `find_matching_actuators`
+    are in `src/registry/mod.rs` and **not** in the draft.
+  - `register_ure_file` is in both.
+  - Its public API is a strict **subset** of `src/`'s in all five modules.
+  - Its Collapse tests asserted on `ACTUATOR_MODE: FAST`; the code now emits
+    `[MODE:FAST]`, which is why they could never have run as written.
+
+  The one thing it had that `src/` lacked was **test coverage**: the draft had
+  test modules for `registry` and `orchestrator`, and `src/` had none for either.
+  Those seven tests are now in `src/`, rewritten to the current API and the
+  current prompt format. Nothing else was worth keeping, which is why the
+  directory is gone rather than filed under `docs/history/`.
+- [ ] **Make `examples/camaduci.rs` use `unia::camaduci` instead of
+  reimplementing it.** Found during the restructure, not yet fixed. The example
+  defines its own `Pet`, `Vitals`, `Stage` and `Care` — the same four type names
+  as `src/camaduci.rs` — and 39 of its own functions, importing only
+  `mcp::store::{Store, Trace}` from the library. So there are two creatures, and
+  the one the README sends a reader to first is the one that is not the shipped
+  module. The dead code is already showing in it: a `Clean` lifecycle variant
+  that is never constructed and an unused `now`. Fixing this means reducing the
+  example to a driver, which also removes the last `Clean` variant question,
+  because `src/gc.rs` owns lifecycle.
 - [ ] **Add the DuckDB retrieval layer to CI.** `ci.yml` tests Rust only, which
   is why the broken `term_idf` survived two commits. The corpus views load and
   are verified; the ranking path raises a type-coercion error and is not

@@ -23,7 +23,7 @@ impl WasmDriver {
     fn call_wasm_export(
         &self,
         primitive: &UniversalPrimitive,
-        args: &HashMap<String, String>,
+        _args: &HashMap<String, String>,
     ) -> Result<String, String> {
         // In a real Wasm implementation, we would:
         // 1. Look up the export name (e.g., "execute_reset")

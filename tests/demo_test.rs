@@ -85,7 +85,7 @@ mod demo {
 
         // 4. ORCHESTRATION: The Collapse
         println!("--- Step 4: Orchestration (Collapsing the State) ---");
-        let orchestrator = Orchestrator::new(reg);
+        let _orchestrator = Orchestrator::new(reg);
         let activation = hybrid.to_activation_vector(user_vector);
         println!("✅ State Collapsed!");
         println!(

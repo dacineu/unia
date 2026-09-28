@@ -2,7 +2,6 @@ use crate::harvester::ExplorerHarvester;
 use crate::learner::Learner;
 use crate::registry::ActuatorRegistry;
 use crate::transducer::SynapticTransducer;
-use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
 

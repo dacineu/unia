@@ -108,7 +108,7 @@ impl SynapticTransducer {
             manifest["provenance"] = prov.clone();
         }
 
-        let file_path = format!("{}.ure", resource_id_uuid);
+        let file_path = crate::outdir::manifest_path(&resource_id_uuid.to_string());
         fs::write(&file_path, serde_json::to_string_pretty(&manifest)?)?;
 
         println!(

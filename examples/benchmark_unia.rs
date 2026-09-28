@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use unia::bridge::primitive::{PrimitiveBridge, StateType, UreAction, UreResource};
 use unia::nucleus::{ActuatorNucleus, ValveDriver};
-use unia::wmis::{ResourceType, SharingScope, WmisEconomicLayer, WmisOperation, WmisResource};
+use unia::wmis::{ResourceType, SharingScope, WmisEconomicLayer, WmisResource};
 
 fn main() {
     println!("\n🚀 Starting unia vs Coupled-LLM Empirical Benchmark\n");

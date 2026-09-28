@@ -245,7 +245,7 @@ impl ActuatorDriver for FileSystemDriver {
 
         match packet.payload.primitive {
             UniversalPrimitive::SetValue => {
-                let content = packet
+                let _content = packet
                     .payload
                     .arguments
                     .get("content")

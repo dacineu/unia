@@ -574,7 +574,7 @@ impl Store {
         if observations.is_empty() {
             return None;
         }
-        let hits = observations.iter().filter(|t| t.outcome == "hit").count();
+        let _hits = observations.iter().filter(|t| t.outcome == "hit").count();
         let distinct = observations
             .iter()
             .map(|t| t.intent.to_lowercase())

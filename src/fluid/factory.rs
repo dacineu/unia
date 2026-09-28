@@ -1,7 +1,6 @@
 use crate::fluid::{MicroNucleus, SlotType};
 use crate::registry::ActuatorRegistry;
 use crate::wmis::{DiscoveryQuery, SharingScope, WmisDiscoveryProvider};
-use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;

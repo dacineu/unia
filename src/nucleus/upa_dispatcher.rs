@@ -1,7 +1,5 @@
-use crate::bridge::upa::{Dimensionality, UpaOp, UpaPacket};
-use crate::nucleus::ActuatorDriver;
+use crate::bridge::upa::{Dimensionality, UpaPacket};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 /// The UPA Dispatcher manages "Computational Liquidity" by routing
 /// architecture-agnostic UpaOps to the best available physical resource.
@@ -38,7 +36,7 @@ impl UpaDispatcher {
     }
 
     /// Routes a UpaPacket to the appropriate physical resource(s)
-    pub fn route(&self, slot: &str, packet: &UpaPacket) -> Vec<String> {
+    pub fn route(&self, slot: &str, _packet: &UpaPacket) -> Vec<String> {
         let mut targets = Vec::new();
 
         if let Some(primary) = self.active_routes.get(slot) {

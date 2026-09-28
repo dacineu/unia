@@ -27,14 +27,20 @@ __pycache__/
 .venv/
 venv/
 
-# `.ure` manifests at the repository root are written at runtime by the
-# transducer, the orchestrator and the examples, which resolve relative to the
-# process working directory. Running the test suite therefore drops files here.
-# The curated manifests are force-added with `git add -f`; see docs/SPEC.md
-# section 6 for why working-directory-relative resolution is a known hazard.
+# Synthesis output used to be written relative to the process working directory,
+# so running the tests dropped a manifest here per synthesis. It now goes to
+# `.unia/out` and both the transducer and the registry default to that location,
+# so the corpus measured locally is the corpus a cloner gets. See SPEC.md §6.
 
+# Belt and braces. Synthesis output no longer lands here — it goes to `.unia/out`
+# — so this only catches droppings from an older checkout or a caller that set
+# UNIA_OUT_DIR to the repository root.
 /*.ure
-/orchestrator_*.ure
+
+# Synthesised manifests now land here rather than in the working directory, and
+# the store still walks them, so a synthesised actuator remains part of the
+# corpus. Untracked for the same reason as the root droppings it replaces.
+/.unia/
 
 # Provenance artefact for the prior EUNIA submission (docs/proof/).
 #
