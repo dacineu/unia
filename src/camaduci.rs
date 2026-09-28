@@ -352,7 +352,7 @@ impl Care {
             // here ever spent a resource — which is not true, and which is what
             // the "declared but no act changes it" test caught.
             let mut economy = probe.economy;
-            care.apply_economy(&mut economy);
+            care.apply_economy(&mut economy, Who::Itself);
             care.apply(&mut probe);
             let touched_vital = field_moved(field, &baseline, &probe);
             let touched_economy = match field {
@@ -410,14 +410,44 @@ impl Care {
     ///
     /// Returns whether the act was affordable, so a caller can refuse before
     /// acting rather than after.
-    pub fn apply_economy(&self, e: &mut Economy) -> bool {
+    ///
+    /// **Feeding is the one act a person brings rather than spends.** A person
+    /// who feeds a creature hands it something to act with; a creature that feeds
+    /// itself uses what it already had. The direction of the stock therefore
+    /// depends on who acted, and that is the whole of the player's leverage: the
+    /// player cannot make a creature stronger, only give it something to be
+    /// stronger with, and the credit for what it does with that still comes from
+    /// `learn` alone.
+    ///
+    /// Only feeding does this. If every act were free to the player there would
+    /// be no economy, and if none were then a player could never rescue anything.
+    /// Food is what a person brings, so the loop is: bring food, and it plays and
+    /// cleans and sleeps on what you brought.
+    ///
+    /// A person feeding also does not debit the power. The debit is for a
+    /// creature repeating itself, and a person standing there holding a bowl is
+    /// not that.
+    pub fn apply_economy(&self, e: &mut Economy, who: Who) -> bool {
+        if who == Who::Player && self.brings() {
+            e.nuants = (e.nuants + self.cost()).min(Economy::MAX_NUANTS);
+            return true;
+        }
         if e.nuants < self.cost() {
             return false;
         }
         e.nuants = (e.nuants - self.cost()).max(0.0);
-        e.quants = (e.quants - self.repetition() * (e.quants - Economy::FLOOR_CUANTE))
-            .max(Economy::FLOOR_CUANTE);
+        e.quants = (e.quants - self.repetition() * (e.quants - Economy::FLOOR_QUANTS))
+            .max(Economy::FLOOR_QUANTS);
         true
+    }
+
+    /// Whether this act is something a person brings rather than spends.
+    ///
+    /// Its own predicate rather than a `matches!` at the call site, because
+    /// "which acts are gifts" is a question about the acts and will acquire a
+    /// second answer sooner or later.
+    pub fn brings(self) -> bool {
+        matches!(self, Care::Feed)
     }
 
     /// How much power an unproductive repetition costs.
@@ -438,7 +468,7 @@ impl Care {
     /// which is the only reason the game is winnable after a long absence.
     pub fn decay_economy(&self, e: &mut Economy) {
         e.nuants = (e.nuants - 0.5).max(0.0);
-        e.quants = (e.quants * 0.9).max(Economy::FLOOR_CUANTE);
+        e.quants = (e.quants * 0.9).max(Economy::FLOOR_QUANTS);
     }
 
     /// The operation's name, as shown to a player.
@@ -649,10 +679,10 @@ impl Default for Economy {
 impl Economy {
     /// The most a creature can hold. A stock needs a ceiling or there is no
     /// reason to prefer efficiency over abundance.
-    pub const MAX_NUANTE: f64 = 24.0;
+    pub const MAX_NUANTS: f64 = 24.0;
     /// The highest power achievable. A rate needs a ceiling for the same reason:
     /// without one, "getting better" has no end and nothing is at stake.
-    pub const MAX_CUANTE: f64 = 1.0;
+    pub const MAX_QUANTS: f64 = 1.0;
     /// The power a neglected creature decays to, and below which it cannot act.
     ///
     /// **This was found by playing the game, not by reading it.** The first
@@ -666,7 +696,7 @@ impl Economy {
     /// never quite the creature that never was. And because it is *below the
     /// usable threshold* rather than at it, one act of care lifts a stuck creature
     /// clear of it, which is what makes a long absence recoverable.
-    pub const FLOOR_CUANTE: f64 = 0.1;
+    pub const FLOOR_QUANTS: f64 = 0.1;
 
     /// How long the creature's resources last at its current power, in ticks.
     ///
@@ -684,9 +714,9 @@ impl Economy {
     /// Whether the creature can act at all: it needs resources *and* usable power.
     ///
     /// The threshold is the floor rather than zero, so a creature decayed to it
-    /// is alive and stuck rather than merely weak. See [`Economy::FLOOR_CUANTE`].
+    /// is alive and stuck rather than merely weak. See [`Economy::FLOOR_QUANTS`].
     pub fn can_act(&self) -> bool {
-        self.nuants > 0.0 && self.quants > Economy::FLOOR_CUANTE
+        self.nuants > 0.0 && self.quants > Economy::FLOOR_QUANTS
     }
 
     /// One word for the state of the economy, for a player to read.
@@ -1279,16 +1309,16 @@ impl Pet {
             "quants".into(),
             serde_json::json!({
                 "type": "float",
-                "range": [0.0, Economy::MAX_CUANTE],
+                "range": [0.0, Economy::MAX_QUANTS],
                 "unit": "power",
-                "usable_above": Economy::FLOOR_CUANTE,
+                "usable_above": Economy::FLOOR_QUANTS,
             }),
         );
         out.insert(
             "nuants".into(),
             serde_json::json!({
                 "type": "float",
-                "range": [0.0, Economy::MAX_NUANTE],
+                "range": [0.0, Economy::MAX_NUANTS],
                 "unit": "resources",
             }),
         );
@@ -1324,10 +1354,10 @@ impl Pet {
         if production.any() {
             // Rises toward the ceiling, so the last stretch of power is the
             // hardest and there is always something left to be earned.
-            let headroom = Economy::MAX_CUANTE - self.vitals.economy.quants;
+            let headroom = Economy::MAX_QUANTS - self.vitals.economy.quants;
             self.vitals.economy.quants = (self.vitals.economy.quants
                 + production.credit() * headroom)
-                .min(Economy::MAX_CUANTE);
+                .min(Economy::MAX_QUANTS);
         }
         production
     }
@@ -1648,7 +1678,7 @@ impl Pet {
         if who == Who::Itself && !self.vitals.economy.can_act() {
             return None;
         }
-        if !care.apply_economy(&mut self.vitals.economy) {
+        if !care.apply_economy(&mut self.vitals.economy, who) {
             return None;
         }
         self.last_actor = Some(who);
@@ -3259,9 +3289,9 @@ mod economy_tests {
         fn a_stock_has_a_ceiling_or_there_is_no_reason_to_be_efficient() {
             let mut e = Economy::default();
             for _ in 0..100 {
-                e.nuants = (e.nuants + 5.0).min(Economy::MAX_NUANTE);
+                e.nuants = (e.nuants + 5.0).min(Economy::MAX_NUANTS);
             }
-            assert_eq!(e.nuants, Economy::MAX_NUANTE);
+            assert_eq!(e.nuants, Economy::MAX_NUANTS);
         }
 
         #[test]
@@ -3275,19 +3305,19 @@ mod economy_tests {
             // production and acting is not production.
             let mut e = Economy::default();
             for _ in 0..500 {
-                e.nuants = Economy::MAX_NUANTE;
+                e.nuants = Economy::MAX_NUANTS;
                 e.quants =
-                    (e.quants + 0.5 * (Economy::MAX_CUANTE - e.quants)).min(Economy::MAX_CUANTE);
+                    (e.quants + 0.5 * (Economy::MAX_QUANTS - e.quants)).min(Economy::MAX_QUANTS);
             }
             // To a tolerance, because the increment shrinks with the distance to
             // the ceiling and a float approaches 1.0 without landing on it. An
             // exact equality here would have been a test that could only ever
             // fail, which is a way of saying nothing.
             assert!(
-                (e.quants - Economy::MAX_CUANTE).abs() < 1e-9,
+                (e.quants - Economy::MAX_QUANTS).abs() < 1e-9,
                 "power settled at {} rather than at the ceiling {}",
                 e.quants,
-                Economy::MAX_CUANTE
+                Economy::MAX_QUANTS
             );
         }
 
@@ -3299,7 +3329,7 @@ mod economy_tests {
             let mut e = Economy::default();
             let start_power = e.quants;
             let mut acts = 0;
-            while Care::Play.apply_economy(&mut e) {
+            while Care::Play.apply_economy(&mut e, Who::Itself) {
                 acts += 1;
             }
             assert_eq!(acts, 8, "12 nuants at 1.5 each");
@@ -3313,7 +3343,7 @@ mod economy_tests {
                 e.quants
             );
             assert!(
-                e.quants < Economy::MAX_CUANTE,
+                e.quants < Economy::MAX_QUANTS,
                 "power reached {} which is its ceiling, so the resources were not the binding constraint",
                 e.quants
             );
@@ -3335,9 +3365,13 @@ mod economy_tests {
             // Not "sustains the rate", which is what this test used to say and
             // what the economy used to do. An act is consumption and nothing
             // more; the power rises only when induction credits production.
+            //
+            // Through the creature's own door, because through the player's door
+            // feeding is a gift and costs nothing. Both are tested; conflating
+            // them is what this comment exists to prevent.
             let mut p = pet();
             let before = p.vitals.economy.clone();
-            assert!(p.tend(Care::Feed).is_some());
+            assert!(p.tend_as_self(Care::Feed).is_some());
             assert!(p.vitals.economy.nuants < before.nuants, "spent resources");
             assert!(
                 p.vitals.economy.quants < before.quants,
@@ -3357,14 +3391,31 @@ mod economy_tests {
         }
 
         #[test]
-        fn a_broke_creature_can_still_sleep_and_grow() {
-            // The one escape from an empty tank, and the reason the game is
-            // winnable after a long absence.
+        fn a_broke_creature_cannot_help_itself_but_a_person_can_still_help_it() {
+            // The two escapes from an empty tank, and they are different escapes.
+            //
+            // This test used to assert that a broke creature could not be fed and
+            // could only sleep, which was true and was the whole of what the
+            // player's door did. Feeding now *brings* nuants rather than spending
+            // them, so a person can always refill and a creature can never.
             let mut p = pet();
             p.vitals.economy.nuants = 0.0;
-            assert!(p.tend(Care::Feed).is_none());
-            assert!(p.tend(Care::Sleep).is_some(), "sleep is free");
-            assert_eq!(p.vitals.economy.nuants, 0.0, "and still costs nothing");
+            assert_eq!(p.vitals.economy.posture(), "empty");
+
+            assert!(
+                p.tend_as_self(Care::Feed).is_none(),
+                "a broke creature refilled itself, and it has nothing to refill from"
+            );
+            assert!(
+                p.tend(Care::Feed).is_some(),
+                "a person brought it food, and food is what a person brings"
+            );
+            assert!(
+                p.vitals.economy.nuants > 0.0,
+                "and the act left it with something to act with, at {}",
+                p.vitals.economy.nuants
+            );
+            assert!(p.tend_as_self(Care::Sleep).is_some(), "sleep is free");
         }
 
         /// A stuck creature cannot help itself, and a person can still help it.
@@ -3377,7 +3428,7 @@ mod economy_tests {
             let mut p = pet();
             p.vitals.economy = Economy {
                 quants: 0.0,
-                nuants: Economy::MAX_NUANTE,
+                nuants: Economy::MAX_NUANTS,
             };
             // Its own door is shut, and a full tank does not open it.
             assert!(
@@ -3453,7 +3504,7 @@ mod economy_tests {
             }
             assert_eq!(
                 p.vitals.economy.quants,
-                Economy::FLOOR_CUANTE,
+                Economy::FLOOR_QUANTS,
                 "the floor is a floor"
             );
         }
@@ -3500,11 +3551,11 @@ mod economy_tests {
             let space = Pet::state_space_manifest();
             assert_eq!(
                 space["quants"]["range"][1],
-                serde_json::json!(Economy::MAX_CUANTE)
+                serde_json::json!(Economy::MAX_QUANTS)
             );
             assert_eq!(
                 space["nuants"]["range"][1],
-                serde_json::json!(Economy::MAX_NUANTE)
+                serde_json::json!(Economy::MAX_NUANTS)
             );
         }
 
@@ -3573,7 +3624,7 @@ mod floor_tests {
     #[test]
     fn the_floor_is_below_the_usable_threshold_not_at_zero() {
         let at_floor = Economy {
-            quants: Economy::FLOOR_CUANTE,
+            quants: Economy::FLOOR_QUANTS,
             nuants: 100.0,
         };
         assert!(
@@ -3587,7 +3638,7 @@ mod floor_tests {
         for _ in 0..500 {
             Care::Sleep.decay_economy(&mut e);
         }
-        assert_eq!(e.quants, Economy::FLOOR_CUANTE);
+        assert_eq!(e.quants, Economy::FLOOR_QUANTS);
     }
 
     /// The route out of being stuck, which used to be sleep and is now teaching.
@@ -3609,7 +3660,7 @@ mod floor_tests {
     fn a_stuck_creature_is_lifted_by_being_taught_not_by_being_fed() {
         let mut p = Pet::new("ca-f");
         p.vitals.economy = Economy {
-            quants: Economy::FLOOR_CUANTE,
+            quants: Economy::FLOOR_QUANTS,
             nuants: 20.0,
         };
         assert_eq!(p.vitals.economy.posture(), "stuck");
@@ -3700,7 +3751,7 @@ mod floor_tests {
         let space = Pet::state_space_manifest();
         assert_eq!(
             space["quants"]["usable_above"],
-            serde_json::json!(Economy::FLOOR_CUANTE)
+            serde_json::json!(Economy::FLOOR_QUANTS)
         );
     }
 }
@@ -3736,7 +3787,7 @@ mod production_tests {
         let start = p.vitals.economy.quants;
 
         for _ in 0..12 {
-            p.tend(Care::Feed);
+            p.tend_as_self(Care::Feed);
             p.learn(nothing.clone());
         }
 
@@ -3756,12 +3807,12 @@ mod production_tests {
         let mut p = Pet::new("ca-p");
         let nothing: Vec<LearnedRule> = Vec::new();
         let after_one = {
-            p.tend(Care::Feed);
+            p.tend_as_self(Care::Feed);
             p.learn(nothing.clone());
             p.vitals.economy.quants
         };
         for _ in 0..8 {
-            p.tend(Care::Feed);
+            p.tend_as_self(Care::Feed);
             p.learn(nothing.clone());
         }
         assert!(p.vitals.economy.quants < after_one, "and it keeps costing");
@@ -3771,7 +3822,7 @@ mod production_tests {
     fn a_new_sentence_for_a_known_act_is_production() {
         let mut p = Pet::new("ca-p");
         let mut held: Vec<LearnedRule> = Vec::new();
-        p.tend(Care::Feed);
+        p.tend_as_self(Care::Feed);
         held.push(rule(
             Care::Feed.signature(),
             "addr-feed",
@@ -3843,7 +3894,7 @@ mod production_tests {
         let mut p = Pet::new("ca-p");
         let start = p.vitals.economy.quants;
         for _ in 0..50 {
-            p.tend(Care::Play);
+            p.tend_as_self(Care::Play);
         }
         assert!(p.vitals.economy.quants < start);
     }
@@ -3876,7 +3927,7 @@ mod production_tests {
 
         for i in 0..20 {
             teach(&mut producer, &mut held, &mut words, &mut confidence, i);
-            repeater.tend(Care::Feed);
+            repeater.tend_as_self(Care::Feed);
             repeater.learn(nothing.clone());
 
             let (p, r) = (
@@ -3967,7 +4018,7 @@ mod production_tests {
         confidence: &mut f64,
         i: usize,
     ) {
-        p.tend(Care::Feed);
+        p.tend_as_self(Care::Feed);
         if i < 4 {
             let addr = format!("addr-{i}");
             let phrase = format!("a phrase for act {i}");
@@ -3996,7 +4047,7 @@ mod production_tests {
         let mut repeater = Pet::new("ca-p");
         let nothing: Vec<LearnedRule> = Vec::new();
         for _ in 0..12 {
-            repeater.tend(Care::Feed);
+            repeater.tend_as_self(Care::Feed);
             repeater.learn(nothing.clone());
         }
         assert_eq!(
@@ -4014,13 +4065,80 @@ mod production_tests {
         // mistake first and the expensive one later.
         let mut p = Pet::new("ca-p");
         p.vitals.economy = Economy {
-            quants: Economy::FLOOR_CUANTE,
-            nuants: Economy::MAX_NUANTE,
+            quants: Economy::FLOOR_QUANTS,
+            nuants: Economy::MAX_NUANTS,
         };
         assert_eq!(p.vitals.economy.posture(), "stuck");
         assert!(
             p.vitals.economy.nuants > 0.0,
             "with resources it never used"
+        );
+    }
+}
+
+#[cfg(test)]
+mod gift_tests {
+    use super::*;
+
+    /// A person's feeding brings resources; the creature's own spending them is
+    /// the only way a resource ever goes down.
+    ///
+    /// This is the difference between the two doors, stated as one property so a
+    /// future change has to break a test rather than quietly invert an economy.
+    /// It was added because playing found the alternative: `nuants` were only
+    /// ever decremented, so a creature that spent them all was unrecoverable, and
+    /// a player could not even feed it — three teaching phrasings against a
+    /// creature at zero were all refused, with nothing able to raise it.
+    #[test]
+    fn a_person_brings_resources_and_a_creature_only_spends_them() {
+        let mut p = Pet::new("ca-p");
+        let start = p.vitals.economy.nuants;
+
+        p.tend(Care::Feed);
+        let after_person = p.vitals.economy.nuants;
+        assert!(
+            after_person > start,
+            "a person fed a creature and its resources went from {start} to \
+         {after_person}; food is what a person brings"
+        );
+
+        p.tend_as_self(Care::Feed);
+        assert!(
+            p.vitals.economy.nuants < after_person,
+            "the creature then fed itself and its resources rose to {}; it has \
+         nothing to feed itself with",
+            p.vitals.economy.nuants
+        );
+    }
+
+    /// Only feeding is a gift, because if every act were free to the player there
+    /// would be no economy and if none were the player could rescue nothing.
+    #[test]
+    fn playing_and_cleaning_are_not_gifts() {
+        let mut p = Pet::new("ca-p");
+        for care in [Care::Play, Care::Clean, Care::Sleep] {
+            let before = p.vitals.economy.nuants;
+            p.tend(care);
+            let after = p.vitals.economy.nuants;
+            assert!(
+                after <= before,
+                "{} raised the resources from {before} to {after}, and only \
+             feeding brings anything",
+                care.label()
+            );
+        }
+    }
+
+    /// A person feeding does not debit the power, because the debit is for a
+    /// creature repeating itself and someone holding a bowl is not that.
+    #[test]
+    fn a_person_feeding_a_creature_does_not_weaken_it() {
+        let mut p = Pet::new("ca-p");
+        let before = p.vitals.economy.quants;
+        p.tend(Care::Feed);
+        assert_eq!(
+            p.vitals.economy.quants, before,
+            "being fed cost the creature power; only its own repetition does that"
         );
     }
 }
