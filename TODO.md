@@ -452,14 +452,29 @@ never as anything that determines identity.
   can learn ends up weaker than one still learning, and the long game is
   decay. Pinned as a test so it cannot be rediscovered in play. Also blocks
   meeting, handover, and the primitive protocol.
-- [ ] **The meet, concretely.** `Denominator` is meant to be a greatest lower
-  bound over primitive sequences — the largest sequence substitutable in both
-  witnesses — and nothing in the tree implements it. It is also the honest
-  explanation for retrieval's 2 false positives: a partial order has no
-  threshold, so 0.2236 and 0.2197 are *adjacent*, not separable, and the fix
-  is an instance check rather than a better score. Meanwhile `acting` is not a
-  meet at all but composition in a monoid (`feed; sleep` ≠ `sleep; feed`),
-  which is why patterning and acting cannot be one operation.
+- [x] **The meet, concretely.** Done, in `src/meet.rs`. The order is the
+  subsequence relation — gaps allowed, order not — chosen because a prefix order
+  is too strict (a trace can interleave a primitive the rule does not name) and a
+  set order is too loose (it forgets order, which is what makes a sequence a word
+  in a monoid rather than a bag). `meet` is the longest common subsequence with
+  the tie broken toward the lexicographically least, which is what makes it a
+  function of its two arguments and lets the four lattice laws be tested at all;
+  without that, `AB`/`BA` would have no unique answer and commutativity would fail
+  for a reason that has nothing to do with lattices. Reflexive, antisymmetric,
+  transitive, and the meet is a real greatest lower bound — the first
+  implementation returned the empty sequence for `meet(a, a)`, which satisfies
+  every lattice law and is not a meet.
+- [ ] **Swap the retrieval scorer for the decidable check.** The check exists and
+  is measured, but the pipeline still calls `score_phrase`, so **the 2 false
+  positives are still there.** Switching needs `meet::serves`, not
+  `meet::instantiates`, and the difference is the finding: against a whole act
+  `instantiates` is exact, but a *one*-primitive candidate is instantiated by
+  every witness containing that primitive, because the subsequence relation is
+  monotone and the smaller the candidate the more witnesses stand above it. The
+  false positives score 0.2236 and 0.2197 against 0.2041, so they are exactly the
+  thin-coverage candidates where the cheap check has nothing to say. `serves` adds
+  the clause that closes it — the candidate must be a *whole declared act*, so a
+  fragment of one is served by nothing.
 - [ ] **Is there a civilisation at all?** The instrument above plus shared
   denominators. The honest starting position: 12 hand-written patterns with
   **0** shared capabilities — twelve solitaries, one author, one intent — and

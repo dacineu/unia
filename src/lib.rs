@@ -6,6 +6,7 @@ pub mod harvester;
 pub mod identifiers;
 pub mod learner;
 pub mod mcp;
+pub mod meet;
 pub mod meta_actuators;
 pub mod node;
 pub mod nucleus;
