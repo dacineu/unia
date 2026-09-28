@@ -162,26 +162,43 @@ already claimed in this project — `unia`, `unia-OS`, `UPA`, `DU-UUID`, `Matter
 - **Multiplayer?** Digimon's linked interaction and the mesh architecture suggest
   two pets meeting. That is the most interesting version and the most scope.
 
-## The economy: cuante and nuante
+## The economy: quants and nuants
 
 Two declared quantities, and the names are crossed against their physics on
 purpose. In quantum computing a quantum is a unit of *consumed* computing power.
-Here **cuante is productivity** — a power the creature has and sustains — and
-because that word is then taken, the thing it actually spends needed a name of
-its own: **nuante**, which in plain terms is resources.
+Here **a quant is productivity** — a power the creature has and sustains and
+never spends — and because that word is then taken, the thing it actually spends
+needs a name of its own: **nuants**, which in plain terms is resources.
 
 | | kind | failure | means |
 | --- | --- | --- | --- |
-| **cuante** | a power, sustained | `stuck` | it has resources and no power |
-| **nuante** | a stock, spent | `empty` | it has power and no resources |
+| **quants** | a power, sustained | `stuck` | it has nuants and no power |
+| **nuants** | a stock, spent | `empty` | it has power and nothing to act with |
 
-They are separate because they fail differently. `endurance` — nuante divided by
-cuante — is the number that makes them comparable at all: a *duration*, not an
+They are separate because they fail differently. `endurance` — nuants divided by
+quants — is the number that makes them comparable at all: a *duration*, not an
 amount, and shorter for a weaker creature.
 
-Actions spend nuante and raise cuante. The increment shrinks as cuante approaches
-its ceiling, so the last stretch of power is the hardest. Neglect drains nuante
-absolutely and decays cuante proportionally, toward a floor rather than to zero.
+**An act spends. Induction pays.** The first version credited the power on every
+act, so feeding a creature the same sentence twelve times took it from 0.500 to
+0.694 with nothing learned — repetition paying as if it were production, a
+currency that pays for rumination. Now an act spends nuants and *debits* the
+power, and the only path up is `Pet::learn`, handed an induction result that
+contains something the previous one did not. Production is four countable
+integers: new rules, new signatures, new phrasings, and rules already known that
+became more reliable. The same twelve acts now end at 0.157.
+
+A new act is worth far more than a new sentence for a known act, and that is a
+claim about what matters: nobody gained because the same sentence arrived in a
+different language, and a great deal because a new act became possible. Measured
+over twenty acts, production beats repetition at *every* act and the margin
+grows monotonically, 1.20 to 2.47.
+
+Two open limits, both pinned as tests rather than balanced around. There are four
+built-in acts, so novelty saturates and the implied equilibrium sits *below* the
+peak: a creature that has learned everything it can still declines. And
+`nuants` are only ever decremented, so a creature that spends them all is dead
+for good.
 
 **Two things that playing found, which reading did not:**
 

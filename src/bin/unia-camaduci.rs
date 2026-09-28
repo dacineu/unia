@@ -551,7 +551,7 @@ fn trace_for(
 /// would say the pet had been shown to be worthless.
 fn state(pet: &Pet) -> String {
     format!(
-        r#"{{"id":{},"address":{},"stage":{},"age_ticks":{},"hunger":{:.3},"happiness":{:.3},"health":{:.3},"mood":{},"cuante":{:.3},"nuante":{:.2},"endurance":{:.1},"posture":{},"quarantined":{},"primitives":{},"learned":{},"summary":{}}}"#,
+        r#"{{"id":{},"address":{},"stage":{},"age_ticks":{},"hunger":{:.3},"happiness":{:.3},"health":{:.3},"mood":{},"quants":{:.3},"nuants":{:.2},"endurance":{:.1},"posture":{},"quarantined":{},"primitives":{},"learned":{},"summary":{}}}"#,
         json_str(&pet.id),
         // The creature's content address: what it *is*, with nothing it has
         // learned and nothing it has done. Two players holding this creature
@@ -564,12 +564,12 @@ fn state(pet: &Pet) -> String {
         pet.vitals.happiness,
         pet.vitals.health,
         json_str(&pet.vitals.mood()),
-        // The economy. `cuante` is the power it acts at and `nuante` the
+        // The economy. `quants` is the power it acts at and `nuants` the
         // resources it spends; `endurance` is the number that makes the two
         // comparable at all, being a duration rather than an amount and shorter
         // for a weaker creature.
-        pet.vitals.economy.cuante,
-        pet.vitals.economy.nuante,
+        pet.vitals.economy.quants,
+        pet.vitals.economy.nuants,
         pet.vitals.economy.endurance(),
         json_str(pet.vitals.economy.posture()),
         pet.quarantined,
