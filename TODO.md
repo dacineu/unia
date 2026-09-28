@@ -82,6 +82,11 @@ not intentions.
 
 ## The missing experiment
 
+- [ ] **Measure declared completeness.** How much of what the system is asked to
+  do is covered by a declaration it can check. This is the quantity RLVR is
+  bounded by, it is measurable today, and it is a better diagnostic than
+  escalation rate because it reports what the system *cannot* learn rather than
+  what it currently does not.
 - [ ] **Measure an escalation rate.** This is the number that supports or refutes
   C1 in `docs/LARGE-PATTERN-MODELS.md`. It requires a corpus larger than two
   artifacts and does not exist yet. **Stage 4 of the plan above is what makes it
@@ -136,11 +141,26 @@ no vocabulary to speak. `ExternalApi::call` returns a formatted echo and there i
 no HTTP client in the crate. Induced candidates are never written to `patterns/`,
 so a learned signature matches nothing on the next pass.
 
+- [ ] **Stage −1 — make the verifier real.** Evaluate `constraints` (D5, above).
+  Precedes every stage including Stage 0, because a learning loop against an
+  unchecked verifier optimises the wrong thing and reports progress doing it.
 - [ ] **Stage 0 — a vocabulary, with no model in it.** Replace `Care::parse`'s
   four literals with surface → primitive sequence over what already exists: the
   store's IDF-weighted scorer for candidates, `tokenize_id` + `PRIMITIVE_TABLE`
   for the mapping. *Acceptance:* "give it some kibble" acts, with no model
-  configured and no network.
+  configured and no network. **The corpus is this stage's training data, not a
+  separate task**: Karpathy's method for adding an ability is a task generator
+  (nanochat discussion #164), and the analogue is a *manifest generator* emitting
+  artifacts with declared state spaces and overlapping primitives. It unblocks the
+  cold start, the escalation measurement and convergence at once, which is why it
+  belongs here rather than at the end.
+- [ ] **Give mutation a behavioural effect or remove it from the address.**
+  `MutationEngine::mutate` appends a marker to `guidance` and adds a `provenance`
+  block, which changes the content address while leaving actions and state space
+  identical. That is a training signal rewarding an identity change with no
+  behavioural change — the spurious-reward failure in miniature. *Acceptance:*
+  either a mutation alters an action or a state space, or the child keeps the
+  parent's address.
 - [ ] **Stage 1 — the contradiction gate.** Check every term the intent proposes
   to set against the addressed artifact's declared `state_space`; on a
   contradiction, ask and execute nothing. *Acceptance:* the 20-case fixture
@@ -281,8 +301,15 @@ an escalation.
   is why the broken `term_idf` survived two commits. The corpus views load and
   are verified; the ranking path raises a type-coercion error and is not
   callable.
-- [ ] **Close divergence D5** — constraints must gate dispatch. The safety
-  argument in the paper currently rests on the evidence gate alone.
+- [ ] **Close divergence D5 — constraints must gate dispatch.** Promoted to
+  first priority by [`docs/where-reasoning-comes-from.md`](./docs/where-reasoning-comes-from.md).
+  It was recorded as "the second pillar of the safety argument"; under a
+  verifiable-reward loop it is **the reward function**. A verifier that does not
+  check the declared preconditions is partly a random verifier, and random rewards
+  buy most of the apparent gain on MATH-500 (21.4% vs 29.1% from ground truth).
+  Everything the creature learns is a function of this, so no learning loop should
+  run before it is closed. *Acceptance:* a manifest declaring `status != 'fault'`
+  dispatches when the condition holds and is refused when it does not.
 - [ ] **Generate `Lifecycle` from one source.** It is mirrored by hand between
   `src/gc.rs` and `database/duckdb/001_schema.sql`; drift would silently retire
   artifacts the index still serves.

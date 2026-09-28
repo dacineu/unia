@@ -79,6 +79,32 @@ of fact as the convergence equality test — set equality rather than a threshol
 stops when the architecture's own declarations contradict the request, and stays
 silent otherwise, needs no judgement of its own.
 
+## 2a. Two corrections, after reading the primary sources
+
+Added after [`where-reasoning-comes-from.md`](./where-reasoning-comes-from.md).
+Both of these were wrong in this document, and one was wrong in the project's
+favour.
+
+**The teacher is not scaffolding. It is the only mechanism known to add
+capability.** [RLVR gains are bounded by the base model][neurips]: six popular
+algorithms perform similarly, none fully exploits what the base contains, and
+distillation from a teacher is what genuinely expands reasoning. Most RLVR gain is
+search compression — `pass@k` to `pass@1` — not capability. So Stage 3 is not an
+accelerator to be swapped out once the internal matcher works. It is the supply
+of new capability, and the internal matcher is what takes over afterwards.
+"Independence" means the teacher internalised its sequences, not that the teacher
+went away.
+
+**D5 is not the safety argument's second pillar. It is the reward function.**
+`constraints` is declared and never evaluated, which under a verifiable-reward
+loop is a partly-random verifier — and [random rewards buy most of the
+apparent gain on MATH-500][spurious]. Everything the creature learns is a
+function of the verifier. D5 therefore moves ahead of all model work, and until
+it is closed any learning loop is optimising an unchecked signal.
+
+[neurips]: https://neurips.cc/virtual/2025/poster/119944
+[spurious]: https://www.promptfoo.dev/blog/rlvr-explained
+
 ## 3. Target
 
 ```
@@ -166,6 +192,16 @@ this in all four forms — prose for a person, pseudocode or data for a peer.
 
 Each stage has an acceptance criterion that can fail.
 
+### Stage −1 — Make the verifier real
+
+Evaluate `constraints`. This is divergence D5 and it precedes everything,
+including Stage 0, because a learning loop run against an unchecked verifier
+optimises the wrong thing and reports progress while doing it.
+
+*Acceptance:* a manifest declaring `status != 'fault'` is dispatched when the
+condition is false and refused when it is true. The corpus's two constrained
+actions are the fixtures.
+
 ### Stage 0 — A vocabulary, with no model in it
 
 `Care::parse` accepts four literals. Replace it with surface → primitive
@@ -174,6 +210,16 @@ candidate artifacts, and `tokenize_id` + `PRIMITIVE_TABLE` for the mapping.
 
 *Acceptance:* a player can say "give it some kibble" and the creature acts, with
 no model configured and no network.
+
+**The corpus is this stage's training data, and it is not a separate task.** The
+missing corpus — twelve artifacts with zero shared capabilities — blocks the
+escalation rate, leaves the cold-start stage with nothing to imitate, and starves
+convergence. [Karpathy's method for adding an ability is a task generator][164];
+the analogue here is a **manifest generator** emitting artifacts with declared
+state spaces and overlapping primitives. One generator unblocks three of the
+project's open items, which is why it belongs at Stage 0 and not at the end.
+
+[164]: https://github.com/karpathy/nanochat/discussions/164
 
 *This is not the interesting part and it is first anyway*, because every later
 stage needs something to transduce. A vocabulary model with nothing to say is not
@@ -214,8 +260,16 @@ One trait, two implementations, so the comparison is real rather than rhetorical
 The external model **transduces only**. It maps surface onto a primitive
 sequence drawn from the artifact's declared actions. It cannot introduce a
 primitive (P2), it cannot see or write architecture state, and its output is
-validated against the declaration before anything acts on it. It is an
-accelerator with no authority, which is the only safe way to add one.
+validated against the declaration before anything acts on it. It is a supplier
+with no authority, which is the only safe way to add one.
+
+**This is the distillation stage and it is the only one that adds capability.**
+Per [the NeurIPS analysis][neurips], RLVR is bounded by the base model and
+distillation is what expands it. So the teacher's job is to produce sequences the
+creature cannot currently produce, and the escalation rate measures how much of
+the teacher's repertoire has moved across. A teacher that only ever confirms
+what the creature already does is not a teacher; it is a slower path to the same
+place.
 
 *Acceptance:* both implementations satisfy P1–P3 identically; the external one is
 additionally shown to be unable to emit an undeclared primitive under adversarial
@@ -271,6 +325,16 @@ be read the same way.
 - **Escalation rate will not be a large number.** Twelve artifacts with zero
   shared capabilities cannot produce one. Stages 0–4 make it *measurable*; they
   do not make it impressive, and the corpus is still the binding constraint.
+- **Whether distillation transfers to artifacts rather than weights.** Every
+  result cited here is about models. Moving a behaviour into a content-addressed
+  artifact and then serving it without the teacher has no published analogue I
+  could find. That gap is the research contribution and it is also the largest
+  risk in the plan.
+- **Whether a 16-primitive vocabulary is a feature or a limit depends on the
+  axis, and I conflated them.** For the reliability of each step it is the
+  enabling structure — small steps are dependable steps, which is the whole
+  decomposition argument. For open-domain coverage it is a hard limit. The
+  reasoning claim depends on the first; it does not survive the second.
 - **The external model is not required for any of this.** Everything through
   Stage 4 works offline. Adding one is a question of manners and cost, not of
   capability, and the design should not come apart if the answer is never.

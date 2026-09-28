@@ -299,6 +299,7 @@ that were wrong in this project's own favour. Two of the more expensive lessons:
 | [`docs/DISCUSSION-evolution-and-identity.md`](./docs/DISCUSSION-evolution-and-identity.md) | The study record: what was tried, what was measured, what was retracted |
 | [`docs/camaduci-game.md`](./docs/camaduci-game.md) | The game, and the revisions the research forced on it |
 | [`docs/creature-as-intermediary.md`](./docs/creature-as-intermediary.md) | The plan for making the creature the intermediary in the request path |
+| [`docs/where-reasoning-comes-from.md`](./docs/where-reasoning-comes-from.md) | What the primary sources say reasoning requires, and where this project was wrong |
 | [`docs/camaduci.md`](./docs/camaduci.md) | Creature mechanics and the prior art they draw on |
 | [`docs/signalling.md`](./docs/signalling.md) | The peer-to-peer relay |
 | [`docs/whitepaper/whitepaper_unia.tex`](./docs/whitepaper/whitepaper_unia.tex) | LaTeX source of the whitepaper (compiles to 8pp) |
