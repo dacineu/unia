@@ -101,8 +101,24 @@
         <div class="track"><div class="fill" id="health"></div></div>
         <span class="val" id="healthv">—</span>
       </div>
+      <!-- The economy, which this page never showed. quants is the power the
+           creature acts at; nuants is the stock it spends. An act debits one and
+           production credits the other, and with neither on screen no choice had a
+           price. -->
+      <div class="meter">
+        <label>Quants <em>(power)</em></label>
+        <div class="track"><div class="fill" id="quants"></div></div>
+        <span class="val" id="quantsv">—</span>
+      </div>
+      <div class="meter">
+        <label>Nuants <em>(stock)</em></label>
+        <div class="track"><div class="fill" id="nuants"></div></div>
+        <span class="val" id="nuantsv">—</span>
+      </div>
     </div>
 
+    <!-- B: the player acts. These four have no power gate; a person feeding the
+         creature does not debit its quants. -->
     <div class="actions">
       <button data-care="feed">Feed</button>
       <button data-care="play">Play</button>
@@ -110,7 +126,16 @@
       <button data-care="sleep">Sleep</button>
     </div>
 
+    <!-- A: the creature tends itself, and it may only act while it can afford to.
+         "Feed (itself)" is therefore a *different* act from "Feed" above, and the
+         page says which mode it is in rather than letting them blur. -->
+    <div class="actions">
+      <button id="self">A — feed itself</button>
+      <button id="who">authorship</button>
+    </div>
+
     <p class="status" id="status">connecting…</p>
+    <p class="status" id="mode">B — you are playing. The creature has not acted yet.</p>
 
     <div class="motto">
       <q id="motto">…</q>
@@ -246,6 +271,15 @@
         set("health", st.health);
         c.className = dead ? "dead" : "";
         document.querySelectorAll("button").forEach((b) => (b.disabled = dead));
+        // The economy, which the page never showed. quants is the power it acts
+        // at and nuants the stock it spends; an act debits one and production
+        // credits the other, so with these on screen a choice finally has a price.
+        if (st.quants !== undefined) {
+          set("quants", st.quants);
+          set("nuants", st.nuants);
+          set("quantsv", st.quants.toFixed(3));
+          set("nuantsv", st.nuants.toFixed(2));
+        }
         document.getElementById("status").innerHTML = dead
           ? "The pet is <b>gone</b>. It was quarantined, not deleted — its traces are still on disk. Restart the server to begin again."
           : "Stage <b>" + st.stage + "</b> · " + st.age_ticks +
@@ -295,6 +329,61 @@
           }
         });
       });
+
+      // Option A and option B, and the difference between them is not cosmetic.
+      //
+      // A: the creature tends ITSELF, through /api/tend, which is power-gated --
+      //    it may only act while it can afford to. Nobody has to be here.
+      // B: the player acts, through the buttons above, and that path has no power
+      //    gate at all. A person feeding the creature does not debit its quants.
+      //
+      // So the same four acts cost the creature power when it chooses them and
+      // cost the player nothing. Rendering that is the point of having both.
+      async function selfTend(care) {
+        const btn = document.getElementById("self");
+        btn.disabled = true;
+        document.getElementById("mode").textContent =
+          "A — the creature tends itself: " + care;
+        try {
+          const r = await fetch("/api/tend", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ care }),
+          });
+          const st = await r.json();
+          if (st.error) {
+            // A refusal is information. "It could not afford to" is a different
+            // answer from "it did not want to", and the page says which.
+            document.getElementById("mode").textContent =
+              "A — refused: " + st.error;
+            if (st.state) apply(st.state);
+          } else apply(st.state || st);
+        } catch (e) {
+          document.getElementById("mode").textContent = "Lost the server: " + e;
+        }
+        await refresh();
+        btn.disabled = false;
+      }
+
+      async function authorship() {
+        try {
+          const r = await fetch("/api/authorship", { cache: "no-store" });
+          const a = await r.json();
+          const share = a.self_directed === undefined || a.self_directed === null
+            ? "no creature has acted yet"
+            : (a.self_directed * 100).toFixed(0) + "% of the acts were its own";
+          document.getElementById("mode").textContent =
+            "authorship — " + share + " (" + (a.player || 0) +
+            " yours, " + (a.itself || 0) + " its own, " + (a.caller || 0) + " from a caller)";
+        } catch (e) {
+          document.getElementById("mode").textContent = "Cannot read authorship: " + e;
+        }
+      }
+
+      document.getElementById("self").addEventListener("click", () =>
+        selfTend("Feed")
+      );
+      document.getElementById("who").addEventListener("click", authorship);
 
       async function loadMotto() {
         try {
