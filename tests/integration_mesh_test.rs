@@ -34,12 +34,19 @@ mod integration_tests {
             .unwrap();
         let response = slm.execute("Make me money", &activation).unwrap();
 
-        assert!(response.text.contains("FAST_EXECUTION"));
-        assert!(response.tokens_used <= activation.token_budget);
-        println!(
-            "Quickest Path: {} tokens, steps: {}",
-            response.tokens_used, response.reasoning_steps
+        // The mode is visible in the answer, which is what this test is for.
+        assert!(response.text.contains("[direct]"));
+        // **No budget assertion, because there is no cost to check.** The old
+        // test asserted `tokens_used <= token_budget` against a number the mock
+        // had invented, which passed by arithmetic fiction: the comparison was
+        // between two fabricated quantities. `None` is the honest answer and it
+        // makes the check disappear rather than pass.
+        assert_eq!(
+            response.tokens(),
+            None,
+            "a mock cannot exceed a budget it never incurred"
         );
+        println!("Quickest Path: cost not measured (mock)");
 
         // 4. Scenario: User wants "Smartest" execution
         let activation_smart = orchestrator
@@ -47,11 +54,17 @@ mod integration_tests {
             .unwrap();
         let response_smart = slm.execute("Make me money", &activation_smart).unwrap();
 
-        assert!(response_smart.text.contains("DEEP_REASONING"));
-        assert!(response_smart.reasoning_steps > 1);
-        println!(
-            "Smartest Path: {} tokens, steps: {}",
-            response_smart.tokens_used, response_smart.reasoning_steps
+        assert!(response_smart.text.contains("[analysis -> validation]"));
+        // The old assertion here was `reasoning_steps > 1`. It passed when the
+        // fabrication was convincing, so it was a test of the lie rather than of
+        // the system, and no correct implementation could satisfy it. What
+        // replaces it says what is actually true: the deeper mode is observable
+        // in the answer, and neither mode claims a cost for the difference.
+        assert_ne!(
+            response_smart.text, response.text,
+            "the two modes differ, which is the property the configuration affects"
         );
+        assert_eq!(response_smart.tokens(), None, "and neither claims a price");
+        println!("Smartest Path: cost not measured (mock)");
     }
 }

@@ -73,13 +73,26 @@ you and confusing them is how a project spends a year on the wrong one.
    engine would take, in fields named after those measurements — the same defect
    as the three `MetaActuatorType` stubs, and worse, because the demos run on it.
    Either the fields go or the mock stops claiming them.
-13. **There is no inference engine and no route for doubt out.** No tokenizer, no
-   model, no HTTP client. `SemanticSLM::build_prompt` has zero callers and
-   `map_intent_semantic` takes an `F: FnMut` that nothing supplies. The *shape* is
-   right — environment-agnostic, fetch injected, so native and wasm share it —
-   and it is unwired. The work: implement the fetch for both targets, put a
-   boundary where unresolvable doubt crosses it, and record the crossing with its
-   own signature so the model is *itself* a measurable capability.
+13. **~~`MockSlm` fabricated measurements.~~ Cleared.** It reported
+    `tokens_used: 450` and `reasoning_steps: 3` for a `format!` call, and a test
+    asserted `reasoning_steps > 1` — a suite whose only content was confirming
+    the fabrication was good. **The fix is not honest numbers, because there are
+    none: there is no engine.** `Measured` now exists and only a real engine can
+    populate it, so a mock returns `None` and the claim is *unrepresentable*
+    rather than merely false. A budget check against a mock disappeared instead
+    of passing, which is correct: it had been comparing two fabricated
+    quantities.
+14. **~~The route for doubt out did not exist.~~ Boundary built, transport
+    missing.** `src/doubt.rs` has the three things a bare HTTP call lacks: doubt
+    is a value carrying *why* it was unanswerable; a consultation is a trace with
+    a signature, so the engine is a capability subject to `clean` and induction
+    and **never the witness** (`succeeded` is `false` whatever came back); and a
+    refusal is a recorded failed trace, not an absence, so a system cannot learn
+    to work without asking. **Still missing: the `Resolver` implementation.** No
+    tokenizer, no model, no HTTP client, and `SemanticSLM::build_prompt` still has
+    zero callers. `Resolver` is a trait precisely so native `reqwest` and wasm
+    `fetch` can both implement it, and neither does yet.
+15. **A shadow is fan-out
 14. **A shadow is fan-out and hotswap is a promotion, and both are implemented.**
     `UpaDispatcher::shadow_routes` is commented "for hotswapping" but `route()`
     delivers to primary **and** shadow — for a counter, the act happens twice.

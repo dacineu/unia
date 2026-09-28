@@ -1,5 +1,6 @@
 pub mod bridge;
 pub mod clean;
+pub mod doubt;
 pub mod edit;
 pub mod evolution;
 pub mod fluid;

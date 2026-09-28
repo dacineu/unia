@@ -101,10 +101,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let response = slm.execute(user_goal, &activation)?;
     println!("\n🚀 FINAL SLM RESPONSE:\n--------------------------------------------------\n{}\n--------------------------------------------------", response.text);
-    println!(
-        "Metrics: {} tokens used, {} reasoning steps.",
-        response.tokens_used, response.reasoning_steps
-    );
+    match response.tokens() {
+        Some(t) => println!("Measured cost: {t} tokens"),
+        None => println!("Cost not measured: this answer came from a mock, not an engine."),
+    }
 
     Ok(())
 }

@@ -112,10 +112,13 @@ mod demo {
 
         let response = slm.execute(user_goal, &activation).unwrap();
         println!("\n🚀 FINAL SLM RESPONSE:\n--------------------------------------------------\n{}\n--------------------------------------------------", response.text);
-        println!(
-            "Metrics: {} tokens used, {} reasoning steps.",
-            response.tokens_used, response.reasoning_steps
-        );
+        // The mock reports no cost, and saying so is more useful than a number
+        // that was invented. A reader of this output learns the real thing: that
+        // nothing was measured, rather than that the model was fast.
+        match response.tokens() {
+            Some(t) => println!("Measured cost: {t} tokens"),
+            None => println!("Cost not measured: this answer came from a mock, not an engine."),
+        }
 
         println!("\n=== 🏁 DEMONSTRATION COMPLETE ===\n");
     }
