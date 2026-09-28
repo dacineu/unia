@@ -131,6 +131,53 @@ pub fn act_id(care: &Care) -> &'static str {
     }
 }
 
+/// Romanian phrasings of the same four acts, and **the same four actions**.
+///
+/// **This is a language edition of one capability, not a second capability.** A
+/// manifest's aliases are surface, and `skeleton` drops aliases before hashing, so
+/// adding every Romanian phrasing here leaves the capability address **exactly
+/// where it was**. That is not a convenience: it is what makes a claim in another
+/// language a *translation* rather than a new artifact, and it is the property
+/// that lets a peer be renamed into a language it does not speak without
+/// invalidating a single binding.
+///
+/// **The Romanian is authored, not induced.** It came from a speaker of the
+/// language, not from the engine on `127.0.0.1:8318` -- because the demonstration
+/// that matters here is the *addressing*, and a set of phrasings written by
+/// someone who also wrote the matcher would prove nothing about a transpiler.
+/// `docs/FIXTURE-SPEC.md`'s rule applies to a translation the same as to a
+/// fixture: the author must not have read the matcher, and this author has, so
+/// the phrasings are declared as hand-authored and are not evidence of anything
+/// except that the address does not move.
+pub const ROMANIAN: [(&str, &[&str]); 4] = [
+    ("feed", &["hrănește", "hrănește-l", "hrăni", "dă mâncare"]),
+    ("play", &["joacă", "joacă cu el", "joacă-te"]),
+    ("clean", &["curăță", "curăță-l", "fă curat"]),
+    ("sleep", &["dormi", "dormă", "culcă-te"]),
+];
+
+/// The creature's manifest in Romanian: the same acts, the same state space, and
+/// every English alias alongside every Romanian one.
+///
+/// **Both languages ship in one manifest.** A separate file per language was the
+/// obvious design and it is wrong here: the state space is a property of the
+/// creature, not of the language, and two files means two state spaces to keep in
+/// agreement. The aliases are the only thing that differs, and they are already
+/// a list.
+pub fn creature_ure_romanian(resource_id: &str) -> UreResource {
+    let mut ure = creature_ure(resource_id);
+    for action in &mut ure.action_primitives {
+        if let Some((_, ro)) = ROMANIAN.iter().find(|(id, _)| *id == action.id) {
+            let mut aliases = action.aliases.clone().unwrap_or_default();
+            aliases.extend(ro.iter().map(|s| s.to_string()));
+            aliases.sort();
+            aliases.dedup();
+            action.aliases = Some(aliases);
+        }
+    }
+    ure
+}
+
 #[cfg(test)]
 mod tests {
     //! Every test here is about the two ways this can go wrong silently: the
@@ -207,6 +254,75 @@ mod tests {
              editing it: a manifest that is maintained by hand is a manifest that \
              will disagree with the code, and `age_ticks` is the recorded instance \
              of exactly that."
+        );
+    }
+
+    /// **The load-bearing property of a translation.** Every act is the same, so
+    /// the capability address is the same — and a claim made in Romanian is the
+    /// *same claim* as one made in English rather than a new artifact that happens
+    /// to look similar.
+    #[test]
+    fn a_romanian_edition_does_not_move_the_capability_address() {
+        let en = creature_ure(DEFAULT_CREATURE_ID);
+        let ro = creature_ure_romanian(DEFAULT_CREATURE_ID);
+        let addr = |u: &UreResource| {
+            crate::identifiers::DuUuid::generate(
+                &serde_json::to_value(u).expect("serialises"),
+                None,
+            )
+            .map(|x| x.to_string())
+            .expect("hashes")
+        };
+        assert_eq!(
+            addr(&en),
+            addr(&ro),
+            "Romanian aliases moved the capability address, so every binding to the \
+             English creature would be left dangling by a translation"
+        );
+        // And the acts are the identical four, not a similar set.
+        let ids = |u: &UreResource| {
+            u.action_primitives
+                .iter()
+                .map(|a| a.id.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&en), ids(&ro), "the actions are the same four");
+    }
+
+    /// **And a Romanian phrase is reachable through an alias that an English
+    /// manifest does not carry.** Otherwise "a translation" is a file nobody can
+    /// reach, which is the failure the whole localisation question is about.
+    #[test]
+    fn a_romanian_phrasing_is_present_and_the_english_one_is_kept() {
+        let ro = creature_ure_romanian(DEFAULT_CREATURE_ID);
+        let feed = ro
+            .action_primitives
+            .iter()
+            .find(|a| a.id == "feed")
+            .expect("feed is declared");
+        let aliases: Vec<&str> = feed
+            .aliases
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        assert!(
+            aliases.contains(&"hrănește"),
+            "the Romanian phrasing is there"
+        );
+        assert!(
+            aliases.contains(&"feed"),
+            "and the English id is kept, because \
+             the id is what the address is computed from and the aliases are what \
+             a person reaches for"
+        );
+        // A diacritic survives, which is the part that would silently break a
+        // naive ASCII normaliser.
+        assert!(
+            aliases.iter().any(|a| a.contains('ă')),
+            "diacritics round-trip, so a fold that dropped them would make this \
+             phrase unreachable rather than merely differently spelled"
         );
     }
 
