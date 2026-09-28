@@ -9,10 +9,14 @@
   header { padding: 10px 16px; border-bottom: 1px solid #8883; }
   h1 { font-size: 14px; margin: 0 0 4px; font-weight: 600; }
   .sub { opacity: .7; }
+  #note { opacity: .6; font-size: 11px; padding: 4px 16px 0; }
+  #tabs { display: flex; gap: 8px; padding: 8px 16px 0; }
+  #tabs button { font: inherit; padding: 4px 10px; cursor: pointer; }
+  #tabs button.on { font-weight: 600; outline: 1px solid currentColor; }
   #legend { padding: 8px 16px; display: flex; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid #8883; }
   .k { display: flex; align-items: center; gap: 6px; }
   .sw { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-  svg { display: block; width: 100vw; height: calc(100vh - 110px); }
+  svg { display: block; width: 100vw; height: calc(100vh - 150px); }
   text { font: 11px ui-monospace, monospace; }
   .edge { stroke: #8886; }
   .n { cursor: pointer; }
@@ -24,6 +28,11 @@
   <h1>unia LPMM — architecture</h1>
   <div class="sub" id="stats">loading…</div>
 </header>
+<p id="note"></p>
+<div id="tabs">
+  <button id="t-cap" class="on">capabilities — what the system can do</button>
+  <button id="t-arch">architecture — what the system is made of</button>
+</div>
 <div id="legend">
   <div class="k"><span class="sw" style="background:#4ea1ff"></span> capability (declared act)</div>
   <div class="k"><span class="sw" style="background:#3ddc84"></span> signature (observed in a trace)</div>
@@ -37,17 +46,50 @@
 const K = { repel: 5200, spring: 0.02, damp: 0.86, centre: 0.012 };
 let N = [], E = [], sim;
 
+let WHICH = 'graph';
+
 async function load() {
-  const r = await fetch('/api/graph');
-  const g = await r.json();
-  N = g.nodes; E = g.edges;
-  document.getElementById('stats').textContent =
-    `${g.nodes.length} nodes · ${g.edges.length} edges · ` +
-    `${g.stats.traces} traces · ${g.stats.champions} champions · ` +
-    `${g.stats.manifests} manifests · source of truth: the store, not this page`;
+  const resp = await fetch(WHICH === 'arch' ? '/api/arch' : '/api/graph');
+  const g2 = await resp.json();
+  // /api/arch carries `public` where /api/graph carries `weight`; both are a size
+  // hint, so the physics reads whichever is present rather than assuming one.
+  N = g2.nodes; E = g2.edges;
+  for (const n of N) n.weight = n.weight !== undefined ? n.weight : (n.public || 0);
+  const s = g2.stats;
+  const head = WHICH === 'arch'
+    ? `${s.modules} modules · ${s.import_edges} import edges · scanned ${s.scanned}`
+    : `${s.traces} traces · ${s.champions} champions · ${s.manifests} manifests · ${s.declared} declared acts`;
+  const from = WHICH === 'arch' ? (g2.method || '') : 'source of truth: the store, not this page';
+  document.getElementById('stats').textContent = `${g2.nodes.length} nodes · ${g2.edges.length} edges · ${head} — ${from}`;
+  // The method note is only shown for the architecture view, because that is the
+  // one where the coverage is a judgement call rather than a count.
+  document.getElementById('note').textContent = g2.note || '';
+  legend(WHICH);
   const svg = document.getElementById('s');
   N.forEach((n, i) => { n.x = 300 + (i % 7) * 70; n.y = 160 + Math.floor(i / 7) * 55; n.vx = 0; n.vy = 0; });
+  if (sim) clearInterval(sim);
   draw(); sim = setInterval(tick, 16);
+}
+
+function legend(which) {
+  const rows = which === 'arch'
+    ? [['nucleus', '#ff6b6b'], ['ductile', '#ff9f43'], ['transducer', '#4ea1ff'],
+       ['transpiler', '#3ddc84'], ['linker', '#c792ea'], ['meter', '#f7768e'],
+       ['store', '#7fdbca'], ['metrology', '#ffd866'], ['module', '#8888']]
+    : [['capability', '#4ea1ff'], ['signature', '#3ddc84'], ['champion', '#ff6b6b']];
+  const edge = which === 'arch' ? 'imports' : '— serves · ⋯ witnessed by';
+  document.getElementById('legend').innerHTML =
+    rows.map(([k, c]) => `<div class="k"><span class="sw" style="background:${c}"></span>${k}</div>`).join('') +
+    `<div class="k">${edge}</div>`;
+}
+
+for (const [id, which] of [['t-cap', 'graph'], ['t-arch', 'arch']]) {
+  document.getElementById(id).addEventListener('click', () => {
+    WHICH = which;
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('on'));
+    document.getElementById(id).classList.add('on');
+    load();
+  });
 }
 
 function tick() {
@@ -83,7 +125,12 @@ function draw() {
     const dashed = e.kind === 'witnessed' ? ' stroke-dasharray="2 4"' : '';
     out += `<line class="edge" x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}"${dashed}/>`;
   }
-  const COL = { capability: '#4ea1ff', signature: '#3ddc84', champion: '#ff6b6b' };
+  const COL = {
+    capability: '#4ea1ff', signature: '#3ddc84', champion: '#ff6b6b',
+    nucleus: '#ff6b6b', ductile: '#ff9f43', transducer: '#4ea1ff',
+    transpiler: '#3ddc84', linker: '#c792ea', meter: '#f7768e',
+    store: '#7fdbca', metrology: '#ffd866', module: '#8a8a8a'
+  };
   for (const n of N) {
     const r = 4 + Math.min(6, n.weight / 4);
     out += `<g class="n"><circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${r}" fill="${COL[n.kind]}"><title>${n.id} (${n.kind}, weight ${n.weight})</title></circle>` +
