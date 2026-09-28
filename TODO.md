@@ -567,6 +567,30 @@ never as anything that determines identity.
   of acts, and the first thing to build is a ranking for the market, because without
   one the market is either imposed (champion) or arbitrary (hash order) and neither
   is the "choosable not imposable" the design is for.
+- [ ] **LPMM training plan.** Written: `docs/LPMM-TRAINING-PLAN.md`. Six phases,
+  each exiting on a *measurement* rather than a feature landing. Phase 0 is
+  `Verdict::Both`; phase 1 is a source-edit alphabet, deliberately separate from
+  the sixteen runtime verbs; **phase 2 — a caller writing a trace — is where the
+  escalation rate stops being unmeasured and nowhere earlier**; phase 3 closes the
+  loop with the test suite as verifier via `Trace.succeeded`; phase 4 routes doubt
+  outward with the answer treated as a *candidate* that must earn confirmation;
+  phase 5 removes the model and **proves it by comparison against the
+  LLM-assisted corpus**, not by flipping a flag.
+  The plan rests on one distinction: **the origin can be imported, the certitude
+  cannot.** An imported corpus is inert under the credit function — `Production`
+  credits nothing no trace confirmed, and `clean` re-matters it on the first pass
+  — which is the answer to the LLM-ontology literature's concern about
+  hallucinated triples. The architecture needs no policy against them; the credit
+  function already prices them at zero.
+- [ ] **Three of the five `MetaActuatorType` variants are stubs** that report work
+  they did not do. `Mutator` returns `{"status": "EVOLVED", "performance_gain":
+  "+15%"}` while mutating nothing; `Synthesizer` returns `HYBRID_CREATED` with a
+  fresh `Uuid` and no artifact; `Distiller` claims a `10:1` compression it did not
+  perform. `actuate` ignores both its input and its context. The self-training
+  machinery is the most declared and least built part of the system, which is the
+  opposite of what a training plan needs. This corrects what I told the user an
+  earlier turn, when I described `MetaActuatorType` as "the reason the long
+  horizon is askable" without opening the file.
 - [ ] **The 200-query fixture.** Unchanged and still the blocker for the paper.
   It has to be authored by someone who has not read the matcher, because whoever
   writes the queries will write them in the vocabulary the matcher was built to
