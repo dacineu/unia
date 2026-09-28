@@ -268,6 +268,23 @@ an escalation.
 
 ## Codebase hygiene
 
+- [ ] **Rename `mcp::store::Pattern` to `Mattern`, and audit the word.** It is a
+  loaded corpus manifest, which by this project's own definition in
+  `cognition-log.md` is a *Mattern* — the type that is the **product** of
+  transduction currently carries the name of its **input**. Until it is renamed,
+  the Pattern/Mattern vocabulary cannot carry weight. Mechanical: 16 references across
+  6 files, 6 of them inside `store.rs` itself, one commit, no behaviour change. See
+  [`docs/pattern-and-mattern.md`](./docs/pattern-and-mattern.md) §1.
+- [ ] **Decide the retention policy, and make the two agree** (divergence D10).
+  `prune_fat` keeps the champion and discards everything else; `gc.rs` changes a
+  lifecycle field and never deletes; nothing in `src/` removes a `.ure` at all.
+  The shipped behaviour is retention, so `prune_fat` is the one that is wrong. It
+  has zero callers, so this is free to fix. The decision to make explicitly: does
+  a low-evidence artifact get quarantined like a dead one, or promoted, or
+  dropped? Retention-with-a-lifecycle-field is what the code does and is the
+  Pattern-and-Mattern policy; champion-only is Pattern-only and converges.
+
+
 - [x] **Resolve `implementation/`.** It was recorded here as "a newer, richer
   draft of `src/` containing `set_champion`/`get_champion`, a `register_ure_file`
   DU-UUID to database pipeline, Collapse dive-depth scoring and a test module,
