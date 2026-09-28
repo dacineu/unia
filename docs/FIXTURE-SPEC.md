@@ -199,3 +199,41 @@ accepted answers depend on the *situation* rather than the wording, so that two
 intents with the same words and different worlds score differently. That fixture
 does not exist and this document does not specify it, because it needs a world
 model, not a matcher.
+
+
+---
+
+## 9. Addendum after the first run: the menu does not exist
+
+**The prerequisite is missing, and it is not the fixture.**
+
+The draft fixture assumed eight acts: `feed`, `play`, `clean`, `sleep`,
+`get_status`, `check_health`, `give_medicine`, `set_hunger` on a resource
+`creature-001`. **Four of the eight appear nowhere in `src/` or `patterns/`,**
+and `creature-001` is not a manifest — `patterns/actuator/` holds exactly two,
+`filesystem.ure` and `smart_valve.ure`.
+
+The real menu is **four** acts, and they are the variants of the `Care` enum in
+`src/camaduci.rs:272` — **and they are not in any manifest.** They are Rust.
+
+> **A creature cannot declare its own capabilities to a peer, because its
+> capabilities are not in the artefact it would declare them in.**
+
+The market exists. `Handover`/`receive` exists. The capability set is a field. And
+none of it can carry four acts, because they are enum variants. **The offering
+axis of the vision has no payload for the creature it was designed around.**
+
+So the order is not "re-run the fixture". It is:
+
+1. **Put the creature's acts in a `.ure`.** Four `action_primitives` on a manifest
+   for the creature, so the capability set has an artefact. Until then
+   `Menu::creature().declared_in_manifest` is `false` and `menu::check` refuses —
+   which is the correct behaviour, not a bug to route around.
+2. **Then** `menu::check` against a real manifest, which asserts every `accepts`
+   entry is declared and every declared act is exercised.
+3. **Then** a fresh author, under the corrected exclusion list.
+
+`src/menu.rs` holds the menu as data with its provenance and the gate, and the
+draft fixture's exact failure is a test in it. **The gate's job is to refuse, so
+most of its tests assert refusals** — a gate that has never refused anything has
+not been tested, and the first run is why.

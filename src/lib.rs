@@ -12,6 +12,7 @@ pub mod link;
 pub mod loop_train;
 pub mod mcp;
 pub mod meet;
+pub mod menu;
 pub mod meta_actuators;
 pub mod node;
 pub mod nucleus;
