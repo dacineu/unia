@@ -230,10 +230,39 @@ and the currency says so.
 | self-cleaning, dormancy, re-mattering | ✅ fixpoint proved |
 | **propose → verify → promote, automatically** | ❌ **not wired** |
 
-`registry::set_champion` exists and nothing calls it. So induction proposes, the
-witness is capable of judging, and the promotion is a human typing. **This is the
-whole of "training unia": a wiring job, not a research one, and it needs no new
-vocabulary.** It is phase 3 of `docs/LPMM-TRAINING-PLAN.md`.
+`registry::set_champion` existed and nothing called it. So induction proposed, the
+witness was capable of judging, and the promotion was a human typing. **This was
+the whole of "training unia": a wiring job, not a research one, and it needed no
+new vocabulary.** It is phase 3 of `docs/LPMM-TRAINING-PLAN.md`.
+
+**Closed in `src/loop_train.rs`.** `run(store, registry)` does propose → witness →
+promote with no human in it, and `ActuatorRegistry::clear_champion` was added so a
+champion a later run refutes is *removed* — a registry that can install a winner
+and never remove one is a write-once cache with extra steps, and `clear_champion`
+had no caller for exactly as long as promotion was manual.
+
+Three things it refuses to do silently, each a test:
+- **It does not promote on confidence.** `Candidate::confidence` measures how
+  stable the *description* is, not whether the *rule* is right, so promoting on it
+  would promote a rule described many ways by many failed acts.
+- **It does not promote what it has not seen witnessed.** An unwitnessed candidate
+  is `Awaiting`, and the count distinguishes that from "nothing was proposed".
+- **A failure poisons.** One green run then one red is not confirmed; the fold is
+  strict, because the looser reading lets an early success outvote a later
+  refutation.
+
+**Two findings from writing the fixtures, both worth more than the code:**
+
+- **Promotion needs breadth *and* a witness.** `induce::MIN_OBSERVATIONS` is 2
+  distinct *phrasings*, so one phrasing repeated five times with five green runs
+  proposes **nothing** — the witness is not a substitute for breadth. The first
+  version of the promotion test used one intent throughout, read as "the loop
+  promotes nothing", and was really "the fixture never cleared the bar". The
+  induction bar is inherited, not weakened, and a test now pins both halves.
+- **`promotion_rate` and `witness_rate` are different numbers and a test asserts
+  they stay different.** A green witness, a re-confirmed champion, no new
+  capability: witness rate 1.0, promotion rate 0.0. Reading the first as the
+  second is how a system that learned nothing reports perfect health.
 
 **Exit, and it is the flag that matters:** an edit proposed by induction, verified
 by the suite, and promoted to a mattern — with the promotion counted and the

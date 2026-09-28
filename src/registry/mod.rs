@@ -50,6 +50,23 @@ impl ActuatorRegistry {
         self.champions.get(capability).cloned()
     }
 
+    /// Removes a champion.
+    ///
+    /// **This is what makes  safe.** A registry that can install a
+    /// winner and never remove one is a write-once cache with extra steps, and a
+    /// system that runs forever will eventually install a rule that a later run
+    /// refutes. It existed with no caller for as long as promotion was manual,
+    /// which is exactly the state in which nothing needs it.
+    pub fn clear_champion(&mut self, capability: &str) -> Option<Uuid> {
+        self.champions.remove(capability)
+    }
+
+    /// How many champions are installed. A summary number, so a caller can check
+    /// the loop did something without knowing which rules it touched.
+    pub fn champion_count(&self) -> usize {
+        self.champions.len()
+    }
+
     pub fn register_ure_file<P: AsRef<Path>>(
         &self,
         path: P,
