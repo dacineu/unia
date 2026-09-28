@@ -390,3 +390,41 @@ pieces of the learning loop each had thorough tests and one wire between them
 did not exist. `clean()` had a proved fixpoint and no caller. So the next test
 category to write is not "does this function work" but **"does this function's
 output reach that one's input"** — and Phase 1's exit is the first of them.
+
+## 7a. What the live probe found, and the block it did not remove
+
+Probed two real local endpoints through the project's own transport, not a
+simulation. Every refusal located a distinct missing layer, and the last one is
+in a type rather than in a file:
+
+| | result | located |
+| --- | --- | --- |
+| 8899, unia's own body | HTTP 400 | the transpiler did not exist |
+| 8899, transcribed | HTTP 500 | the model there is an **embedding** model |
+| 8318, unia's own body | read timeout | the body shape |
+| 8318, transcribed | **"no answer"** | and that refusal was *correct* |
+
+On 8318 the probe asked for 8 tokens, the model is a reasoning model, it spent
+all 8 on reasoning, and `content` came back empty with the text sitting in
+`reasoning_content`. So there genuinely was no answer, and `parse_answer` declined
+rather than passing a document off as a sentence.
+
+**The block that is a type, not a file: `Resolver::ask` returns
+`Result<String, String>`.** Unia's own `/consult` endpoint returns a bare sentence,
+so the signature was written for it — and every other engine returns a
+*measurement* alongside: `usage.prompt_tokens`, `usage.completion_tokens`, and
+often `usage.completion_tokens_details.reasoning_tokens`. **That block has
+nowhere to go.** It is discarded at the trait boundary, and the toll has nothing
+to price, which is why `toll::charge` refuses rather than charging a guess.
+
+`resolve::parse_chat_completion` reads the block correctly — and it *adds*
+`reasoning_tokens` to the completion count rather than reporting it beside them:
+reasoning is work the engine did, and a charge based on text length would be zero
+for a model that thinks and says nothing. **It is not yet reachable from `ask`.**
+The fix is `ask` returning an `Answer { text, measured: Option<Measured> }`,
+which is a change to a public trait and worth doing deliberately.
+
+**And the endpoint is `space-bunny-free` — the model this session is running as.**
+So "what are you?" answered by it comes back answered as a model, about itself,
+and the creature would relay it. That was the objection before the probe; it is
+now a live endpoint, which makes it testable rather than merely arguable.

@@ -17,13 +17,12 @@ fn main() {
     // The toll first, so a refusal is priced before anything is spent.
     let mut nuants = 10.0f64;
     println!("stock: {nuants} nuants");
-    println!("toll of a consultation, at {} nuants / 1000 tokens:",
-        unia::toll::NUANTS_PER_KILO_TOKEN);
-
-    let doubt = Doubt::new(
-        "what are you?",
-        Unresolvable::NoRule,
+    println!(
+        "toll of a consultation, at {} nuants / 1000 tokens:",
+        unia::toll::NUANTS_PER_KILO_TOKEN
     );
+
+    let doubt = Doubt::new("what are you?", Unresolvable::NoRule);
     println!("\nasking {authority} about: {:?}", doubt.question);
     println!("doubt signature: {}", doubt.signature());
 
@@ -49,16 +48,32 @@ fn main() {
             })
             .to_string()
         });
-        println!("(transcribing into the OpenAI chat shape)");
+        println!("(transcribing into the OpenAI chat shape, and reading it back)");
     }
 
     match r.ask(&doubt) {
         Ok(answer) => {
+            // The engine's own reply shape, parsed for a real measurement.
+            if let Ok((text, m)) = unia::resolve::parse_chat_completion(&answer) {
+                let mut n = nuants;
+                match unia::toll::charge(&mut n, Some(&m)) {
+                    Ok(toll) => {
+                        println!("\n--- the answer, as the engine gave it ---");
+                        println!("{}", text);
+                        println!("--- receipt ---");
+                        println!("tokens reported: {}", toll.tokens);
+                        println!("nuants charged:   {}", toll.nuants);
+                        println!("stock after:      {n} nuants");
+                    }
+                    Err(e) => println!("toll refused: {e:?}"),
+                }
+                nuants = n;
+            }
             // Only reachable with a real measurement, which this transport does
             // not yet read. Print it, but say plainly that nothing was measured.
             println!("\nLAYER 3 answered: {answer}");
             let charged = unia::toll::charge(&mut nuants, None);
-            println!("toll: {charged:?}  (an unmeasured answer is NOT free)");
+            println!("toll: {charged:?}  (unmeasured -> refused, never free)");
             println!("stock now: {nuants} nuants");
         }
         Err(e) => {

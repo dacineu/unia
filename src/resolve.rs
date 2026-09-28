@@ -112,6 +112,71 @@ fn parse_answer(raw: &str) -> Option<String> {
     Some(trimmed.to_string())
 }
 
+/// Reads a `chat.completion` reply: the text, and the engine's own measurement.
+///
+/// **The measurement is the point.** An OpenAI-shaped reply carries
+/// `usage.prompt_tokens`, `usage.completion_tokens` and often
+/// `usage.completion_tokens_details.reasoning_tokens`. That block is what
+/// [`crate::slm::Measured`] exists to hold, and it is the only thing that makes a
+/// consultation chargeable — a reply with a `content` field and no `usage` is an
+/// answer the toll must refuse, because nothing was measured.
+///
+/// `reasoning_tokens` is **added to** the completion count rather than reported
+/// beside it, so the charge covers the work the engine actually did. A reasoning
+/// model that spends its whole budget thinking and returns an empty `content`
+/// is the case that made this necessary: it used 8 tokens, produced no text, and
+/// a charge based on the text length would have been zero.
+pub fn parse_chat_completion(raw: &str) -> Result<(String, crate::slm::Measured), String> {
+    let v: serde_json::Value =
+        serde_json::from_str(raw).map_err(|e| format!("the reply was not JSON: {e}"))?;
+    let content = v
+        .pointer("/choices/0/message/content")
+        .and_then(|c| c.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let usage = v.get("usage");
+    let tokens = usage
+        .and_then(|u| {
+            let completion = u
+                .get("completion_tokens")
+                .and_then(|n| n.as_u64())
+                .unwrap_or(0);
+            // Reasoning is part of what the engine spent, not a footnote.
+            let reasoning = u
+                .pointer("/completion_tokens_details/reasoning_tokens")
+                .and_then(|n| n.as_u64())
+                .unwrap_or(0);
+            let prompt = u.get("prompt_tokens").and_then(|n| n.as_u64()).unwrap_or(0);
+            Some(prompt + completion + reasoning)
+        })
+        .ok_or_else(|| "the reply carried no usage block, so nothing was measured".to_string())?;
+    let engine_steps = v
+        .pointer("/choices/0/finish_reason")
+        .and_then(|r| r.as_str())
+        .filter(|r| *r == "stop")
+        .map(|_| 1);
+    Ok((
+        content,
+        crate::slm::Measured {
+            tokens: tokens as usize,
+            engine_steps,
+        },
+    ))
+}
+
+/// **Not yet reachable from `Resolver::ask`, and that is the finding.**
+///
+/// [`Resolver::ask`] returns `Result<String, String>` — unia's own `/consult`
+/// endpoint returns a bare sentence, so the signature was written for it. Every
+/// other engine returns a *measurement* as well: `usage.prompt_tokens`,
+/// `usage.completion_tokens`, and often
+/// `usage.completion_tokens_details.reasoning_tokens`. That block has nowhere to
+/// go, so it is discarded at the trait boundary and the toll has nothing to price.
+///
+/// So the real fix is not this function. It is changing `ask` to return an
+/// `Answer { text, measured: Option<Measured> }`, which is a change to a public
+/// trait, which is worth doing deliberately and not at the end of a session.
 /// The endpoint a native client talks to.
 #[derive(Debug, Clone)]
 pub struct HttpResolver {
