@@ -82,16 +82,30 @@ you and confusing them is how a project spends a year on the wrong one.
     rather than merely false. A budget check against a mock disappeared instead
     of passing, which is correct: it had been comparing two fabricated
     quantities.
-14. **~~The route for doubt out did not exist.~~ Boundary built, transport
-    missing.** `src/doubt.rs` has the three things a bare HTTP call lacks: doubt
-    is a value carrying *why* it was unanswerable; a consultation is a trace with
-    a signature, so the engine is a capability subject to `clean` and induction
-    and **never the witness** (`succeeded` is `false` whatever came back); and a
-    refusal is a recorded failed trace, not an absence, so a system cannot learn
-    to work without asking. **Still missing: the `Resolver` implementation.** No
-    tokenizer, no model, no HTTP client, and `SemanticSLM::build_prompt` still has
-    zero callers. `Resolver` is a trait precisely so native `reqwest` and wasm
-    `fetch` can both implement it, and neither does yet.
+14. **~~The route for doubt out did not exist.~~ Built; native transport done,
+    wasm stubbed honestly.** `src/doubt.rs` has the three things a bare HTTP call
+    lacks: doubt is a value carrying *why* it was unanswerable; a consultation is
+    a trace with a signature, so the engine is a capability subject to `clean` and
+    induction and **never the witness** (`succeeded` is `false` whatever came
+    back); and a refusal is a recorded failed trace, not an absence, so a system
+    cannot learn to work without asking. `src/resolve.rs` adds the native
+    transport — **no `reqwest`**, because `unia-camaduci` already established the
+    house style of speaking HTTP over `std::net::TcpStream` and adding a TLS
+    stack and an async runtime for one POST is a runtime, which target-spec §3
+    lists as *missing* and this is not the place to add one by accident.
+15. **The wasm resolver is a stub that says so, and that is the honest state.**
+    `Resolver::ask` is synchronous and `web_sys::fetch` is not, so `WebResolver`
+    returns `Err("the wasm transport needs an async boundary this trait does not
+    have")` rather than pretending. **The fix is a decision, not an effort: either
+    `Resolver::ask` becomes async, which propagates through `doubt::consult` and
+    every caller, or the browser path gets a blocking shim, which a single-threaded
+    wasm event loop cannot honestly provide.** The trait being synchronous is the
+    actual obstacle and it was chosen to keep the native path simple.
+16. **No model, no tokenizer, and `SemanticSLM::build_prompt` still has zero
+    callers.** The transport can now reach an endpoint; nothing says what to point
+    it at. A `Resolver` is a transport, not a peer — naming a model honestly means
+    a peer can tell which engine answered, and `Measured` is the field that would
+    carry its own report.
 15. **A shadow is fan-out
 14. **A shadow is fan-out and hotswap is a promotion, and both are implemented.**
     `UpaDispatcher::shadow_routes` is commented "for hotswapping" but `route()`

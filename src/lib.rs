@@ -34,6 +34,7 @@ pub mod profiler;
 pub mod quantum;
 pub mod registry;
 pub mod release_manager;
+pub mod resolve;
 pub mod router;
 pub mod slm;
 pub mod transducer;
