@@ -693,9 +693,25 @@ const CLIENT_HTML: &str = include_str!("../../web/camaduci.html");
 const GRAPH_HTML: &str = include_str!("../../web/graph.html");
 
 fn graph_page_response() -> String {
-    let mut r = html_response();
-    r = r.replacen(&html_response(), GRAPH_HTML, 1);
-    r
+    // **Built the way `html_response` builds the game page, and that is the fix.**
+    // The first version did `html_response().replacen(&html_response(), GRAPH_HTML, 1)`,
+    // which replaced the *whole response* -- headers included -- with a bare body.
+    // The browser got markup with no `Content-Type` and showed the source instead
+    // of rendering it, which is the correct behaviour for a response that does
+    // not claim to be HTML.
+    //
+    // So the headers are written here rather than borrowed, and `Content-Length`
+    // is the *body's* length. A page served without them still looks right in a
+    // `curl` and is unreadable in a browser, which is how it got shipped.
+    let body = GRAPH_HTML;
+    format!(
+        "HTTP/1.1 200 OK\r\n\
+         Content-Type: text/html; charset=utf-8\r\n\
+         Content-Length: {}\r\n\
+         Cache-Control: no-store\r\n\
+         Connection: close\r\n\r\n{body}",
+        body.len()
+    )
 }
 
 /// The graph, built from the store and from the manifests on disk.
