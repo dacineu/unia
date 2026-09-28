@@ -205,6 +205,77 @@ you and confusing them is how a project spends a year on the wrong one.
 
 ---
 
+## To become a model
+
+A model is a representation plus a loop that improves the representation from
+evidence. unia has the representation. This is the loop, and what stands in it.
+
+**It does not train, and the word is the wrong one.** Training implies gradients
+and a loss. unia has neither, and its lack of them is the design rather than the
+gap: a gradient update needs a loss function, and unia has something better —
+`cargo test` is falsifiable, reproducible and cheap, and a model is none of the
+three. A proposed mattern is judged by whether the suite still passes, which is
+`Trace::succeeded`, the field already doing chaotic-event duty in the
+self-cleaning pass. `Production` already prices the result: a *new* rule is worth
+0.10, a repeat phrasing 0.01, a consolidation 0.02, so repetition is not learning
+and the currency says so.
+
+### The one link that is missing, and it is wiring
+
+| piece of the loop | state |
+| --- | --- |
+| traces written with an author | ✅ `Actor::Caller`, `SourceAct` |
+| induction proposes matterns | ✅ `src/induce`, tested |
+| a witness that can falsify | ✅ `Trace::succeeded` — the suite |
+| self-cleaning, dormancy, re-mattering | ✅ fixpoint proved |
+| **propose → verify → promote, automatically** | ❌ **not wired** |
+
+`registry::set_champion` exists and nothing calls it. So induction proposes, the
+witness is capable of judging, and the promotion is a human typing. **This is the
+whole of "training unia": a wiring job, not a research one, and it needs no new
+vocabulary.** It is phase 3 of `docs/LPMM-TRAINING-PLAN.md`.
+
+**Exit, and it is the flag that matters:** an edit proposed by induction, verified
+by the suite, and promoted to a mattern — with the promotion counted and the
+failures counted separately. That moves *grow certitudes* from "demonstrated
+once, by hand, through a fixture" to a trajectory, which is what
+**harmony as reachable equilibrium** has been waiting on since phase 2 and is
+still correctly red.
+
+### The ceiling that wiring does not lift
+
+**unia can learn to be better at acting, and cannot learn to express a program.**
+Even a fully closed loop produces only sequences of sixteen hardware verbs:
+`Signature` is `primitives.join("_")`, closed, with no call, return or locals, so
+there is no calling convention because there is no notion of a callable thing.
+`Production::credit()` — six lines, the most important economic function in the
+project — lowers to *nothing*. These are two different models and only one of
+them is this project.
+
+**Which is why item A1 and this are the same gap.** The §6 fork decides it:
+ownership-preserving target → a real compiler target, and the program-shaped gap
+becomes closable; heap with no aliasing promises → a virtual machine, and the one
+reason to compile Rust to it is gone. **Closing the loop is worth doing either
+way, because a better actor is a better actor. But the ceiling is the fork, and
+the fork is the author's.**
+
+### What "becoming a model" is not
+
+Three claims that look like progress and are not, each already found once:
+
+- **A corpus that grew once is not a trajectory.** Phase 2 grew a corpus, by
+  hand, through a fixture. One observation is not a trend, and reporting it as
+  growth is the same defect as the fabricated benchmark.
+- **More matterns is not more capability.** A new address for a known act is a
+  *transfer*. Escalation is counted per **signature** precisely so the generated
+  corpus, which escalates in reach and in no capability at all, reports honestly.
+- **A log that reproduces the source reproduces nothing about it.** `SourceAct`
+  is span-level, so the corpus is a derivation. A derivation is not a model, and
+  this is why the transposition *ratio* is the acceptance criterion and not a
+  nice-to-have.
+
+
+---
 
 ## Provenance and attribution
 
