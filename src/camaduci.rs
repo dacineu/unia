@@ -197,6 +197,20 @@ impl Vitals {
         } else {
             self.health = (self.health + 0.02).min(1.0);
         }
+        // Snap the last of it away.
+        //
+        // Subtracting 0.10 from 0.1 in binary floating point does not give 0.0,
+        // and a health that has been decaying all the way down arrives at
+        // something like 1.1e-16 instead. That value is greater than zero and less
+        // than the dormancy threshold at once, so a neglected creature goes
+        // dormant and then **cannot be killed**: `alive()` stays true, `neglect`
+        // returns before quarantining, and the creature sits at zero health for
+        // ever. Found by playing, not by reading, and the unit test missed it
+        // because the health trajectory it happened to take landed on 0.0
+        // exactly — which is the part worth remembering about it.
+        if self.health < 1e-9 {
+            self.health = 0.0;
+        }
     }
 }
 
@@ -697,6 +711,33 @@ impl Economy {
     /// usable threshold* rather than at it, one act of care lifts a stuck creature
     /// clear of it, which is what makes a long absence recoverable.
     pub const FLOOR_QUANTS: f64 = 0.1;
+    /// Health below which a creature falls dormant rather than merely failing.
+    ///
+    /// Chosen from what neglect does rather than invented, though not by the
+    /// arithmetic it first looked like. `Vitals::decay` takes 0.10 off health a
+    /// tick, but only when the creature is under strain; otherwise it *recovers*
+    /// by 0.02. A wholly neglected creature therefore arrives here later than a
+    /// straight subtraction suggests, and the tick numbers are measured rather
+    /// than derived.
+    ///
+    /// The comment that stood here first claimed the ninth tick and the tenth,
+    /// having read the 0.10 and ignored the strain gate; it then moved the
+    /// threshold to 0.1 and was wrong again, for the reason in the constant's own
+    /// documentation. Both mistakes are the one the model invites: reading a
+    /// decay rate as a schedule.
+    /// **Two steps above zero, not one, and that is the whole design of it.**
+    ///
+    /// Health falls by 0.10 a tick, so the values it can actually take are
+    /// 1.0, 0.9, ..., 0.1, 0.0. A threshold of 0.1 is therefore *unreachable*:
+    /// a creature at 0.1 falls to 0.0 in one step, `alive()` is false, and
+    /// `neglect` quarantines it before any threshold is consulted — so it goes
+    /// from healthy to dead without ever being dormant. A threshold is only
+    /// reachable if the band it names is wider than the step that crosses it.
+    ///
+    /// At 0.2 a creature at 0.2 falls to 0.1, is still alive, and is below the
+    /// threshold: dormant on one tick, dead on the next. Measured, and pinned by
+    /// `dormancy_comes_immediately_before_death`.
+    pub const DORMANT_BELOW_HEALTH: f64 = 0.2;
 
     /// How long the creature's resources last at its current power, in ticks.
     ///
@@ -1198,6 +1239,28 @@ pub struct Pet {
     /// How many times each operation has been performed, which is what induction
     /// groups by.
     pub history: BTreeMap<Care, u32>,
+    /// Rules lost to dormancy over this creature's life, which is not the same
+    /// as the rules it currently holds and is the only honest answer to "how much
+    /// has it forgotten".
+    #[serde(default)]
+    pub forgotten: usize,
+    /// Whether the creature has gone dormant: alive, but holding nothing it
+    /// learned.
+    ///
+    /// Dormancy is not death and not quarantine. A dead creature cannot be
+    /// brought back; a quarantined one is refused care. A dormant creature is
+    /// *empty* — the same word the economy already uses for a creature with
+    /// resources it cannot spend — and it can be filled again by being taught.
+    /// That is the whole reason it is its own state: it is the failure that has
+    /// an exit, and the game needed one because until now every failure it could
+    /// reach was terminal.
+    ///
+    /// Forgetting does **not** move the content address. Learning a language
+    /// must not move it either, and forgetting is learning's inverse, so a
+    /// creature and the one it used to be are the same creature. What is lost is
+    /// evidence, not identity.
+    #[serde(default)]
+    pub dormant: bool,
     /// Who performed the most recent act, if any.
     ///
     /// Recorded because a creature's whole life is a record of who looked after
@@ -1234,6 +1297,8 @@ impl Pet {
             history: BTreeMap::new(),
             learned: Vec::new(),
             personality: Personality::default(),
+            dormant: false,
+            forgotten: 0,
             last_actor: None,
         }
     }
@@ -1349,7 +1414,34 @@ impl Pet {
     /// nothing, which is the entire point and the thing the first version got
     /// backwards.
     pub fn learn(&mut self, rules: Vec<LearnedRule>) -> Production {
+        // A dormant creature learns from nothing.
+        //
+        // Not because it cannot be made to — the same `learn` call carries the
+        // evidence — but because that evidence is the creature's own trace log,
+        // and a dormant creature cannot learn from its own history. Playing found
+        // this one too: `forgotten` was correct while `learned` was back to 1 a
+        // moment later, because induction re-derived the very rule that had just
+        // been forgotten and `learn` wrote it down regardless of the state.
+        //
+        // So the rules are refused, and with them the credit — a creature holding
+        // nothing has produced nothing, and saying otherwise would let a sleeping
+        // creature collect rent on the evidence it is pretending not to have.
+        if self.dormant {
+            return Production::default();
+        }
         let production = Production::since(&self.learned, &rules);
+        // A dormant creature does not wake here, and the reason is the one that
+        // took three attempts to find.
+        //
+        // Waking on any non-empty rule set looked right and was wrong: induction
+        // re-derives a creature's own rules from its own trace log, so a dormant
+        // creature woke itself on the very next request from evidence it had
+        // written before it slept. Found by playing -- the unit tests woke it
+        // deliberately, so they agreed with the bug.
+        //
+        // The signal has to come from outside, because dormant means exactly
+        // that it cannot learn from its own history. So the wake moved to
+        // `tend`, and only a person performs an act that counts.
         self.learned = rules;
         if production.any() {
             // Rises toward the ceiling, so the last stretch of power is the
@@ -1399,6 +1491,8 @@ impl Pet {
             history,
             learned: Vec::new(),
             personality,
+            dormant: false,
+            forgotten: 0,
             last_actor: None,
         };
         // The stage is earned, not stored: it is a function of completed sleep
@@ -1460,7 +1554,7 @@ impl Pet {
         // drive declarations mentioned that being dead is terminal. It is a small
         // omission with an unpleasant shape — a quarantined creature volunteering
         // to be fed — and it belongs here rather than in each draw.
-        if !self.vitals.alive() {
+        if !self.vitals.alive() || self.dormant {
             return None;
         }
 
@@ -1675,6 +1769,19 @@ impl Pet {
         if self.quarantined {
             return None;
         }
+        // A dormant creature will not act for itself. A person may still teach it
+        // — being helped is how a dormant creature comes back, the same way it is
+        // how a stuck one does — but nothing it wants pulls it, and the refusal
+        // says so rather than reporting a resource it does have.
+        if self.dormant && who == Who::Itself {
+            return None;
+        }
+        // Being helped is how a dormant creature comes back, and only a person
+        // can do that. Not a credit — the credit still comes from `learn`, and
+        // only for what was genuinely new. This is the event, not the payment.
+        if self.dormant && who == Who::Player {
+            self.dormant = false;
+        }
         if who == Who::Itself && !self.vitals.economy.can_act() {
             return None;
         }
@@ -1699,6 +1806,18 @@ impl Pet {
     /// saying so is the difference between an economy and a countdown.
     pub fn why_wont_act(&self) -> Option<String> {
         let e = &self.vitals.economy;
+        // Dormancy first, and before the economy, because a dormant creature
+        // usually has resources and power and refuses anyway — so asking about
+        // the stock would answer a question nobody asked and report a failure
+        // that is not happening.
+        if self.dormant {
+            return Some(
+                "I am dormant. I am alive, and I have not forgotten how to do \
+                 anything — I have nothing left that I have been able to confirm. \
+                 Teach me and I will know it again."
+                    .to_string(),
+            );
+        }
         if e.can_act() {
             return None;
         }
@@ -1740,6 +1859,47 @@ impl Pet {
         self.vitals.decay();
         if !self.vitals.alive() {
             self.quarantined = true;
+            return;
+        }
+        // Falling short of death is what dormancy is for. Delegated, because this
+        // block existed beside `go_dormant` as a weaker second copy: it cleared
+        // the rules and set the flag but neither counted what was lost nor
+        // floored the power, so a creature that fell asleep by neglect kept its
+        // forget-count at zero and was credited for its own last rules a moment
+        // later. The unit tests missed it because they called `go_dormant`
+        // directly. One transition, one place.
+        if self.vitals.health < Economy::DORMANT_BELOW_HEALTH {
+            self.go_dormant();
+        }
+    }
+
+    /// What dormancy costs, which is everything it had learned and the power
+    /// that went with it.
+    ///
+    /// Held here rather than in `neglect` so that a caller who sets the vitals
+    /// directly — a test, a restore from a save — has to reach for this
+    /// deliberately instead of getting a creature that thinks it knows things it
+    /// does not.
+    pub fn go_dormant(&mut self) {
+        if self.dormant {
+            return;
+        }
+        self.dormant = true;
+        let forgotten = self.learned.len();
+        self.learned.clear();
+        // The power goes to the floor rather than to nothing: the capability is
+        // not gone, it is unconfirmed, and the difference is what a later credit
+        // can restore.
+        //
+        // The *resources* are left alone, which was a bug and read as one only
+        // after `neglect` was made to delegate here. It used to empty them as
+        // well, which meant every neglected creature ended `empty` and `stuck` —
+        // resources with no power, the failure spending cannot fix — was
+        // unreachable by neglect for the second time in this file. A creature
+        // that has forgotten things is not starving.
+        self.vitals.economy.quants = Economy::FLOOR_QUANTS;
+        if forgotten > 0 {
+            self.forgotten = forgotten;
         }
     }
 
@@ -3712,11 +3872,15 @@ mod floor_tests {
         let mut death_tick = None;
         let mut stuck_tick = None;
         let mut empty_tick = None;
+        let mut dormant_tick = None;
 
         for tick in 1..=200 {
             p.neglect();
             if death_tick.is_none() && p.quarantined {
                 death_tick = Some(tick);
+            }
+            if dormant_tick.is_none() && p.dormant {
+                dormant_tick = Some(tick);
             }
             if stuck_tick.is_none() && p.vitals.economy.nuants > 0.0 && !p.vitals.economy.can_act()
             {
@@ -3725,7 +3889,7 @@ mod floor_tests {
             if empty_tick.is_none() && p.vitals.economy.nuants <= 0.0 {
                 empty_tick = Some(tick);
             }
-            if death_tick.is_some() && stuck_tick.is_some() && empty_tick.is_some() {
+            if death_tick.is_some() && empty_tick.is_some() {
                 break;
             }
         }
@@ -3733,14 +3897,33 @@ mod floor_tests {
         let death = death_tick.expect("it must die eventually");
         let stuck = stuck_tick.expect("it must become stuck eventually");
         let empty = empty_tick.expect("it must run out eventually");
+        let dormant = dormant_tick.expect(
+            "it must fall dormant on the way, or the ordering \
+                                 is not the one being asserted",
+        );
 
-        assert!(
-            death < stuck,
-            "death at {death} should precede stuck at {stuck}"
+        // **The ordering this test was written to record has changed, and it
+        // changed for the better.** It used to say death came first, then
+        // `stuck`, then `empty` — which meant the economy was legible only on a
+        // creature that no longer existed, and that was recorded as a tuning
+        // problem to be decided later. Dormancy is `stuck`: the tick before death,
+        // when the creature is still alive and can still be reached. So the
+        // failure spending cannot fix now happens *before* the creature is gone.
+        assert_eq!(
+            dormant, stuck,
+            "dormancy at {dormant} and the stuck failure at {stuck} are supposed to \
+             be the same tick, and if they are not then the economic failure is \
+             still hidden behind death"
         );
         assert!(
-            stuck < empty,
-            "stuck at {stuck} should precede empty at {empty}"
+            stuck < death,
+            "death at {death} preceded the economic failure at {stuck}, so the \
+             economy is legible only on a creature that no longer exists"
+        );
+        assert!(
+            death < empty,
+            "the resources outlasted the creature: it was dead at {death} and \
+             still holding them at {empty}"
         );
     }
 
@@ -4139,6 +4322,451 @@ mod gift_tests {
         assert_eq!(
             p.vitals.economy.quants, before,
             "being fed cost the creature power; only its own repetition does that"
+        );
+    }
+}
+
+#[cfg(test)]
+mod dormancy_tests {
+    use super::*;
+
+    fn rule(sig: &str, addr: &str, al: &[&str], confidence: f64) -> LearnedRule {
+        LearnedRule {
+            address: addr.into(),
+            signature: sig.into(),
+            aliases: al.iter().map(|a| a.to_string()).collect(),
+            confidence,
+            observations: al.len(),
+        }
+    }
+
+    /// A taught creature, with three rules and some power.
+    fn taught(name: &str) -> Pet {
+        let mut p = Pet::new(name);
+        p.learn(vec![
+            rule(Care::Feed.signature(), "a-feed", &["pour some kibble"], 0.7),
+            rule(Care::Play.signature(), "a-play", &["throw the ball"], 0.6),
+            rule(Care::Sleep.signature(), "a-sleep", &["bedtime"], 0.6),
+        ]);
+        p
+    }
+
+    /// Neglect takes a creature through the vitals and eventually to nothing.
+    /// Neglect until it stops being able to do anything, reporting the tick
+    /// number of each event rather than only the last.
+    ///
+    /// Run from *every* start point the tests can reach, because the bug this
+    /// exists to catch was only visible from some of them.
+    ///
+    /// The first version of this helper counted the second half of its ticks from
+    /// zero, so the ordering test compared the tick dormancy happened on with the
+    /// number of *additional* ticks death took — and reported a gap of thirteen
+    /// where the gap was one. A helper that cannot express what it measures will
+    /// be believed anyway.
+    fn neglect_watching(p: &mut Pet) -> (Option<usize>, Option<usize>) {
+        let mut dormant_at = None;
+        let mut died_at = None;
+        for n in 1..=60 {
+            p.neglect();
+            if p.dormant && dormant_at.is_none() {
+                dormant_at = Some(n);
+            }
+            if !p.vitals.alive() {
+                died_at = Some(n);
+                break;
+            }
+        }
+        (dormant_at, died_at)
+    }
+
+    /// Dormancy is the tick before death, exactly.
+    ///
+    /// Measured: a taught creature left alone goes dormant on the thirteenth
+    /// neglect and dies on the fourteenth. If that ordering ever inverts — if a
+    /// creature can die without having been dormant first — then the game has
+    /// quietly lost its only recoverable failure, and this fails rather than
+    /// letting that pass.
+    #[test]
+    fn dormancy_comes_immediately_before_death() {
+        let mut p = taught("ca-d");
+        let (dormant_at, died_at) = neglect_watching(&mut p);
+
+        let dormant_at = dormant_at.expect("a neglected creature never went dormant");
+        let died_at = died_at.expect("a neglected creature never died");
+        assert_eq!(
+            dormant_at + 1,
+            died_at,
+            "there was a gap between going dormant and dying, so the state was \
+             something other than the last tick"
+        );
+    }
+
+    /// A dormant creature is alive, not dead and not quarantined, and that
+    /// distinction is the whole reason for the state.
+    #[test]
+    fn a_dormant_creature_is_alive_and_receives_care() {
+        let mut p = taught("ca-d");
+        while !p.dormant {
+            p.neglect();
+            assert!(
+                p.vitals.alive() || p.dormant,
+                "it died without going dormant"
+            );
+        }
+        assert!(p.vitals.alive(), "dormant is not dead");
+        assert!(!p.quarantined, "dormant is not quarantined");
+        assert!(p.learned.is_empty(), "and it holds nothing it learned");
+        assert!(p.tend(Care::Feed).is_some(), "a person can still help it");
+    }
+
+    /// It will not act for itself, and it says why in its own terms.
+    #[test]
+    fn a_dormant_creature_will_not_act_for_itself_and_can_say_why() {
+        let mut p = taught("ca-d");
+        p.go_dormant();
+        assert!(p.want().is_none(), "nothing pulls it any more");
+        assert!(p.tend_as_self(Care::Feed).is_none());
+        let why = p
+            .why_wont_act()
+            .expect("a dormant creature has a reason and it is not a resource one");
+        assert!(
+            why.contains("dormant") && !why.contains("nuants"),
+            "it blamed the stock rather than its state, and said: {why}"
+        );
+    }
+
+    /// Dormancy costs the knowledge and the power, and keeps a count of what it
+    /// took, because "how much has it forgotten" is not reconstructible.
+    #[test]
+    fn dormancy_costs_the_rules_and_the_power_and_is_counted() {
+        let mut p = taught("ca-d");
+        assert_eq!(p.learned.len(), 3);
+        let before = p.vitals.economy.quants;
+        assert!(before > Economy::FLOOR_QUANTS);
+
+        p.go_dormant();
+
+        assert_eq!(p.learned.len(), 0, "it kept the rules");
+        assert_eq!(p.vitals.economy.quants, Economy::FLOOR_QUANTS);
+        assert_eq!(p.forgotten, 3);
+        // Idempotent, so a second call cannot double-count the loss.
+        p.go_dormant();
+        assert_eq!(p.forgotten, 3, "it forgot the same rules twice");
+    }
+
+    /// A person acting on it wakes it, and the address does not move.
+    ///
+    /// The address is the load-bearing half. Learning a language must not move
+    /// it, and forgetting is learning's inverse, so a creature and the one it
+    /// used to be are the same creature — what is lost is evidence, not identity.
+    /// If this ever fails, forgetting has become a way of becoming somebody else.
+    ///
+    /// The wake is a *person's* act, not an induction result. This test first
+    /// woke the creature by handing `learn` a rule set, which passed, and which
+    /// was wrong for a reason playing found: induction re-derives a creature's
+    /// own rules from its own trace log, so that version woke the creature from
+    /// evidence it had written before it slept. A dormant creature has to be
+    /// woken from outside, or it was never asleep.
+    #[test]
+    fn a_person_waking_it_does_not_make_it_a_different_creature() {
+        let mut p = taught("ca-d");
+        let address_before = p.address();
+        p.go_dormant();
+        assert!(p.dormant);
+
+        p.tend(Care::Feed);
+        assert!(!p.dormant, "being helped did not wake it");
+
+        p.learn(vec![rule(
+            Care::Feed.signature(),
+            "a-feed-again",
+            &["toarna porumb"],
+            0.6,
+        )]);
+        assert!(
+            !p.dormant,
+            "and it went back to sleep on the next induction"
+        );
+        assert_eq!(
+            p.address(),
+            address_before,
+            "forgetting moved the content address, so it became a different creature"
+        );
+    }
+
+    /// Dormancy is not a way to farm power.
+    ///
+    /// This test first asserted that a waking creature should not be paid for
+    /// rules it had held before it slept, and it failed: the payment was 3, not
+    /// 0. The assertion was wrong, not the code. A dormant creature holds
+    /// nothing, so re-learning is production from where it stands, and pretending
+    /// otherwise would be crediting a creature for remembering.
+    ///
+    /// So the question worth asking is whether the round trip can be *profitable*,
+    /// which is the inflation test this economy actually needs. It cannot: falling
+    /// dormant drops the power to the floor and empties the stock, and dormancy is
+    /// driven by health decay rather than chosen, so there is no way to arrive at
+    /// the floor except by losing almost everything first.
+    #[test]
+    fn the_dormancy_round_trip_cannot_be_profitable() {
+        let mut p = taught("ca-d");
+        let quants_before = p.vitals.economy.quants;
+        assert!(
+            quants_before > 0.5,
+            "it starts with real power, at {quants_before}"
+        );
+
+        p.go_dormant();
+        let brought = {
+            // The person who wakes it, and what waking them cost the creature: the
+            // act is a gift, so it arrives with resources, and nothing else about
+            // it is a gain.
+            p.tend(Care::Feed);
+            p.vitals.economy.nuants
+        };
+        assert!(
+            brought > 0.0,
+            "waking a dormant creature gave it nothing at all"
+        );
+
+        // Everything it knew, re-learned from scratch, as a waking creature must.
+        p.learn(vec![
+            rule(Care::Feed.signature(), "a-feed", &["pour some kibble"], 0.7),
+            rule(Care::Play.signature(), "a-play", &["throw the ball"], 0.6),
+            rule(Care::Sleep.signature(), "a-sleep", &["bedtime"], 0.6),
+        ]);
+
+        assert!(
+            p.vitals.economy.quants < quants_before,
+            "a creature slept and woke stronger than before, from {quants_before} to \
+             {}, which makes dormancy a resource",
+            p.vitals.economy.quants
+        );
+        // The resources it holds afterwards are exactly the ones that person
+        // brought, because a gift is the only thing that has ever added to the
+        // stock. An earlier version of this test asserted it woke with none,
+        // which was true until feeding began to bring rather than spend.
+        assert_eq!(
+            p.vitals.economy.nuants, brought,
+            "it gained resources from somewhere other than the person who woke it"
+        );
+    }
+}
+
+#[cfg(test)]
+mod health_snapping_tests {
+    use super::*;
+
+    /// A creature left alone must actually die, from any health it starts at.
+    ///
+    /// Every version of this test drove the creature from a full 1.0, and from
+    /// there the subtractions happened to land on 0.0 exactly. From other starts
+    /// they do not, and a residue like 1.1e-16 is both alive and dormant — so the
+    /// creature neither dies nor recovers and the run cannot end. Playing found
+    /// it; this is the test that was missing.
+    #[test]
+    fn a_creature_left_alone_dies_from_any_health_it_starts_at() {
+        for start_tenths in 1..=20 {
+            let mut p = Pet::new("ca-s");
+            p.vitals.health = start_tenths as f64 / 10.0;
+            let mut ticks = 0;
+            while p.vitals.alive() && ticks < 200 {
+                p.neglect();
+                ticks += 1;
+            }
+            assert!(
+                !p.vitals.alive(),
+                "from {start_tenths}/10 the creature was still alive at health {} \
+                 after {ticks} ticks, with dormancy {}",
+                p.vitals.health,
+                p.dormant
+            );
+            assert_eq!(p.vitals.health, 0.0, "and the health was not zero");
+        }
+    }
+
+    /// And it dies having been dormant first, from every start point too, so the
+    /// state is never skipped.
+    #[test]
+    fn a_creature_dies_through_dormancy_from_any_health_it_starts_at() {
+        for start_tenths in 1..=20 {
+            let mut p = Pet::new("ca-s");
+            p.vitals.health = start_tenths as f64 / 10.0;
+            let mut was_dormant = false;
+            let mut ticks = 0;
+            while p.vitals.alive() && ticks < 200 {
+                p.neglect();
+                was_dormant |= p.dormant;
+                ticks += 1;
+            }
+            assert!(
+                was_dormant,
+                "from {start_tenths}/10 it went from healthy to dead without ever \
+                 being dormant, so it lost the one recoverable state"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod dormancy_path_tests {
+    use super::dormancy_tests_support::taught;
+    use super::*;
+
+    /// Neglect must reach the *same* dormancy a caller does, in full.
+    ///
+    /// `neglect` had its own weaker copy of the transition — it cleared the rules
+    /// and set the flag, but neither counted the loss nor floored the power — and
+    /// every unit test passed because they all called `go_dormant` directly. The
+    /// two paths were only ever both wrong in the way that matters when the
+    /// creature got there by being left alone, which is the only way it does in
+    /// the game. This asserts the one property that distinguishes them.
+    #[test]
+    fn falling_asleep_by_neglect_loses_exactly_what_going_to_sleep_loses() {
+        let mut neglected = taught("ca-neglect");
+        let mut asked = taught("ca-asked");
+        asked.go_dormant();
+
+        while !neglected.dormant {
+            neglected.neglect();
+        }
+
+        assert_eq!(
+            neglected.learned.len(),
+            asked.learned.len(),
+            "neglect left rules behind that going to sleep would have removed"
+        );
+        assert_eq!(
+            neglected.forgotten, asked.forgotten,
+            "neglect did not count what it forgot: {} against {}",
+            neglected.forgotten, asked.forgotten
+        );
+        assert_eq!(
+            neglected.vitals.economy.quants, asked.vitals.economy.quants,
+            "neglect left the power at {} where going to sleep floors it at {}",
+            neglected.vitals.economy.quants, asked.vitals.economy.quants
+        );
+        // The stock is left alone by dormancy itself. `neglect` drains it on the
+        // way — that is what neglect is — so the two creatures' resources differ
+        // and must; what must not differ is the effect of the sleeping.
+        let before_asked = asked.vitals.economy.nuants;
+        asked.go_dormant();
+        assert_eq!(
+            asked.vitals.economy.nuants, before_asked,
+            "going to sleep emptied the resources; a creature that has forgotten \
+             things is not starving"
+        );
+    }
+}
+
+/// Shared fixture, because two test modules now need the same taught creature and
+/// a fixture that exists in one of them is a fixture the other will copy.
+#[cfg(test)]
+pub(crate) mod dormancy_tests_support {
+    use super::*;
+
+    /// A taught creature: three rules and some power.
+    pub fn taught(name: &str) -> Pet {
+        let mut p = Pet::new(name);
+        p.learn(vec![
+            crate::camaduci::LearnedRule {
+                address: "a-feed".into(),
+                signature: Care::Feed.signature().into(),
+                aliases: vec!["pour some kibble".into()],
+                confidence: 0.7,
+                observations: 1,
+            },
+            crate::camaduci::LearnedRule {
+                address: "a-play".into(),
+                signature: Care::Play.signature().into(),
+                aliases: vec!["throw the ball".into()],
+                confidence: 0.6,
+                observations: 1,
+            },
+            crate::camaduci::LearnedRule {
+                address: "a-sleep".into(),
+                signature: Care::Sleep.signature().into(),
+                aliases: vec!["bedtime".into()],
+                confidence: 0.6,
+                observations: 1,
+            },
+        ]);
+        p
+    }
+}
+
+#[cfg(test)]
+mod dormancy_isolation_tests {
+    use super::dormancy_tests_support::taught;
+    use super::*;
+
+    fn rule(sig: &str, addr: &str, al: &[&str]) -> LearnedRule {
+        LearnedRule {
+            address: addr.into(),
+            signature: sig.into(),
+            aliases: al.iter().map(|a| a.to_string()).collect(),
+            confidence: 0.7,
+            observations: al.len(),
+        }
+    }
+
+    /// A sleeping creature must not rebuild what it forgot out of its own traces.
+    ///
+    /// Found by playing, after the forget-counter was already correct: induction
+    /// re-derives a creature's rules from its own log, so a rule removed a moment
+    /// ago was written back down on the next pass, and `forgotten` read 1 beside
+    /// `learned` reading 1. Both numbers were right about different things.
+    #[test]
+    fn a_dormant_creature_keeps_no_rules_even_when_its_own_evidence_returns() {
+        let mut p = taught("ca-iso");
+        p.go_dormant();
+        assert_eq!(p.learned.len(), 0);
+
+        // Exactly the rules it forgot, handed back by induction.
+        let production = p.learn(vec![
+            rule(Care::Feed.signature(), "a-feed", &["pour some kibble"]),
+            rule(Care::Play.signature(), "a-play", &["throw the ball"]),
+            rule(Care::Sleep.signature(), "a-sleep", &["bedtime"]),
+        ]);
+
+        assert_eq!(
+            p.learned.len(),
+            0,
+            "a sleeping creature rebuilt {} of the rules it had forgotten",
+            p.learned.len()
+        );
+        assert!(
+            !production.any(),
+            "and was paid for them: {} rules, {} signatures, {} phrasings",
+            production.new_rules,
+            production.new_signatures,
+            production.new_phrasings
+        );
+    }
+
+    /// Once a person has acted, the evidence is welcome again — which is the only
+    /// thing that changes, and the reason the test above is not "learning is
+    /// disabled".
+    #[test]
+    fn a_woken_creature_accepts_its_evidence_again() {
+        let mut p = taught("ca-iso");
+        p.go_dormant();
+        p.tend(Care::Feed);
+        assert!(!p.dormant);
+
+        let production = p.learn(vec![rule(
+            Care::Feed.signature(),
+            "a-feed",
+            &["pour some kibble"],
+        )]);
+        assert_eq!(
+            p.learned.len(),
+            1,
+            "and it kept nothing from before it slept"
+        );
+        assert!(
+            production.any(),
+            "having been woken, it was not paid for the rule it was just taught"
         );
     }
 }

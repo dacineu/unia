@@ -551,7 +551,7 @@ fn trace_for(
 /// would say the pet had been shown to be worthless.
 fn state(pet: &Pet) -> String {
     format!(
-        r#"{{"id":{},"address":{},"stage":{},"age_ticks":{},"hunger":{:.3},"happiness":{:.3},"health":{:.3},"mood":{},"quants":{:.3},"nuants":{:.2},"endurance":{:.1},"posture":{},"quarantined":{},"primitives":{},"learned":{},"summary":{}}}"#,
+        r#"{{"id":{},"address":{},"stage":{},"age_ticks":{},"hunger":{:.3},"happiness":{:.3},"health":{:.3},"mood":{},"quants":{:.3},"nuants":{:.2},"endurance":{:.1},"posture":{},"quarantined":{},"dormant":{},"forgotten":{},"primitives":{},"learned":{},"summary":{}}}"#,
         json_str(&pet.id),
         // The creature's content address: what it *is*, with nothing it has
         // learned and nothing it has done. Two players holding this creature
@@ -573,6 +573,8 @@ fn state(pet: &Pet) -> String {
         pet.vitals.economy.endurance(),
         json_str(pet.vitals.economy.posture()),
         pet.quarantined,
+        pet.dormant,
+        pet.forgotten,
         // The spike count is what the creature has *learned*, not what it was
         // fed. Those used to be the same number, which meant the most expressive
         // channel on the creature saturated after four distinct actions.

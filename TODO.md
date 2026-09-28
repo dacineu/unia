@@ -378,13 +378,36 @@ never as anything that determines identity.
   resources 12 → 13 → 14, and the power went 0.500 → 0.585 because two new
   phrasings induced a rule and `learn` paid for it. Bring food, teach a new
   word, production, power rises. That is the loop.
-- [ ] **A creature that spends everything is still dead, by neglect rather than
-  by emptiness.** Left alone it starves — `health` reaches zero in about ten
-  ticks — while the power floor is around sixteen and the resources run out
-  around twenty-four, so both economic failures are reachable only on a creature
-  that no longer exists. Feeding refills it now, but the ordering still means
-  the economy is legible only before death. Slow the vitals, speed the economy,
-  or accept it; that choice is still open.
+- [x] **Dormancy: a state the creature can be in and come back from.** Done,
+  and it resolved the neglect ordering rather than being a separate feature. A
+  creature that falls below `DORMANT_BELOW_HEALTH` is dormant: alive, holding
+  nothing it learned, with the power at the floor and the resources untouched.
+  It will not act for itself and says so. A person acting on it wakes it, and
+  the wake is an *event* — the credit still comes only from `learn`. Dormancy is
+  the same tick as `stuck`, so the economic failure is now observable on a
+  living, reachable creature instead of only on one that no longer exists.
+  Measured in play: taught two words, neglected for a minute, caught alive at
+  health 0.100 with `posture: stuck` and `learned: 0`; it refused to act for
+  itself; a person taught it a third word and it woke at quants 0.262 with its
+  address unchanged.
+  Four bugs surfaced on the way, all of them by playing rather than reading:
+  - `health` never reached zero — f64 residue left it at ~1e-16, which is
+    `> 0.0` and `< 0.1` at once, so a neglected creature went dormant and became
+    **unkillable**. The unit test missed it because its health trajectory
+    happened to land on 0.0 exactly.
+  - The threshold was 0.1, one decay step above zero, so a creature *stepped
+    over* the band and went from healthy to dead without ever being dormant. A
+    threshold is only reachable if it is wider than the step that crosses it.
+  - `learn` woke the creature on any non-empty rule set, and induction
+    re-derives a creature's own rules from its own trace log — so it woke itself
+    from evidence written before it slept.
+  - `neglect` had its own weaker copy of the transition: it cleared the rules
+    and set the flag but neither counted the loss nor floored the power. Every
+    test passed because they all called `go_dormant` directly. One transition,
+    one place.
+- [ ] **Self-cleaning, and recycling with no genealogy.** Not started. Both need
+  a spec rather than a guess, and one of them contradicts something the
+  architecture currently relies on — see `docs/dormancy-and-recycling.md`.
 - [ ] **`nuants` never regenerate, so an empty creature is dead for good.**
   Found by playing rather than by reading: `apply_economy` and
   `decay_economy` were the only writers outside tests and both only
