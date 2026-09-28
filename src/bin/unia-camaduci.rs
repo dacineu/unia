@@ -22,7 +22,9 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
 use unia::camaduci::Understanding;
-use unia::camaduci::{firstness, Care, Firstness, LearnedRule, Pet, MOTTO};
+use unia::camaduci::{
+    firstness, Care, Drive, Firstness, LearnedRule, Personality, Pet, Sensor, MOTTO,
+};
 use unia::mcp::store::{Store, Trace};
 
 /// Seconds of real time per in-game tick.
@@ -285,6 +287,44 @@ fn handle(
                 Err(e) => json_response(500, &format!(r#"{{"error":"{e}"}}"#)),
             }
         }
+        // Changing a creature's disposition. It is a new creature, and the address
+        // says so — which is the whole argument for keeping drives and sensors in
+        // the skeleton rather than in a settings file.
+        ("POST", "/api/disposition") => {
+            let requested = string_field(&body, "disposition").unwrap_or_default();
+            match disposition(&requested) {
+                None => json_response(
+                    400,
+                    &json!({
+                        "error": "unknown disposition",
+                        "known": ["default", "solitary", "insatiable", "watchful"],
+                    })
+                    .to_string(),
+                ),
+                Some(personality) => {
+                    // Only the disposition changes. The creature keeps its
+                    // vitals, its stage, its history and everything it has
+                    // learned — it becomes a *different* creature, not a fresh
+                    // one, and the address is what says so.
+                    let before = pet.address();
+                    pet.personality = personality;
+                    save_pet(store_dir, pet);
+                    json_response(
+                        200,
+                        &json!({
+                            "disposition": requested,
+                            "address_before": before,
+                            "address_after": pet.address(),
+                            "same_creature": before == pet.address(),
+                            "drives": pet.drives().iter()
+                                .map(|d| json!({ "care": d.care.label(), "when": d.when }))
+                                .collect::<Vec<Value>>(),
+                        })
+                        .to_string(),
+                    )
+                }
+            }
+        }
         ("GET", "/api/wants") => {
             let want = pet
                 .want()
@@ -472,8 +512,13 @@ fn trace_for(
 /// would say the pet had been shown to be worthless.
 fn state(pet: &Pet) -> String {
     format!(
-        r#"{{"id":{},"stage":{},"age_ticks":{},"hunger":{:.3},"happiness":{:.3},"health":{:.3},"mood":{},"quarantined":{},"primitives":{},"learned":{},"summary":{}}}"#,
+        r#"{{"id":{},"address":{},"stage":{},"age_ticks":{},"hunger":{:.3},"happiness":{:.3},"health":{:.3},"mood":{},"quarantined":{},"primitives":{},"learned":{},"summary":{}}}"#,
         json_str(&pet.id),
+        // The creature's content address: what it *is*, with nothing it has
+        // learned and nothing it has done. Two players holding this creature
+        // agree on this, and it does not move when the player learns new words
+        // for it.
+        json_str(&pet.address()),
         json_str(pet.stage.label()),
         pet.vitals.age_ticks,
         pet.vitals.hunger,
@@ -587,3 +632,52 @@ fn html_response() -> String {
 
 /// The browser client, inlined so the binary is the whole deliverable.
 const CLIENT_HTML: &str = include_str!("../../web/camaduci.html");
+
+/// The dispositions the creature can be given, as declared data.
+///
+/// Written as personalities rather than as flags, because the point of the
+/// exercise is that a disposition is *structure*: it changes the creature's
+/// content address. Three of the four are deliberately unlike the shipped one so
+/// that the change is visible in behaviour and not only in a hash.
+fn disposition(name: &str) -> Option<Personality> {
+    let mut p = Personality::default();
+    match name {
+        // Never wants feeding: the same creature with one appetite removed.
+        "solitary" => {
+            p.drives.retain(|d| d.care != Care::Feed);
+        }
+        // Notices nothing at all: a creature that cannot perceive its own state,
+        // and therefore never knows it is hungry however much it wants feeding.
+        // The one disposition where perception and appetite disagree, which is the
+        // most interesting of the four to watch.
+        "watchful" => {
+            p.sensors.clear();
+        }
+        // Wants feeding far sooner, and says so far sooner.
+        "insatiable" => {
+            p.drives = vec![
+                Drive {
+                    care: Care::Feed,
+                    when: "hunger > 0.05".to_string(),
+                },
+                Drive {
+                    care: Care::Feed,
+                    when: "hunger > 0.2".to_string(),
+                },
+                Drive {
+                    care: Care::Sleep,
+                    when: "age_ticks > 0".to_string(),
+                },
+            ];
+            p.sensors = vec![Sensor {
+                name: "hunger".to_string(),
+                when: "hunger > 0.2".to_string(),
+                reads: "ravenous".to_string(),
+                sense: unia::camaduci::Sense::Derived,
+            }];
+        }
+        "default" => {}
+        _ => return None,
+    }
+    Some(p)
+}

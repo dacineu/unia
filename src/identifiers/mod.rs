@@ -38,7 +38,20 @@ pub fn skeleton(manifest: &Value) -> Value {
     // heard of, so a manifest carrying something new would get an address that
     // ignores it and two genuinely different artifacts could collide. Unknown
     // keys stay in the skeleton until they are known to be prose.
-    const SURFACE_KEYS: &[&str] = &["resource_id", "guidance", "description", "aliases"];
+    // `external_id` was missing from this list and the omission was live. A human
+    // label was therefore hashed into the content address, so two byte-identical
+    // manifests carrying different labels were different artifacts — the exact
+    // defect the surface/structure split exists to prevent, reintroduced under a
+    // second name. It was found by giving a digital creature a content address and
+    // asking whether feeding it moved the answer: it did, because the address
+    // included the name it was called.
+    const SURFACE_KEYS: &[&str] = &[
+        "resource_id",
+        "external_id",
+        "guidance",
+        "description",
+        "aliases",
+    ];
 
     if let Some(obj) = manifest.as_object() {
         for (key, value) in obj {

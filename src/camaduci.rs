@@ -84,6 +84,11 @@ impl Vitals {
     /// `starving`; the other reading is still available, it simply is not the
     /// first thing said.
     pub fn sensors() -> Vec<Sensor> {
+        Personality::default().sensors
+    }
+
+    #[allow(dead_code)]
+    fn sensors_legacy() -> Vec<Sensor> {
         vec![
             Sensor {
                 name: "mortality".into(),
@@ -458,7 +463,7 @@ fn field_moved(field: &str, before: &Vitals, after: &Vitals) -> bool {
 /// inherits their vocabulary, and it becomes meaningless if they are renamed.
 /// That is a stronger dependence than hardware has, and the format is in a
 /// position to express it because the derivation is data rather than code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Sense {
     /// Read from a driver: something outside the process happened.
     Physical,
@@ -479,6 +484,107 @@ impl Sense {
     }
 }
 
+/// What a creature is disposed to want and to notice.
+///
+/// **Declared, not computed.** This was a pair of methods returning a fresh
+/// `Vec` every call, which put the creature's entire personality in code: it had
+/// no address, could not be changed without a recompile, and two creatures with
+/// different wants were indistinguishable. As data it is structure, it goes in
+/// the hashed skeleton, and a creature that wants something different is a
+/// different creature — which is what makes personality part of identity rather
+/// than a setting.
+///
+/// Ordering is part of the value. Drives are read in order and the first
+/// satisfied one wins, and sensors report in order and the first reading is the
+/// mood, so a reordering changes behaviour and therefore changes the address.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Personality {
+    pub drives: Vec<Drive>,
+    pub sensors: Vec<Sensor>,
+}
+
+impl Default for Personality {
+    /// The disposition this project shipped with, written out as data so it can be
+    /// compared, serialised, hashed, and replaced.
+    fn default() -> Self {
+        Personality {
+            drives: vec![
+                Drive {
+                    care: Care::Feed,
+                    when: "hunger > 0.5".into(),
+                },
+                // Sharper, and later, so a starving creature is drawn by this one.
+                Drive {
+                    care: Care::Feed,
+                    when: "hunger > 0.9".into(),
+                },
+                Drive {
+                    care: Care::Play,
+                    when: "happiness < 0.4".into(),
+                },
+                Drive {
+                    care: Care::Clean,
+                    when: "health < 0.6".into(),
+                },
+                Drive {
+                    care: Care::Sleep,
+                    when: "age_ticks > 0".into(),
+                },
+            ],
+            sensors: vec![
+                Sensor {
+                    name: "mortality".into(),
+                    when: "health < 0.01".into(),
+                    reads: "gone".into(),
+                    sense: Sense::Derived,
+                },
+                Sensor {
+                    name: "sickness".into(),
+                    when: "health < 0.3".into(),
+                    reads: "sick".into(),
+                    sense: Sense::Derived,
+                },
+                Sensor {
+                    name: "hunger".into(),
+                    when: "hunger > 0.8".into(),
+                    reads: "starving".into(),
+                    sense: Sense::Derived,
+                },
+                Sensor {
+                    name: "company".into(),
+                    when: "happiness < 0.25".into(),
+                    reads: "lonely".into(),
+                    sense: Sense::Derived,
+                },
+            ],
+        }
+    }
+}
+
+impl Personality {
+    /// The drives toward a given act, in declaration order.
+    pub fn draws_for(&self, care: Care) -> impl Iterator<Item = &Drive> {
+        self.drives.iter().filter(move |d| d.care == care)
+    }
+
+    /// The readings this state produces under these sensors, in order.
+    pub fn readings_of(&self, state: &Vitals) -> Vec<(String, String)> {
+        self.sensors
+            .iter()
+            .filter_map(|s| s.reporting(state).map(|r| (s.name.clone(), r)))
+            .collect()
+    }
+
+    /// The first reading, which is the summary.
+    pub fn mood_of(&self, state: &Vitals) -> String {
+        self.readings_of(state)
+            .into_iter()
+            .next()
+            .map(|(_, reading)| reading)
+            .unwrap_or_else(|| "content".to_string())
+    }
+}
+
 /// A named derivation over declared state.
 ///
 /// This is the missing declaration. `mood` existed as a hard-coded `if` chain
@@ -486,7 +592,7 @@ impl Sense {
 /// of itself had no address, no place in the skeleton, and could not be renamed,
 /// derived from, or converged on with another creature's. As a declaration it is
 /// structure, it goes in the hashed skeleton, and its *value* is state.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Sensor {
     pub name: String,
     /// The condition under which this reading holds, in the constraint grammar.
@@ -555,7 +661,7 @@ const FUNCTION_WORDS: &[&str] = &[
 /// selection: several acts can be permitted at once, and the creature has to
 /// choose among them. That choice is the policy, and it is the part that does not
 /// exist yet anywhere in the project.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Drive {
     /// The act this draw belongs to.
     pub care: Care,
@@ -714,6 +820,16 @@ pub struct Pet {
     /// How many times each operation has been performed, which is what induction
     /// groups by.
     pub history: BTreeMap<Care, u32>,
+    /// What it is disposed to want and to notice. Structure, so it goes in the
+    /// content address; changing it makes this a different creature.
+    ///
+    /// Defaults on load. A pet file written before dispositions existed must still
+    /// load, and without this it did not: `from_json` returned `None` and a
+    /// player's creature was gone. The fallback is the shipped disposition, which
+    /// is the right guess and the wrong creature if the original had another —
+    /// so the address differs, and the substitution cannot be silent.
+    #[serde(default)]
+    pub personality: Personality,
     /// What the creature has worked out for itself, most confident first.
     ///
     /// Empty for a creature that has not been taught, and *that* is the honest
@@ -732,7 +848,86 @@ impl Pet {
             quarantined: false,
             history: BTreeMap::new(),
             learned: Vec::new(),
+            personality: Personality::default(),
         }
+    }
+
+    /// The manifest form of this creature: what it *is*, with nothing it knows
+    /// and nothing it has done.
+    ///
+    /// The skeleton rule applied to a living thing, and the same rule the
+    /// manifest loader uses. What is **in** here:
+    ///
+    /// - the declared state space, because that is what it can be acted on
+    /// - its drives, because a disposition is what it wants
+    /// - its sensors, because what it notices is as much its character as its
+    ///   appetites
+    ///
+    /// What is **out**, and each exclusion is the point:
+    ///
+    /// - `id`, which is a name
+    /// - `vitals`, `stage` and `history`, which are what has happened to it
+    /// - `learned`, because **a vocabulary must not move the identity**. This is
+    ///   the project's central claim and it has to hold here as well as in the
+    ///   corpus: a creature that has been addressed in ten languages is the same
+    ///   creature, and a creature that wants something different is not.
+    pub fn manifest(&self) -> serde_json::Value {
+        serde_json::json!({
+            "ure_version": "1.0",
+            "category": "creature",
+            "external_id": format!("ca({})", self.id),
+            "guidance": "A ca(R)maduci. Its disposition is its character; what it \
+                         has learned is not.",
+            "state_space": Self::state_space_manifest(),
+            // The acts it can perform, each with the primitive sequence it
+            // reduces to. The same vocabulary a valve declares, which is what
+            // makes the creature addressable by a peer that has never heard of it.
+            "action_primitives": Care::all()
+                .iter()
+                .map(|care| serde_json::json!({
+                    "id": care.signature(),
+                    "aliases": [care.label()],
+                    "params": {},
+                    "target_state": care.label(),
+                    "constraints": [],
+                }))
+                .collect::<Vec<serde_json::Value>>(),
+            "drives": self.personality.drives,
+            "sensors": self.personality.sensors,
+        })
+    }
+
+    /// The declared state space, in the manifest's own shape.
+    pub fn state_space_manifest() -> serde_json::Value {
+        let mut out = serde_json::Map::new();
+        out.insert(
+            "hunger".into(),
+            serde_json::json!({ "type": "float", "range": [0.0, 1.0] }),
+        );
+        out.insert(
+            "happiness".into(),
+            serde_json::json!({ "type": "float", "range": [0.0, 1.0] }),
+        );
+        out.insert(
+            "health".into(),
+            serde_json::json!({ "type": "float", "range": [0.0, 1.0] }),
+        );
+        out.insert(
+            "age_ticks".into(),
+            serde_json::json!({ "type": "int", "range": [0, 1000000] }),
+        );
+        serde_json::Value::Object(out)
+    }
+
+    /// This creature's content address.
+    ///
+    /// Two creatures that are the same thing share it, and the test that matters
+    /// is the negative one: learning a new phrasing must not move it. That is the
+    /// whole thesis in one assertion about a digital animal.
+    pub fn address(&self) -> String {
+        crate::identifiers::DuUuid::generate(&self.manifest(), None)
+            .map(|u| u.to_string())
+            .unwrap_or_else(|e| format!("unaddressable: {e}"))
     }
 
     /// Records what induction derived from the creature's own trace log.
@@ -751,6 +946,22 @@ impl Pet {
         quarantined: bool,
         history: BTreeMap<Care, u32>,
     ) -> Self {
+        Self::restore_with(id, vitals, quarantined, history, Personality::default())
+    }
+
+    /// Restores a creature *and* the disposition it was kept with.
+    ///
+    /// Separate from [`Pet::restore`] because a disposition is part of what a
+    /// creature is, so restoring a pet without its own would produce a different
+    /// creature wearing the same id. The default-taking form exists for callers
+    /// that genuinely have no personality to restore.
+    pub fn restore_with(
+        id: impl Into<String>,
+        vitals: Vitals,
+        quarantined: bool,
+        history: BTreeMap<Care, u32>,
+        personality: Personality,
+    ) -> Self {
         let mut p = Pet {
             id: id.into(),
             vitals,
@@ -758,6 +969,7 @@ impl Pet {
             quarantined,
             history,
             learned: Vec::new(),
+            personality,
         };
         // The stage is earned, not stored: it is a function of completed sleep
         // cycles, so recomputing it is correct even if a saved stage disagreed.
@@ -771,41 +983,27 @@ impl Pet {
     /// creature arrives carrying its mistakes along with its progress.
     /// The draws this creature has toward its own acts.
     ///
-    /// Declared rather than learned, and the distinction is the point. A drive is
-    /// a *disposition*: it belongs to the skeleton, so it changes the creature's
-    /// content address, and a creature with different wants is a different
-    /// creature. What the creature has *learned* is vocabulary — which phrasings
-    /// name which acts — and that sits beside the identity rather than inside it.
+    /// Read from the declared personality rather than built here. A drive is a
+    /// *disposition*, so it belongs in the hashed skeleton: a creature with
+    /// different wants is a different creature, and one that has learned more
+    /// phrasings is not. What the creature has *learned* is vocabulary, and that
+    /// sits beside the identity rather than inside it.
     ///
-    /// Without this the creature is a Tamagotchi: the player is the entire policy,
-    /// and "hunger" is a number that goes up. With it, hunger is a number that
-    /// *pulls*, and the creature can act on its own reading of itself.
-    pub fn drives(&self) -> Vec<Drive> {
-        vec![
-            Drive {
-                care: Care::Feed,
-                when: "hunger > 0.5".to_string(),
-            },
-            // Sharper, and later, so a starving creature is drawn by this one
-            // rather than by the looser statement above. The gradient is two
-            // declarations rather than a computed distance.
-            Drive {
-                care: Care::Feed,
-                when: "hunger > 0.9".to_string(),
-            },
-            Drive {
-                care: Care::Play,
-                when: "happiness < 0.4".to_string(),
-            },
-            Drive {
-                care: Care::Clean,
-                when: "health < 0.6".to_string(),
-            },
-            Drive {
-                care: Care::Sleep,
-                when: "age_ticks > 0".to_string(),
-            },
-        ]
+    /// Without this the creature is a Tamagotchi: the player is the entire
+    /// policy, and "hunger" is a number that goes up. With it, hunger is a number
+    /// that *pulls*, and the creature can act on its own reading of itself.
+    pub fn drives(&self) -> &[Drive] {
+        &self.personality.drives
+    }
+
+    /// A copy of this creature with a different disposition.
+    ///
+    /// The point of it is that the result is a *different creature* — see
+    /// [`Pet::address`] — so a lineage cannot quietly change its wants while
+    /// keeping the address it was known by.
+    pub fn with_personality(mut self, personality: Personality) -> Self {
+        self.personality = personality;
+        self
     }
 
     /// The act this creature would choose for itself, and why.
@@ -837,7 +1035,6 @@ impl Pet {
         }
 
         let state = Vitals::state(&self.vitals);
-        let draws = self.drives();
 
         // Priority is the order the acts are declared in, and nothing else. The
         // first act with a satisfied draw is what the creature is drawn by.
@@ -850,7 +1047,7 @@ impl Pet {
         // order is the smallest thing that is actually a policy.
         for care in Care::all() {
             let mut sharpest: Option<String> = None;
-            for drive in draws.iter().filter(|d| d.care == care) {
+            for drive in self.personality.draws_for(care) {
                 let Ok(constraint) = crate::constraints::Constraint::parse(&drive.when) else {
                     continue;
                 };
@@ -2311,5 +2508,204 @@ mod declaration_tests {
             .expect("a creature that has slept once wants to sleep again");
         assert_eq!(want.0, Care::Sleep);
         assert_eq!(want.1, "age_ticks");
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    fn rule(signature: &str, aliases: &[&str]) -> LearnedRule {
+        LearnedRule {
+            address: "addr".into(),
+            signature: signature.into(),
+            aliases: aliases.iter().map(|a| a.to_string()).collect(),
+            confidence: 0.8,
+            observations: aliases.len(),
+        }
+    }
+
+    #[test]
+    fn two_fresh_creatures_share_one_address() {
+        assert_eq!(Pet::new("ca-a").address(), Pet::new("ca-b").address());
+    }
+
+    #[test]
+    fn the_name_a_creature_is_kept_under_is_not_part_of_what_it_is() {
+        // `id` is a name. Two players who both call their creature `ca-001` hold
+        // the same creature, and the address has to say so.
+        assert_ne!(Pet::new("ca-001").id, Pet::new("ca-002").id);
+        assert_eq!(Pet::new("ca-001").address(), Pet::new("ca-002").address());
+    }
+
+    #[test]
+    fn what_has_happened_to_a_creature_is_not_part_of_what_it_is() {
+        // Vitals, stage, and history are state, not structure. A creature that
+        // has been fed to adulthood is the same artifact as one that has not.
+        let mut tended = Pet::new("ca-a");
+        tended.tend(Care::Feed);
+        for _ in 0..6 {
+            tended.tend(Care::Sleep);
+        }
+        assert_eq!(tended.stage, Stage::Adult, "it should have grown");
+        assert_eq!(tended.address(), Pet::new("ca-b").address());
+    }
+
+    #[test]
+    fn a_quarantined_creature_is_still_the_creature_it_was() {
+        let mut dead = Pet::new("ca-a");
+        for _ in 0..80 {
+            dead.neglect();
+        }
+        assert!(dead.quarantined);
+        assert_eq!(dead.address(), Pet::new("ca-b").address());
+    }
+
+    #[test]
+    fn learning_a_language_does_not_move_the_address() {
+        // The project's central claim, asserted about a living thing. A creature
+        // that has been addressed in ten languages is the same creature; one that
+        // wants something different is not. If this ever fails, the corpus-level
+        // result was a property of manifests and not of the idea.
+        // `learn` replaces the rule set rather than merging it, because the
+        // caller recomputes the whole set from the trace log every time. So the
+        // vocabulary grows the way it really grows: one rule, more phrasings.
+        let mut before = Pet::new("ca-a");
+        before.learn(vec![rule(Care::Feed.signature(), &["pour some kibble"])]);
+        let a = before.address();
+
+        let six = [
+            "pour some kibble",
+            "serve the food",
+            "refill the bowl",
+            "toarna porumb",
+            "da-i de mancare",
+            "füttere es",
+        ];
+        before.learn(vec![rule(Care::Feed.signature(), &six)]);
+
+        assert_eq!(before.learned[0].aliases.len(), 6, "the vocabulary grew");
+        assert_eq!(before.address(), a, "a new phrasing moved the identity");
+    }
+
+    #[test]
+    fn wanting_something_different_does_move_the_address() {
+        // The other half, and the one that gives the first its meaning. If this
+        // were also stable, "identity is what a thing does" would be vacuous: any
+        // two creatures would be one creature.
+        let mut glutton = Personality::default();
+        glutton.drives.retain(|d| d.care != Care::Feed);
+
+        let plain = Pet::new("ca-a");
+        let other = plain.clone().with_personality(glutton);
+
+        assert_ne!(
+            plain.address(),
+            other.address(),
+            "a creature that does not want feeding is a different creature"
+        );
+    }
+
+    #[test]
+    fn how_a_creature_notices_is_also_its_identity() {
+        // A disposition is appetites plus perception, and a creature that sees
+        // the world differently is not the same animal.
+        let mut blind = Personality::default();
+        blind.sensors.retain(|s| s.name != "company");
+
+        let plain = Pet::new("ca-a");
+        let other = plain.clone().with_personality(blind);
+        assert_ne!(plain.address(), other.address());
+    }
+
+    #[test]
+    fn the_order_of_drives_is_identity_because_it_is_the_policy() {
+        // A reordering changes what the creature does on the same state, so it has
+        // to change the address or two creatures with different behaviour would
+        // claim the same one.
+        let mut swapped = Personality::default();
+        swapped.drives.reverse();
+        let plain = Pet::new("ca-a");
+        assert_ne!(
+            plain.address(),
+            plain.clone().with_personality(swapped).address()
+        );
+    }
+
+    #[test]
+    fn the_manifest_form_declares_what_it_can_do_in_the_shared_vocabulary() {
+        // The creature is addressable by a peer that has never heard of it,
+        // because its acts are `UniversalPrimitive` sequences and nothing else.
+        let m = Pet::new("ca-a").manifest();
+        let actions = m["action_primitives"].as_array().unwrap();
+        assert_eq!(actions.len(), Care::all().len());
+
+        for a in actions {
+            let id = a["id"].as_str().unwrap();
+            assert!(
+                Care::from_signature(id).is_some(),
+                "{id} is not an act this creature has"
+            );
+        }
+    }
+
+    #[test]
+    fn the_manifest_states_what_it_declares() {
+        let m = Pet::new("ca-a").manifest();
+        let space = m["state_space"].as_object().unwrap();
+        for (field, _) in Vitals::declared_state() {
+            assert!(space.contains_key(field), "state space omits {field}");
+        }
+    }
+
+    #[test]
+    fn a_creature_whose_personality_is_restored_is_the_same_creature() {
+        // A disposition has to survive a restart, or a kept creature quietly
+        // becomes a different one every time the server restarts.
+        let mut original = Pet::new("ca-a");
+        let mut tweaked = Personality::default();
+        tweaked.drives.retain(|d| d.care != Care::Clean);
+        let address_before = original.clone().with_personality(tweaked.clone()).address();
+        original = original.with_personality(tweaked.clone());
+
+        let text = original.to_json();
+        let restored = Pet::from_json("ca-a", &text).expect("restores");
+        assert_eq!(restored.address(), address_before);
+        assert_eq!(restored.address(), original.address());
+        assert_eq!(restored.personality, original.personality);
+    }
+
+    #[test]
+    fn a_creature_restored_without_its_personality_is_a_different_creature() {
+        // The failure this guards: a pet file written before dispositions existed
+        // loads with the default one, which is the right fallback and the wrong
+        // creature if the original had another. Making it a different address is
+        // what stops the substitution being silent.
+        let mut original = Pet::new("ca-a");
+        let mut tweaked = Personality::default();
+        tweaked.drives.retain(|d| d.care != Care::Clean);
+        original = original.with_personality(tweaked);
+
+        // Remove the field outright. An earlier version of this test tried to do it
+        // with a string replace against the pretty-printed JSON, which never
+        // matched, so the "stripped" file still carried the personality and the
+        // test passed for the wrong reason — asserting that restoring an
+        // unmodified creature gives the same address, which is true and is not
+        // what this is about.
+        let mut as_value: serde_json::Value =
+            serde_json::from_str(&original.to_json()).expect("round-trips");
+        as_value.as_object_mut().unwrap().remove("personality");
+        let fallback = Pet::from_json("ca-a", &as_value.to_string()).expect("still loads");
+
+        assert_eq!(
+            fallback.personality,
+            Personality::default(),
+            "an absent disposition falls back to the default"
+        );
+        assert_ne!(
+            fallback.address(),
+            original.address(),
+            "the fallback silently produced a different creature as the same one"
+        );
     }
 }
