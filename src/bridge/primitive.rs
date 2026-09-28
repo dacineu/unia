@@ -137,6 +137,17 @@ pub struct PacketPayload {
 pub struct PacketContext {
     pub expected_state: Option<String>,
     pub timeout_ms: u32,
+    /// The action's declared preconditions, carried with the packet.
+    ///
+    /// They travel rather than being checked here because this is the component
+    /// that knows *what is declared* and not *what is currently true*: the
+    /// bridge holds the manifest, the nucleus holds the state, and only the
+    /// nucleus can evaluate a predicate over a state. Checking them here was the
+    /// original arrangement and it could only ever print them, which is
+    /// divergence D5. Defaults to empty so a packet written by an older build,
+    /// or by hand, still parses.
+    #[serde(default)]
+    pub preconditions: Vec<String>,
 }
 
 /// Formal representation of a .ure resource
@@ -264,9 +275,9 @@ impl PrimitiveBridge {
             .resolve_primitive(&action.id, &action.target_state)
             .map_err(|e| format!("[Bridge] {e}"))?;
 
-        for constraint in &action.constraints {
-            println!("[Bridge] Validating constraint: {}", constraint);
-        }
+        // Carried, not checked: the state this would be checked against lives in
+        // the nucleus. See the note on `PacketContext::preconditions`.
+        let preconditions = action.constraints.clone();
 
         Ok(PrimitivePacket {
             header: PacketHeader {
@@ -282,6 +293,7 @@ impl PrimitiveBridge {
             context: PacketContext {
                 expected_state: Some(action.target_state.clone()),
                 timeout_ms: 500,
+                preconditions,
             },
         })
     }

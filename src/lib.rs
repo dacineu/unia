@@ -27,6 +27,12 @@ pub mod weights;
 /// `docs/arch-decoupling-strategy.md` for how it relates to the nucleus.
 pub mod wmis;
 
+/// Evaluation of a manifest's declared `constraints`. This is the verifier: with
+/// it absent, `constraints` was printed for operator visibility and never
+/// checked, which left the learning loop with no reward signal. See
+/// `docs/SPEC.md` §2.4 for the formalism this implements and §7 divergence D5.
+pub mod constraints;
+
 /// Where synthesised manifests are written. Kept out of the process working
 /// directory so that running the tests does not change the corpus a cloner
 /// sees. See `docs/SPEC.md` section 6.

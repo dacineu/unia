@@ -61,6 +61,10 @@ fn verify_constraint_safety() {
         context: unia::bridge::primitive::PacketContext {
             expected_state: Some("flow_rate = 0.0".to_string()),
             timeout_ms: 100,
+            // The same precondition the valve manifest declares on
+            // `emergency_shutdown`, so the example exercises the gate rather
+            // than bypassing it.
+            preconditions: vec!["status != 'fault'".to_string()],
         },
     };
 

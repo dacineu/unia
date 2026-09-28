@@ -47,6 +47,13 @@ fn run_empirical_benchmark() {
         id: "valve-001".to_string(),
     }));
 
+    // The valve declares `status != 'fault'` on `emergency_shutdown`, and the
+    // nucleus refuses a precondition it cannot evaluate. A resource starts with
+    // no state, so the caller has to say what it is before the first actuation.
+    // That is the initial-state gap, divergence D13, and it is visible here
+    // because the gate is on.
+    nucleus.report_state("valve-001", "status", "open");
+
     // --- TEST CASE: "Emergency Shutdown" ---
     let intent = "Emergency shutdown the valve";
 

@@ -79,6 +79,10 @@ impl UniaKernel {
             context: PacketContext {
                 expected_state: None,
                 timeout_ms: 100,
+                // Constructed from a raw call rather than from a manifest action,
+                // so it declares no preconditions. The resource's own manifest,
+                // if it has one, is what declares them.
+                preconditions: Vec::new(),
             },
         }
     }

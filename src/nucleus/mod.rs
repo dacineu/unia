@@ -5,7 +5,7 @@ pub mod wasm_driver;
 use crate::bridge::primitive::{PrimitivePacket, UniversalPrimitive};
 use crate::bridge::upa::{UpaOp, UpaPacket};
 use crate::wmis::{WmisEconomicLayer, WmisOperation, WmisResource};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 
 /// The Actuator Nucleus is the final execution layer.
@@ -106,8 +106,42 @@ impl ActuatorNucleus {
             context: crate::bridge::primitive::PacketContext {
                 expected_state: None,
                 timeout_ms: 100,
+                // A UPA operation carries no manifest action, so it declares no
+                // preconditions. Nothing is being waved through: there is
+                // nothing to declare.
+                preconditions: Vec::new(),
             },
         }
+    }
+
+    /// Reports a value for one declared field of a resource.
+    ///
+    /// This exists because the precondition gate needs somewhere for a value to
+    /// come from. `state_space` declares the *type* of each field and nothing
+    /// declared the *initial* value, so a resource that had never been actuated
+    /// had no state at all — and a gate that refuses an unevaluable precondition
+    /// would then refuse the first action, which is the action that would have
+    /// established the state. The pair of gaps is recorded as divergence D13.
+    ///
+    /// No declared field is checked here. This is a report, not a claim: a
+    /// caller that reports `status = fault` for a resource with no `status` field
+    /// has written something the manifest does not describe, and pretending
+    /// otherwise would make the state store a place where anything goes.
+    pub fn report_state(&self, resource_id: &str, field: &str, value: &str) {
+        let mut state = self.state_store.lock().unwrap();
+        state
+            .entry(resource_id.to_string())
+            .or_default()
+            .insert(field.to_string(), value.to_string());
+    }
+
+    /// Every value currently reported for a resource, for inspection.
+    pub fn state_of(&self, resource_id: &str) -> BTreeMap<String, String> {
+        let state = self.state_store.lock().unwrap();
+        state
+            .get(resource_id)
+            .map(|s| s.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+            .unwrap_or_default()
     }
 
     /// The core execution loop: Packet -> Economy -> Driver -> Hardware
@@ -125,7 +159,32 @@ impl ActuatorNucleus {
             econ.charge_actuation(user, resource_meta, &WmisOperation::Execute)?;
         }
 
-        // 2. DRIVER LOOKUP
+        // 2. PRECONDITION GATE
+        //
+        // Checked here and not in the bridge because this is the component that
+        // holds the state. Until now `constraints` was printed for operator
+        // visibility and never checked, so a manifest could declare a
+        // precondition the system ignored (divergence D5). A refusal is a
+        // refusal: the driver is not reached and the hardware is not touched.
+        {
+            let state = self.state_store.lock().unwrap();
+            let current: crate::constraints::State = state
+                .get(resource_id)
+                .map(|s| s.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                .unwrap_or_default();
+            drop(state);
+
+            let report =
+                crate::constraints::check(&packet.context.preconditions, &current);
+            if let Some(refusal) = report.first_refusal {
+                return Err(format!(
+                    "{} will not do that: {refusal}. I have left it alone.",
+                    resource_id
+                ));
+            }
+        }
+
+        // 3. DRIVER LOOKUP
         let driver = self
             .drivers
             .get(resource_id)
@@ -138,7 +197,7 @@ impl ActuatorNucleus {
             .entry(resource_id.clone())
             .or_insert_with(HashMap::new);
 
-        // 3. EXECUTION
+        // 4. EXECUTION
         let result = driver.execute(&packet, &mut state);
 
         match result {
